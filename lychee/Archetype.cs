@@ -1,10 +1,11 @@
 ﻿using System.Diagnostics;
+using lychee.collections;
 using lychee.interfaces;
 using lychee.utils;
 
 namespace lychee;
 
-public class ArchetypeManager
+public sealed class ArchetypeManager
 {
     private readonly TypeRegistry typeRegistry;
 
@@ -80,7 +81,7 @@ public sealed class Archetype
 
     public int[] TypeIdList { get; }
 
-    private TypeInfo[] typeInfoList;
+    private Table table;
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
 
@@ -96,7 +97,6 @@ public sealed class Archetype
     {
         ID = id;
         TypeIdList = typeIdList;
-        this.typeInfoList = typeInfoList;
 
         var offset = 0;
         for (var i = 0; i < typeInfoList.Length; i++)
@@ -112,6 +112,13 @@ public sealed class Archetype
 
             offset += info.Size;
         }
+        
+        var layout = new TableLayout
+        {
+            MaxAlignment = typeInfoList.Max(x => x.Alignment),
+            TypeInfoList = typeInfoList,
+        };
+        table = new Table(layout);
     }
 
 #endregion

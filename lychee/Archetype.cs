@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
 using lychee.utils;
@@ -81,7 +82,7 @@ public sealed class Archetype
 
     public int[] TypeIdList { get; }
 
-    private Table table;
+    private readonly Table table;
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
 
@@ -112,7 +113,7 @@ public sealed class Archetype
 
             offset += info.Size;
         }
-        
+
         var layout = new TableLayout
         {
             MaxAlignment = typeInfoList.Max(x => x.Alignment),
@@ -158,7 +159,7 @@ public sealed class Archetype
         return Array.IndexOf(TypeIdList, typeId);
     }
 
-    internal void GetTypeIndices<T>(T typeIdList, Span<int> output) where T : IEnumerable<int>
+    internal void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)
     {
         var i = 0;
         foreach (var typeId in typeIdList)
@@ -168,7 +169,7 @@ public sealed class Archetype
         }
     }
 
-    internal void MoveDataTo(Entity entity, Archetype archetype)
+    internal void MoveDataTo(EntityInfo info, Archetype archetype)
     {
         int[] commCompIndices;
 
@@ -185,9 +186,16 @@ public sealed class Archetype
             dstArchetypeCommCompIndices.Add(archetype.ID, commCompIndices);
         }
 
+        var (chunk, idx) = table.GetChunkAndIndex(info.ArchetypeIdx);
         foreach (var index in commCompIndices)
         {
+            unsafe
+            {
+                var src = table.GetPtr(index, ref chunk, idx);
+                var dst = archetype.table.GetPtr(index, ref chunk, chunk.Size);
 
+                NativeMemory.Copy(src, dst, (nuint) table.Layout.TypeInfoList[index].Size);
+            }
         }
     }
 

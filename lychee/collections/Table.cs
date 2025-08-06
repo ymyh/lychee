@@ -6,7 +6,7 @@ namespace lychee.collections;
 public struct TableLayout
 {
     public int MaxAlignment;
-    
+
     public TypeInfo[] TypeInfoList;
 }
 
@@ -14,47 +14,82 @@ public sealed class Table(TableLayout layout, int chunkSizeBytes)
 {
     private List<MemoryChunk> chunks = [];
 
-    private TableLayout layout = layout;
-
     private int chunkSizeBytes = chunkSizeBytes;
 
     private int chunkCapacity = ComputeChunkSize(chunkSizeBytes, layout);
 
+    public TableLayout Layout = layout;
+
+#region Constructors
+
     public Table(TableLayout layout) : this(layout, 16384)
     {
-        
+
     }
+
+#endregion
+
+#region Private static methods
 
     private static int ComputeChunkSize(int chunkSizeBytes, TableLayout layout)
     {
         var typeInfoList = layout.TypeInfoList;
         var offset = typeInfoList[^1].Offset + typeInfoList[^1].Size;
-        
+
         return chunkSizeBytes / (offset + offset % layout.MaxAlignment);
     }
 
-    internal unsafe T* GetData<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
+#endregion
+
+#region Internal methods
+
+    internal unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
     {
-        var typeInfo = layout.TypeInfoList[typeIdx];
-        var ptr = (byte*)chunk.Data;
-        
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+        var ptr = (byte*) chunk.Data;
+
         return (T*)(ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk));
+    }
+
+    internal unsafe void* GetPtr(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
+    {
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+        var ptr = (byte*) chunk.Data;
+
+        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
     internal (MemoryChunk, int) GetChunkAndIndex(int idx)
     {
         Debug.Assert(idx >= 0);
-        
+
         var chunkIdx = idx / chunkCapacity;
-        
+
         Debug.Assert(chunkIdx < chunks.Count);
-        
+
         var idxInChunk = idx % chunkCapacity;
-        
+
         Debug.Assert(idxInChunk < chunks[chunkIdx].Size);
-        
+
         return (chunks[chunkIdx], idxInChunk);
     }
+
+    internal MemoryChunk GetOrCreateLastChunk()
+    {
+        if (chunks.Count > 0)
+        {
+            return chunks[^1];
+        }
+
+        var chunk = new MemoryChunk();
+        chunk.Alloc(chunkSizeBytes);
+
+        chunks.Add(chunk);
+
+        return chunk;
+    }
+
+#endregion
 }
 
 public struct MemoryChunk(int capacity) : IDisposable

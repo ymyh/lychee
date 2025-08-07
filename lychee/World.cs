@@ -42,12 +42,12 @@ public sealed class World(TypeRegistry typeRegistry)
         entityPool.RemoveEntity(id);
     }
 
-    public void AddComponent<T>(Entity entity, T component)
+    public void AddComponent<T>(Entity entity, T component) where T : IComponent
     {
         AddComponent(entity, ref component);
     }
 
-    public void AddComponent<T>(Entity entity, ref T component)
+    public void AddComponent<T>(Entity entity, ref T component) where T : IComponent
     {
         var info = entityPool.GetEntityInfo(entity);
         var typeId = typeRegistry.GetOrRegister<T>();

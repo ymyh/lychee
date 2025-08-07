@@ -14,9 +14,7 @@ public sealed class Table(TableLayout layout, int chunkSizeBytes)
 {
     private List<MemoryChunk> chunks = [];
 
-    private int chunkSizeBytes = chunkSizeBytes;
-
-    private int chunkCapacity = ComputeChunkSize(chunkSizeBytes, layout);
+    private readonly int chunkCapacity = ComputeChunkSize(chunkSizeBytes, layout);
 
     public TableLayout Layout = layout;
 

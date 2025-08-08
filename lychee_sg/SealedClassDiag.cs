@@ -10,7 +10,7 @@ namespace lychee_sg
     public sealed class SealedRequiredAnalyzer : DiagnosticAnalyzer
     {
         private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
-            "GEN001",
+            "LYCHEE_COMPILE_ERR_1001",
             "Generic type argument must be sealed",
             "Type argument '{0}' for generic '{1}' must be a sealed class",
             "SealedConstraint",
@@ -33,15 +33,20 @@ namespace lychee_sg
         {
             var invocation = (InvocationExpressionSyntax)context.Node;
             var symbolInfo = context.SemanticModel.GetSymbolInfo(invocation);
-            var methodSymbol = symbolInfo.Symbol as IMethodSymbol;
-            if (methodSymbol == null)
+            if (!(symbolInfo.Symbol is IMethodSymbol methodSymbol))
+            {
                 return;
+            }
 
             if (!methodSymbol.IsGenericMethod)
+            {
                 return;
+            }
 
             if (!HasSealedRequired(methodSymbol))
+            {
                 return;
+            }
 
             var typeArgs = methodSymbol.TypeArguments;
             var typeParams = methodSymbol.TypeParameters;
@@ -67,15 +72,17 @@ namespace lychee_sg
             var creation = (ObjectCreationExpressionSyntax) context.Node;
             var symbolInfo = context.SemanticModel.GetSymbolInfo(creation);
             var ctorSymbol = symbolInfo.Symbol as IMethodSymbol;
-            if (ctorSymbol == null)
-                return;
 
-            var typeSymbol = ctorSymbol.ContainingType;
+            var typeSymbol = ctorSymbol?.ContainingType;
             if (typeSymbol == null || !typeSymbol.IsGenericType)
+            {
                 return;
+            }
 
             if (!HasSealedRequired(typeSymbol))
+            {
                 return;
+            }
 
             var typeArgs = typeSymbol.TypeArguments;
             var typeParams = typeSymbol.TypeParameters;
@@ -85,7 +92,7 @@ namespace lychee_sg
                 var typeArg = typeArgs[i];
                 if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
                 {
-                    Diagnostic diag = Diagnostic.Create(
+                    var diag = Diagnostic.Create(
                         Rule,
                         creation.GetLocation(),
                         typeArg.ToDisplayString(),
@@ -98,10 +105,10 @@ namespace lychee_sg
 
         private static bool HasSealedRequired(ISymbol symbol)
         {
-            foreach (AttributeData attr in symbol.GetAttributes())
+            foreach (var attr in symbol.GetAttributes())
             {
                 var attrClass = attr.AttributeClass;
-                if (attrClass != null && attrClass.Name == "SealedRequired")
+                if (attrClass != null && (attrClass.Name == "SealedRequired" || attrClass.Name == "lychee.SealedRequired"))
                 {
                     return true;
                 }

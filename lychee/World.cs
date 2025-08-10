@@ -50,20 +50,23 @@ public sealed class World(TypeRegistry typeRegistry)
     public void AddComponent<T>(Entity entity, ref T component) where T : IComponent
     {
         var info = entityPool.GetEntityInfo(entity);
-        var typeId = typeRegistry.GetOrRegister<T>();
 
-        if (info is { } bundleInfo)
+        if (info is { } entityInfo)
         {
-            var srcArchetype = archetypeManager.GetArchetype(bundleInfo.ArchetypeId);
+            var typeId = typeRegistry.GetOrRegister<T>();
+            var srcArchetype = archetypeManager.GetArchetype(entityInfo.ArchetypeId);
             var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
 
             if (dstArchetype == null)
             {
                 var typeIdList = srcArchetype.TypeIdList.Append(typeRegistry.GetOrRegister<T>());
                 var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
+
                 dstArchetype = archetypeManager.GetArchetype(archetypeId);
                 srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
             }
+
+            srcArchetype.MoveDataTo(entityInfo, dstArchetype);
         }
     }
 

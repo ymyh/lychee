@@ -194,7 +194,7 @@ public sealed class Archetype
                 var src = table.GetPtr(index, ref chunk, idx);
                 var dst = archetype.table.GetPtr(index, ref chunk, chunk.Size);
 
-                NativeMemory.Copy(src, dst, (nuint) table.Layout.TypeInfoList[index].Size);
+                NativeMemory.Copy(src, dst, (nuint)table.Layout.TypeInfoList[index].Size);
             }
         }
     }

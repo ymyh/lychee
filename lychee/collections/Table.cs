@@ -3,38 +3,39 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
-public struct TableLayout
+public struct TableLayout(TypeInfo[] typeInfoList)
 {
-    public int MaxAlignment;
+    public readonly int MaxAlignment = typeInfoList.Max(x => x.Alignment);
 
-    public TypeInfo[] TypeInfoList;
+    public readonly TypeInfo[] TypeInfoList = typeInfoList;
 }
 
-public sealed class Table(TableLayout layout, int chunkSizeBytes)
+public sealed class Table
 {
-    private List<MemoryChunk> chunks = [];
+    private readonly int chunkCapacity;
+    private readonly List<MemoryChunk> chunks = [];
 
-    private readonly int chunkCapacity = ComputeChunkSize(chunkSizeBytes, layout);
+    private readonly int chunkSizeBytes;
 
-    public TableLayout Layout = layout;
+    public readonly TableLayout Layout;
 
 #region Constructors
 
-    public Table(TableLayout layout) : this(layout, 16384)
+    public Table(TableLayout layout, int chunkSizeBytesHint = 16384)
     {
+        Layout = layout;
+        chunkSizeBytes = chunkSizeBytesHint;
 
-    }
-
-#endregion
-
-#region Private static methods
-
-    private static int ComputeChunkSize(int chunkSizeBytes, TableLayout layout)
-    {
         var typeInfoList = layout.TypeInfoList;
         var offset = typeInfoList[^1].Offset + typeInfoList[^1].Size;
+        var lastByteOffset = offset + offset % layout.MaxAlignment;
 
-        return chunkSizeBytes / (offset + offset % layout.MaxAlignment);
+        while (lastByteOffset > chunkSizeBytes)
+        {
+            chunkSizeBytes *= 2;
+        }
+
+        chunkCapacity = chunkSizeBytes / lastByteOffset;
     }
 
 #endregion
@@ -44,7 +45,7 @@ public sealed class Table(TableLayout layout, int chunkSizeBytes)
     internal unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*) chunk.Data;
+        var ptr = (byte*)chunk.Data;
 
         return (T*)(ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk));
     }
@@ -52,7 +53,7 @@ public sealed class Table(TableLayout layout, int chunkSizeBytes)
     internal unsafe void* GetPtr(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*) chunk.Data;
+        var ptr = (byte*)chunk.Data;
 
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }

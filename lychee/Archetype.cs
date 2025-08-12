@@ -8,11 +8,10 @@ namespace lychee;
 
 public sealed class ArchetypeManager
 {
-    private readonly TypeRegistry typeRegistry;
-
     private readonly List<Archetype> archetypes = [];
 
     private readonly List<EntityInfo> entitiesInfo = [];
+    private readonly TypeRegistry typeRegistry;
 
     public ArchetypeManager(TypeRegistry typeRegistry)
     {
@@ -70,28 +69,12 @@ public sealed class ArchetypeManager
     public void SetEntityInfo(Entity entity, EntityInfo entityInfo)
     {
         Debug.Assert(entity.ID >= 0 && entity.ID < entitiesInfo.Count);
-        entitiesInfo[entity.ID] =  entityInfo;
+        entitiesInfo[entity.ID] = entityInfo;
     }
 }
 
 public sealed class Archetype
 {
-#region Fields
-
-    public int ID { get; }
-
-    public int[] TypeIdList { get; }
-
-    private readonly Table table;
-
-    private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
-
-    private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
-
-    private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
-
-#endregion
-
 #region Constructors
 
     public Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
@@ -114,19 +97,29 @@ public sealed class Archetype
             offset += info.Size;
         }
 
-        var layout = new TableLayout
-        {
-            MaxAlignment = typeInfoList.Max(x => x.Alignment),
-            TypeInfoList = typeInfoList,
-        };
+        var layout = new TableLayout(typeInfoList);
         table = new Table(layout);
     }
 
 #endregion
 
+#region Fields
+
+    public readonly int ID;
+
+    public readonly int[] TypeIdList;
+
+    private readonly Table table;
+
+    private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
+
+    private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
+
+    private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
+
+#endregion
+
 #region Public Methods
-
-
 
 #endregion
 
@@ -207,8 +200,6 @@ public sealed class Archetype
 #endregion
 
 #region Private Methods
-
-
 
 #endregion
 }

@@ -1,7 +1,6 @@
 ﻿namespace lychee;
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface | AttributeTargets.Method)]
+[AttributeUsage(AttributeTargets.GenericParameter)]
 public class SealedRequired : Attribute
 {
-
 }

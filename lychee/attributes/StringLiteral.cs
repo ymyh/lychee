@@ -1,7 +1,4 @@
 ﻿namespace lychee.attributes;
 
 [AttributeUsage(AttributeTargets.Parameter)]
-public class StringLiteral(bool dynamicInterpolated) : Attribute
-{
-    public bool DynamicInterpolated = dynamicInterpolated;
-}
+public class StringLiteral(bool dynamicInterpolated = false) : Attribute;

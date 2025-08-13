@@ -43,10 +43,10 @@ namespace lychee_sg
                 return;
             }
 
-            if (!HasSealedRequired(methodSymbol))
-            {
-                return;
-            }
+            // if (!HasSealedRequired(methodSymbol))
+            // {
+            //     return;
+            // }
 
             var typeArgs = methodSymbol.TypeArguments;
             var typeParams = methodSymbol.TypeParameters;
@@ -54,22 +54,31 @@ namespace lychee_sg
             for (var i = 0; i < typeArgs.Length && i < typeParams.Length; i++)
             {
                 var typeArg = typeArgs[i];
-                if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
+                var typeParam = typeParams[i];
+
+                foreach (var attributeData in typeParam.GetAttributes())
                 {
-                    var diag = Diagnostic.Create(
-                        Rule,
-                        invocation.GetLocation(),
-                        typeArg.ToDisplayString(),
-                        methodSymbol.Name
-                    );
-                    context.ReportDiagnostic(diag);
+                    if (attributeData.AttributeClass?.Name == "SealedRequired" ||
+                        attributeData.AttributeClass?.ToDisplayString() == "SealedRequired")
+                    {
+                        if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
+                        {
+                            var diag = Diagnostic.Create(
+                                Rule,
+                                invocation.GetLocation(),
+                                typeArg.ToDisplayString(),
+                                methodSymbol.Name
+                            );
+                            context.ReportDiagnostic(diag);
+                        }
+                    }
                 }
             }
         }
 
         private static void AnalyzeObjectCreation(SyntaxNodeAnalysisContext context)
         {
-            var creation = (ObjectCreationExpressionSyntax) context.Node;
+            var creation = (ObjectCreationExpressionSyntax)context.Node;
             var symbolInfo = context.SemanticModel.GetSymbolInfo(creation);
             var ctorSymbol = symbolInfo.Symbol as IMethodSymbol;
 
@@ -79,10 +88,10 @@ namespace lychee_sg
                 return;
             }
 
-            if (!HasSealedRequired(typeSymbol))
-            {
-                return;
-            }
+            // if (!HasSealedRequired(typeSymbol))
+            // {
+            //     return;
+            // }
 
             var typeArgs = typeSymbol.TypeArguments;
             var typeParams = typeSymbol.TypeParameters;
@@ -90,15 +99,24 @@ namespace lychee_sg
             for (var i = 0; i < typeArgs.Length && i < typeParams.Length; i++)
             {
                 var typeArg = typeArgs[i];
-                if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
+                var typeParam = typeParams[i];
+
+                foreach (var attributeData in typeParam.GetAttributes())
                 {
-                    var diag = Diagnostic.Create(
-                        Rule,
-                        creation.GetLocation(),
-                        typeArg.ToDisplayString(),
-                        typeSymbol.Name
-                    );
-                    context.ReportDiagnostic(diag);
+                    if (attributeData.AttributeClass?.Name == "SealedRequired" ||
+                        attributeData.AttributeClass?.ToDisplayString() == "SealedRequired")
+                    {
+                        if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
+                        {
+                            var diag = Diagnostic.Create(
+                                Rule,
+                                creation.GetLocation(),
+                                typeArg.ToDisplayString(),
+                                typeSymbol.Name
+                            );
+                            context.ReportDiagnostic(diag);
+                        }
+                    }
                 }
             }
         }
@@ -108,7 +126,8 @@ namespace lychee_sg
             foreach (var attr in symbol.GetAttributes())
             {
                 var attrClass = attr.AttributeClass;
-                if (attrClass != null && (attrClass.Name == "SealedRequired" || attrClass.Name == "lychee.SealedRequired"))
+                if (attrClass != null &&
+                    (attrClass.Name == "SealedRequired" || attrClass.ToDisplayString() == "SealedRequired"))
                 {
                     return true;
                 }

@@ -13,6 +13,7 @@ public struct TableLayout(TypeInfo[] typeInfoList)
 public sealed class Table
 {
     private readonly int chunkCapacity;
+
     private readonly List<MemoryChunk> chunks = [];
 
     private readonly int chunkSizeBytes;
@@ -95,9 +96,9 @@ public struct MemoryChunk(int capacity) : IDisposable
 {
     public unsafe void* Data { get; private set; } = null;
 
-    public int Size { get; set; } = 0;
+    public int Size = 0;
 
-    public int Capacity { get; } = capacity;
+    public readonly int Capacity = capacity;
 
     public bool isFull => Size == Capacity;
 

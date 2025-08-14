@@ -1,10 +1,24 @@
 ﻿namespace lychee.collections;
 
-public sealed class DAGNode<T>
+public sealed class DAGNode<T>(T data)
 {
-    public T Data { get; set; } = default!;
+    public DAGNode() : this(default!)
+    {
+    }
+
+    public T Data { get; set; } = data;
+
+    public int Batch { get; set; }
+
+    public List<DAGNode<T>> Parents { get; } = [];
 
     public List<DAGNode<T>> Children { get; } = [];
+}
+
+public struct FreezedDAGNode<T>(T data, int batch)
+{
+    public T Data { get; set; } = data;
+    public int Batch { get; set; } = batch;
 }
 
 public sealed class DirectedAcyclicGraph<T>
@@ -22,6 +36,7 @@ public sealed class DirectedAcyclicGraph<T>
         if (Nodes.Contains(from) && Nodes.Contains(to))
         {
             from.Children.Add(to);
+            to.Parents.Add(from);
         }
         else
         {
@@ -29,46 +44,40 @@ public sealed class DirectedAcyclicGraph<T>
         }
     }
 
-    public bool Validate()
+    public List<FreezedDAGNode<T>> FreezeAsList()
     {
-        var visited = new Dictionary<DAGNode<T>, int>();
+        var inDegree = Nodes.ToDictionary(node => node, node => node.Parents.Count);
+        var queue = new Queue<DAGNode<T>>(Nodes.Where(n => inDegree[n] == 0));
+        var result = new List<FreezedDAGNode<T>>(Nodes.Count);
+        var currentBatch = 0;
 
-        foreach (var node in Nodes)
+        while (queue.Count > 0)
         {
-            if (!visited.ContainsKey(node))
+            var batchSize = queue.Count;
+            for (var i = 0; i < batchSize; i++)
             {
-                if (HasCycle(node, visited))
+                var node = queue.Dequeue();
+                node.Batch = currentBatch;
+                result.Add(new FreezedDAGNode<T>(node.Data, node.Batch));
+
+                foreach (var child in node.Children)
                 {
-                    IsValid = false;
-                    return false;
+                    inDegree[child]--;
+                    if (inDegree[child] == 0)
+                    {
+                        queue.Enqueue(child);
+                    }
                 }
             }
+
+            currentBatch++;
         }
 
-        IsValid = true;
-        return true;
-    }
-
-    private static bool HasCycle(DAGNode<T> node, Dictionary<DAGNode<T>, int> visited)
-    {
-        visited[node] = 1;
-
-        foreach (var child in node.Children)
+        if (result.Count != Nodes.Count)
         {
-            if (!visited.TryGetValue(child, out var value))
-            {
-                if (HasCycle(child, visited))
-                {
-                    return true;
-                }
-            }
-            else if (value == 1)
-            {
-                return true;
-            }
+            throw new InvalidOperationException("Graph contains a cycle!");
         }
 
-        visited[node] = 2;
-        return false;
+        return result;
     }
 }

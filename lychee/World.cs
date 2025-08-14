@@ -13,6 +13,8 @@ public sealed class World(TypeRegistry typeRegistry)
 
     private readonly ArchetypeManager archetypeManager = new(typeRegistry);
 
+    public ISystemExecutor SystemExecutor { get; set; } = new SystemExecutor();
+
 #endregion
 
 #region Methods
@@ -82,7 +84,9 @@ public sealed class World(TypeRegistry typeRegistry)
 
             if (dstArchetype == null)
             {
-                var typeIdList = srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>().Select(t => TypeRegistry.GetOrRegister(t)));
+                var typeIdList =
+                    srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>()
+                        .Select(t => TypeRegistry.GetOrRegister(t)));
                 var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
                 dstArchetype = archetypeManager.GetArchetype(archetypeId);
                 srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
@@ -94,7 +98,7 @@ public sealed class World(TypeRegistry typeRegistry)
 
     public void Update()
     {
-
+        SystemExecutor.Execute();
     }
 
 #endregion

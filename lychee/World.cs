@@ -7,13 +7,15 @@ public sealed class World(TypeRegistry typeRegistry)
 {
 #region Fields
 
-    private TypeRegistry TypeRegistry { get; } = typeRegistry;
+    public readonly TypeRegistry TypeRegistry = typeRegistry;
+
+    public readonly ResourcePool ResourcePool = new();
 
     private readonly EntityPool entityPool = new();
 
     private readonly ArchetypeManager archetypeManager = new(typeRegistry);
 
-    public ISystemExecutor SystemExecutor { get; set; } = new SystemExecutor();
+    public ISystemExecutor SystemExecutor = new SystemExecutor();
 
 #endregion
 
@@ -55,13 +57,13 @@ public sealed class World(TypeRegistry typeRegistry)
 
         if (info is { } entityInfo)
         {
-            var typeId = typeRegistry.GetOrRegister<T>();
+            var typeId = TypeRegistry.GetOrRegister<T>();
             var srcArchetype = archetypeManager.GetArchetype(entityInfo.ArchetypeId);
             var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
 
             if (dstArchetype == null)
             {
-                var typeIdList = srcArchetype.TypeIdList.Append(typeRegistry.GetOrRegister<T>());
+                var typeIdList = srcArchetype.TypeIdList.Append(TypeRegistry.GetOrRegister<T>());
                 var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
 
                 dstArchetype = archetypeManager.GetArchetype(archetypeId);
@@ -75,7 +77,7 @@ public sealed class World(TypeRegistry typeRegistry)
     public void AddComponents<T>(Entity entity, T bundle) where T : IComponentBundle
     {
         var info = entityPool.GetEntityInfo(entity);
-        var typeId = typeRegistry.GetOrRegister<T>();
+        var typeId = TypeRegistry.GetOrRegister<T>();
 
         if (info is { } bundleInfo)
         {
@@ -84,10 +86,10 @@ public sealed class World(TypeRegistry typeRegistry)
 
             if (dstArchetype == null)
             {
-                var typeIdList =
-                    srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>()
-                        .Select(t => TypeRegistry.GetOrRegister(t)));
+                var typeIdList = srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>()
+                    .Select(t => TypeRegistry.GetOrRegister(t)));
                 var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
+
                 dstArchetype = archetypeManager.GetArchetype(archetypeId);
                 srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
             }

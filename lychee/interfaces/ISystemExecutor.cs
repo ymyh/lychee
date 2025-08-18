@@ -1,8 +1,10 @@
 ﻿namespace lychee.interfaces;
 
-public interface ISystemExecutor
+public interface ISystemScheduler
 {
-    public void AddSystem(ISystem system);
+    public Span<ISchedule> Schedules { get; }
+
+    public void AddSchedule(ISchedule schedule);
 
     public void Execute();
 }

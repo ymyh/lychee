@@ -1,16 +1,24 @@
-﻿using lychee.interfaces;
+﻿using System.Runtime.InteropServices;
+using lychee.interfaces;
 
 namespace lychee;
 
-public sealed class SystemExecutor : ISystemExecutor
+public sealed class SystemScheduler(ResourcePool pool) : ISystemScheduler
 {
-    public void AddSystem(ISystem system)
+    private readonly List<ISchedule> schedules = [];
+
+    public Span<ISchedule> Schedules => CollectionsMarshal.AsSpan(schedules);
+
+    public void AddSchedule(ISchedule schedule)
     {
-        throw new NotImplementedException();
+        schedules.Add(schedule);
     }
 
     public void Execute()
     {
-        throw new NotImplementedException();
+        foreach (var schedule in schedules)
+        {
+            schedule.Schedule(pool);
+        }
     }
 }

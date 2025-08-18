@@ -4,9 +4,11 @@ namespace lychee;
 
 public sealed class App
 {
+#region Constructors
+
     public App()
     {
-        World = new World(TypeRegistry);
+        World = new World(TypeRegistry, ResourcePool);
         Runner = () =>
         {
             while (!shouldExit)
@@ -16,13 +18,17 @@ public sealed class App
         };
     }
 
+#endregion
+
 #region Fields
 
     public delegate void RunnerDelegate();
 
-    public TypeRegistry TypeRegistry { get; } = new();
+    public readonly TypeRegistry TypeRegistry = new();
 
-    public World World { get; }
+    public readonly ResourcePool ResourcePool = new();
+
+    public readonly World World;
 
     public RunnerDelegate Runner { get; set; }
 

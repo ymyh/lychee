@@ -3,19 +3,17 @@ using lychee.utils;
 
 namespace lychee;
 
-public sealed class World(TypeRegistry typeRegistry)
+public sealed class World(TypeRegistry typeRegistry, ResourcePool resourcePool)
 {
 #region Fields
 
     public readonly TypeRegistry TypeRegistry = typeRegistry;
 
-    public readonly ResourcePool ResourcePool = new();
-
     private readonly EntityPool entityPool = new();
 
     private readonly ArchetypeManager archetypeManager = new(typeRegistry);
 
-    public ISystemExecutor SystemExecutor = new SystemExecutor();
+    public ISystemScheduler SystemScheduler = new SystemScheduler(resourcePool);
 
 #endregion
 
@@ -100,7 +98,7 @@ public sealed class World(TypeRegistry typeRegistry)
 
     public void Update()
     {
-        SystemExecutor.Execute();
+        SystemScheduler.Execute();
     }
 
 #endregion

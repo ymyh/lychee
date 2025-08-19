@@ -1,4 +1,4 @@
 ﻿namespace lychee.attributes;
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
-public class ComponentBundle : Attribute;
+public sealed class ComponentBundle : Attribute;

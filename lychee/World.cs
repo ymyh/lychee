@@ -3,17 +3,15 @@ using lychee.utils;
 
 namespace lychee;
 
-public sealed class World(TypeRegistry typeRegistry, ResourcePool resourcePool)
+public sealed class World(TypeRegistry typeRegistry)
 {
 #region Fields
 
-    public readonly TypeRegistry TypeRegistry = typeRegistry;
+    public readonly SystemSchedules SystemSchedules = new();
 
     private readonly EntityPool entityPool = new();
 
     private readonly ArchetypeManager archetypeManager = new(typeRegistry);
-
-    public ISystemScheduler SystemScheduler = new SystemScheduler(resourcePool);
 
 #endregion
 
@@ -55,13 +53,13 @@ public sealed class World(TypeRegistry typeRegistry, ResourcePool resourcePool)
 
         if (info is { } entityInfo)
         {
-            var typeId = TypeRegistry.GetOrRegister<T>();
+            var typeId = typeRegistry.GetOrRegister<T>();
             var srcArchetype = archetypeManager.GetArchetype(entityInfo.ArchetypeId);
             var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
 
             if (dstArchetype == null)
             {
-                var typeIdList = srcArchetype.TypeIdList.Append(TypeRegistry.GetOrRegister<T>());
+                var typeIdList = srcArchetype.TypeIdList.Append(typeRegistry.GetOrRegister<T>());
                 var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
 
                 dstArchetype = archetypeManager.GetArchetype(archetypeId);
@@ -75,7 +73,7 @@ public sealed class World(TypeRegistry typeRegistry, ResourcePool resourcePool)
     public void AddComponents<T>(Entity entity, T bundle) where T : IComponentBundle
     {
         var info = entityPool.GetEntityInfo(entity);
-        var typeId = TypeRegistry.GetOrRegister<T>();
+        var typeId = typeRegistry.GetOrRegister<T>();
 
         if (info is { } bundleInfo)
         {
@@ -85,7 +83,7 @@ public sealed class World(TypeRegistry typeRegistry, ResourcePool resourcePool)
             if (dstArchetype == null)
             {
                 var typeIdList = srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>()
-                    .Select(t => TypeRegistry.GetOrRegister(t)));
+                    .Select(t => typeRegistry.GetOrRegister(t)));
                 var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
 
                 dstArchetype = archetypeManager.GetArchetype(archetypeId);
@@ -98,7 +96,7 @@ public sealed class World(TypeRegistry typeRegistry, ResourcePool resourcePool)
 
     public void Update()
     {
-        SystemScheduler.Execute();
+        SystemSchedules.Execute();
     }
 
 #endregion

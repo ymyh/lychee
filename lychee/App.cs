@@ -4,22 +4,6 @@ namespace lychee;
 
 public sealed class App
 {
-#region Constructors
-
-    public App()
-    {
-        World = new World(TypeRegistry, ResourcePool);
-        Runner = () =>
-        {
-            while (!shouldExit)
-            {
-                World.Update();
-            }
-        };
-    }
-
-#endregion
-
 #region Fields
 
     public delegate void RunnerDelegate();
@@ -29,10 +13,25 @@ public sealed class App
     public readonly ResourcePool ResourcePool = new();
 
     public readonly World World;
-
     public RunnerDelegate Runner { get; set; }
 
     private bool shouldExit;
+
+#endregion
+
+#region Constructors
+
+    public App()
+    {
+        World = new World(TypeRegistry);
+        Runner = () =>
+        {
+            while (!shouldExit)
+            {
+                World.Update();
+            }
+        };
+    }
 
 #endregion
 

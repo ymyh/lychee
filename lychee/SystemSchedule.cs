@@ -45,13 +45,15 @@ public sealed class SystemSchedules
     }
 }
 
-public sealed class DefaultSchedule(string name, ResourcePool resourcePool) : ISchedule
+public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, ResourcePool resourcePool) : ISchedule
 {
     public string Name { get; } = name;
 
     public Func<ResourcePool, bool> ShouldExecute = _ => true;
 
     private readonly DirectedAcyclicGraph<ISystem> executionGraph = new();
+
+    private List<FrozenDAGNode<ISystem>> frozenDAGNodes = [];
 
     public ISystem AddSystem(ISystem system)
     {
@@ -63,13 +65,42 @@ public sealed class DefaultSchedule(string name, ResourcePool resourcePool) : IS
     {
         if (ShouldExecute(resourcePool))
         {
+            frozenDAGNodes = executionGraph.FreezeAsList();
             throw new NotImplementedException();
         }
     }
 
-    private static void AnalyzeSystem(ISystem system)
+    private void AnalyzeSystem(ISystem system)
     {
         var type = system.GetType();
-        var method = type.GetMethod("");
+        var method = type.GetMethod("Execute");
+        var parameters = method!.GetParameters();
+
+        foreach (var param in parameters)
+        {
+            if (param.ParameterType.IsByRef)
+            {
+                typeRegistry.GetOrRegister(param.ParameterType.GetElementType()!);
+            }
+            else
+            {
+                typeRegistry.GetOrRegister(param.ParameterType);
+            }
+        }
+
+        foreach (var component in system.AllFilter)
+        {
+            typeRegistry.GetOrRegister(component.GetType());
+        }
+
+        foreach (var component in system.AnyFilter)
+        {
+            typeRegistry.GetOrRegister(component.GetType());
+        }
+
+        foreach (var component in system.NoneFilter)
+        {
+            typeRegistry.GetOrRegister(component.GetType());
+        }
     }
 }

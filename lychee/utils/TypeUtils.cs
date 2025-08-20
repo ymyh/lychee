@@ -55,4 +55,28 @@ public static class TypeUtils
             return alignment == 0 ? Math.Min((size % 32 == 0 ? 32 : (size % 16 == 0 ? 16 : 8)), 64) : alignment;
         }
     }
+
+    public static bool IsUnmanaged(Type type)
+    {
+        if (type.IsPrimitive || type.IsPointer || type.IsEnum)
+        {
+            return true;
+        }
+
+        if (!type.IsValueType)
+        {
+            return false;
+        }
+
+        // 值类型但不是 primitive → struct
+        foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+        {
+            if (!IsUnmanaged(field.FieldType))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

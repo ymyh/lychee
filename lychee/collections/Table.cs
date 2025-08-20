@@ -5,12 +5,12 @@ namespace lychee.collections;
 
 public struct TableLayout(TypeInfo[] typeInfoList)
 {
-    public readonly int MaxAlignment = typeInfoList.Max(x => x.Alignment);
+    public readonly int MaxAlignment = typeInfoList.Length == 0 ? 0 : typeInfoList.Max(x => x.Alignment);
 
     public readonly TypeInfo[] TypeInfoList = typeInfoList;
 }
 
-public sealed class Table
+public sealed class Table : IDisposable
 {
     private readonly int chunkCapacity;
 
@@ -28,22 +28,25 @@ public sealed class Table
         chunkSizeBytes = chunkSizeBytesHint;
 
         var typeInfoList = layout.TypeInfoList;
-        var offset = typeInfoList[^1].Offset + typeInfoList[^1].Size;
-        var lastByteOffset = offset + offset % layout.MaxAlignment;
-
-        while (lastByteOffset > chunkSizeBytes)
+        if (typeInfoList.Length > 0)
         {
-            chunkSizeBytes *= 2;
-        }
+            var offset = typeInfoList[^1].Offset + typeInfoList[^1].Size;
+            var lastByteOffset = offset + offset % layout.MaxAlignment;
 
-        chunkCapacity = chunkSizeBytes / lastByteOffset;
+            while (lastByteOffset > chunkSizeBytes)
+            {
+                chunkSizeBytes *= 2;
+            }
+
+            chunkCapacity = chunkSizeBytes / lastByteOffset;
+        }
     }
 
 #endregion
 
 #region Internal methods
 
-    internal unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
+    internal unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk) where T : unmanaged
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
         var ptr = (byte*)chunk.Data;
@@ -90,6 +93,18 @@ public sealed class Table
     }
 
 #endregion
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        foreach (var memoryChunk in chunks)
+        {
+            memoryChunk.Dispose();
+        }
+    }
+
+#endregion
 }
 
 public struct MemoryChunk(int capacity) : IDisposable
@@ -111,6 +126,8 @@ public struct MemoryChunk(int capacity) : IDisposable
         }
     }
 
+#region IDisposable Member
+
     public void Dispose()
     {
         unsafe
@@ -122,4 +139,6 @@ public struct MemoryChunk(int capacity) : IDisposable
             }
         }
     }
+
+#endregion
 }

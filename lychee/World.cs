@@ -3,7 +3,7 @@ using lychee.utils;
 
 namespace lychee;
 
-public sealed class World(TypeRegistry typeRegistry)
+public sealed class World(TypeRegistry typeRegistry) : IDisposable
 {
 #region Fields
 
@@ -42,12 +42,12 @@ public sealed class World(TypeRegistry typeRegistry)
         entityPool.RemoveEntity(id);
     }
 
-    public void AddComponent<T>(Entity entity, T component) where T : IComponent
+    public void AddComponent<T>(Entity entity, T component) where T : unmanaged, IComponent
     {
         AddComponent(entity, ref component);
     }
 
-    public void AddComponent<T>(Entity entity, ref T component) where T : IComponent
+    public void AddComponent<T>(Entity entity, ref T component) where T : unmanaged, IComponent
     {
         var info = entityPool.GetEntityInfo(entity);
 
@@ -70,7 +70,7 @@ public sealed class World(TypeRegistry typeRegistry)
         }
     }
 
-    public void AddComponents<T>(Entity entity, T bundle) where T : IComponentBundle
+    public void AddComponents<T>(Entity entity, T bundle) where T : unmanaged, IComponentBundle
     {
         var info = entityPool.GetEntityInfo(entity);
         var typeId = typeRegistry.GetOrRegister<T>();
@@ -98,6 +98,15 @@ public sealed class World(TypeRegistry typeRegistry)
     {
         SystemSchedules.Execute();
     }
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        archetypeManager.Dispose();
+    }
+
+#endregion
 
 #endregion
 }

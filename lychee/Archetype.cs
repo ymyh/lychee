@@ -6,11 +6,12 @@ using lychee.utils;
 
 namespace lychee;
 
-public sealed class ArchetypeManager
+public sealed class ArchetypeManager : IDisposable
 {
     private readonly List<Archetype> archetypes = [];
 
     private readonly List<EntityInfo> entitiesInfo = [];
+
     private readonly TypeRegistry typeRegistry;
 
     public ArchetypeManager(TypeRegistry typeRegistry)
@@ -71,9 +72,21 @@ public sealed class ArchetypeManager
         Debug.Assert(entity.ID >= 0 && entity.ID < entitiesInfo.Count);
         entitiesInfo[entity.ID] = entityInfo;
     }
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        foreach (var archetype in archetypes)
+        {
+            archetype.Dispose();
+        }
+    }
+
+#endregion
 }
 
-public sealed class Archetype
+public sealed class Archetype : IDisposable
 {
 #region Constructors
 
@@ -119,7 +132,12 @@ public sealed class Archetype
 
 #endregion
 
-#region Public Methods
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        table.Dispose();
+    }
 
 #endregion
 

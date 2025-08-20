@@ -8,7 +8,7 @@ namespace lychee;
 public struct TypeInfo(int size, int alignment)
 {
     [FieldOffset(0)] public int Size = size;
-    
+
     [FieldOffset(4)] public int Alignment = alignment;
 
     [FieldOffset(4)] public int Offset;
@@ -32,7 +32,7 @@ public sealed class TypeRegistry
     {
         var name = type.FullName ?? type.Name;
 
-        if (type is { IsClass: false, IsValueType: false, IsArray: false })
+        if (!TypeUtils.IsUnmanaged(type))
         {
             throw new UnsupportedTypeException(name);
         }
@@ -48,12 +48,13 @@ public sealed class TypeRegistry
         {
             alignment = TypeUtils.GetOrGuessAlignment(type, size);
         }
+
         types.Add((type, new TypeInfo(size, alignment)));
 
         return types.Count - 1;
     }
 
-    public int Register<T>(int alignment = 0)
+    public int Register<T>(int alignment = 0) where T : unmanaged
     {
         return Register(typeof(T), alignment);
     }
@@ -62,7 +63,7 @@ public sealed class TypeRegistry
     {
         var name = type.FullName ?? type.Name;
 
-        if (type is { IsClass: false, IsValueType: false, IsArray: false })
+        if (!TypeUtils.IsUnmanaged(type))
         {
             throw new UnsupportedTypeException(name);
         }
@@ -78,12 +79,13 @@ public sealed class TypeRegistry
         {
             alignment = TypeUtils.GetOrGuessAlignment(type, size);
         }
+
         types.Add((type, new TypeInfo(size, alignment)));
 
         return types.Count - 1;
     }
 
-    public int GetOrRegister<T>(int alignment = 0)
+    public int GetOrRegister<T>(int alignment = 0) where T : unmanaged
     {
         return GetOrRegister(typeof(T), alignment);
     }
@@ -142,8 +144,6 @@ public sealed class TypeRegistry
     }
 
 #region Private methods
-
-
 
 #endregion
 }

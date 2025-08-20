@@ -2,7 +2,7 @@
 
 namespace lychee;
 
-public sealed class App
+public sealed class App : IDisposable
 {
 #region Fields
 
@@ -50,6 +50,15 @@ public sealed class App
     public void Run()
     {
         Runner();
+    }
+
+#endregion
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        World.Dispose();
     }
 
 #endregion

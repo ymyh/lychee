@@ -1,4 +1,5 @@
 ﻿using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -7,13 +8,13 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace lychee_sg
 {
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
-    public sealed class SealedRequiredAnalyzer : DiagnosticAnalyzer
+    public class SystemConceptDiag : DiagnosticAnalyzer
     {
         private static readonly DiagnosticDescriptor Rule = new DiagnosticDescriptor(
-            "LYCHEE_COMPILE_ERR_1001",
-            "Generic type argument must be sealed",
-            "Type argument '{0}' for generic '{1}' must be a sealed class",
-            "SealedConstraint",
+            "LYCHEE_COMPILE_ERR_1003",
+            "Type must met System requirements",
+            "",
+            "SystemConstraint",
             DiagnosticSeverity.Error,
             true
         );
@@ -22,6 +23,8 @@ namespace lychee_sg
 
         public override void Initialize(AnalysisContext context)
         {
+            // Debugger.Launch();
+
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
             context.EnableConcurrentExecution();
 
@@ -53,20 +56,10 @@ namespace lychee_sg
 
                 foreach (var attributeData in typeParam.GetAttributes())
                 {
-                    if (attributeData.AttributeClass?.Name == "SealedRequired" ||
-                        attributeData.AttributeClass?.ToDisplayString() == "SealedRequired")
+                    if (attributeData.AttributeClass?.Name == "SystemRequired" ||
+                        attributeData.AttributeClass?.ToDisplayString() == "SystemRequired")
                     {
-                        if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
-                        {
-                            var diag = Diagnostic.Create(
-                                Rule,
-                                invocation.GetLocation(),
-                                typeArg.ToDisplayString(),
-                                methodSymbol.Name
-                            );
-                            context.ReportDiagnostic(diag);
-                        }
-
+                        CheckRequirementMet(context, typeArg, context.Node);
                         break;
                     }
                 }
@@ -95,24 +88,62 @@ namespace lychee_sg
 
                 foreach (var attributeData in typeParam.GetAttributes())
                 {
-                    if (attributeData.AttributeClass?.Name == "SealedRequired" ||
-                        attributeData.AttributeClass?.ToDisplayString() == "SealedRequired")
+                    if (attributeData.AttributeClass?.Name == "SystemRequired" ||
+                        attributeData.AttributeClass?.ToDisplayString() == "SystemRequired")
                     {
-                        if (typeArg.TypeKind == TypeKind.Class && !typeArg.IsSealed)
-                        {
-                            var diag = Diagnostic.Create(
-                                Rule,
-                                creation.GetLocation(),
-                                typeArg.ToDisplayString(),
-                                typeSymbol.Name
-                            );
-                            context.ReportDiagnostic(diag);
-                        }
-
+                        CheckRequirementMet(context, typeArg, context.Node);
                         break;
                     }
                 }
             }
+        }
+
+        private static void CheckRequirementMet(SyntaxNodeAnalysisContext context, ITypeSymbol symbol, SyntaxNode node)
+        {
+            var maybeMet = false;
+
+            if (symbol.TypeKind == TypeKind.Class || symbol.TypeKind == TypeKind.Struct)
+            {
+                var interfaces = (symbol as INamedTypeSymbol).Interfaces;
+
+                foreach (var namedTypeSymbol in interfaces)
+                {
+                    if (namedTypeSymbol.ToDisplayString() == "lychee.interfaces.ISystem")
+                    {
+                        maybeMet = true;
+                        break;
+                    }
+                }
+
+                if (maybeMet)
+                {
+                    if (symbol.GetMembers("Execute")
+                        .OfType<IMethodSymbol>()
+                        .All(m => m.DeclaredAccessibility != Accessibility.Public))
+                    {
+                        Report(context, node, $"{symbol.Name} must contains a public instance method named Execute");
+                    }
+                }
+                else
+                {
+                    Report(context, node, $"{symbol.Name} must implement ISystem");
+                }
+            }
+        }
+
+        private static void Report(SyntaxNodeAnalysisContext context, SyntaxNode node, string message)
+        {
+            var diag = Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    id: "LYCHEE_COMPILE_ERR_1003",
+                    title: "System constraint not satisfied",
+                    messageFormat: message,
+                    category: "Constraint",
+                    DiagnosticSeverity.Error,
+                    isEnabledByDefault: true),
+                node.GetLocation());
+
+            context.ReportDiagnostic(diag);
         }
     }
 }

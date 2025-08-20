@@ -1,5 +1,8 @@
 ﻿namespace lychee.interfaces;
 
+/// <summary>
+/// Interface for system
+/// </summary>
 public interface ISystem
 {
     public IComponent[] AllFilter { get; }
@@ -8,5 +11,8 @@ public interface ISystem
 
     public IComponent[] NoneFilter { get; }
 
-    public void Execute();
+    /// <summary>
+    /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing
+    /// </summary>
+    public void ExecuteAG();
 }

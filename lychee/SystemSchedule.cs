@@ -1,4 +1,5 @@
-﻿using lychee.collections;
+﻿using System.Reflection;
+using lychee.collections;
 using lychee.interfaces;
 
 namespace lychee;
@@ -53,11 +54,23 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
 
     private readonly DirectedAcyclicGraph<ISystem> executionGraph = new();
 
-    private List<FrozenDAGNode<ISystem>> frozenDAGNodes = [];
+    private FrozenDAGNode<ISystem>[] frozenDAGNodes = [];
 
     public ISystem AddSystem(ISystem system)
     {
         var node = executionGraph.AddNode(new(system));
+        var funcExecParamInfo = AnalyzeSystem(system);
+
+        if (executionGraph.Count == 1)
+        {
+            return system;
+        }
+
+        var list = executionGraph.AsList();
+        foreach (var frozenDagNode in list)
+        {
+        }
+
         return system;
     }
 
@@ -65,12 +78,12 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
     {
         if (ShouldExecute(resourcePool))
         {
-            frozenDAGNodes = executionGraph.FreezeAsList();
+            frozenDAGNodes = executionGraph.AsList().Select(x => new FrozenDAGNode<ISystem>(x)).ToArray();
             throw new NotImplementedException();
         }
     }
 
-    private void AnalyzeSystem(ISystem system)
+    private ParameterInfo[] AnalyzeSystem(ISystem system)
     {
         var type = system.GetType();
         var method = type.GetMethod("Execute");
@@ -78,14 +91,9 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
 
         foreach (var param in parameters)
         {
-            if (param.ParameterType.IsByRef)
-            {
-                typeRegistry.GetOrRegister(param.ParameterType.GetElementType()!);
-            }
-            else
-            {
-                typeRegistry.GetOrRegister(param.ParameterType);
-            }
+            typeRegistry.GetOrRegister(param.ParameterType.IsByRef
+                ? param.ParameterType.GetElementType()!
+                : param.ParameterType);
         }
 
         foreach (var component in system.AllFilter)
@@ -102,5 +110,7 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
         {
             typeRegistry.GetOrRegister(component.GetType());
         }
+
+        return parameters;
     }
 }

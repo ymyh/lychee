@@ -2,6 +2,11 @@
 
 namespace lychee.collections;
 
+/// <summary>
+/// Represents a node in DAG
+/// </summary>
+/// <param name="data"></param>
+/// <typeparam name="T"></typeparam>
 public sealed class DAGNode<T>(T data)
 {
     public DAGNode() : this(default!)
@@ -10,26 +15,33 @@ public sealed class DAGNode<T>(T data)
 
     public T Data { get; set; } = data;
 
-    public int Batch { get; set; }
-
     public List<DAGNode<T>> Parents { get; } = [];
 
     public List<DAGNode<T>> Children { get; } = [];
+
+    internal int Group { get; set; }
 }
 
-public struct FrozenDAGNode<T>(T data, int batch)
+/// <summary>
+/// Frozen DAG node, for better performance
+/// </summary>
+/// <param name="node">The node to freeze</param>
+/// <typeparam name="T"></typeparam>
+public struct FrozenDAGNode<T>(DAGNode<T> node)
 {
-    public T Data { get; set; } = data;
+    public T Data = node.Data;
 
     /// <summary>
-    /// Nodes in same batch can be executed in parallel
+    /// Nodes in same group means they are irrelative to each other
     /// </summary>
-    public int Batch { get; set; } = batch;
+    public readonly int Group = node.Group;
 }
 
 public sealed class DirectedAcyclicGraph<T>
 {
     public List<DAGNode<T>> Nodes { get; } = [];
+
+    public int Count => Nodes.Count;
 
     /// <summary>
     /// Add a node into graph without connecting to other node(s)
@@ -76,15 +88,15 @@ public sealed class DirectedAcyclicGraph<T>
     }
 
     /// <summary>
-    /// Perform topological sorting to freeze the graph as a list of frozen nodes
+    /// Perform topological sorting to make the graph as a list. If you want a more efficient structure, see <see cref="FrozenDAGNode{T}"/>
     /// </summary>
     /// <returns></returns>
     /// <exception cref="ConstraintException">If graph contains a cycle</exception>
-    public List<FrozenDAGNode<T>> FreezeAsList()
+    public List<DAGNode<T>> AsList()
     {
         var inDegree = Nodes.ToDictionary(node => node, node => node.Parents.Count);
         var queue = new Queue<DAGNode<T>>(Nodes.Where(n => inDegree[n] == 0));
-        var result = new List<FrozenDAGNode<T>>(Nodes.Count);
+        var result = new List<DAGNode<T>>(Nodes.Count);
         var currentBatch = 0;
 
         while (queue.Count > 0)
@@ -93,8 +105,8 @@ public sealed class DirectedAcyclicGraph<T>
             for (var i = 0; i < batchSize; i++)
             {
                 var node = queue.Dequeue();
-                node.Batch = currentBatch;
-                result.Add(new(node.Data, node.Batch));
+                node.Group = currentBatch;
+                result.Add(node);
 
                 foreach (var child in node.Children)
                 {

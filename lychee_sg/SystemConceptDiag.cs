@@ -56,8 +56,8 @@ namespace lychee_sg
 
                 foreach (var attributeData in typeParam.GetAttributes())
                 {
-                    if (attributeData.AttributeClass?.Name == "SystemRequired" ||
-                        attributeData.AttributeClass?.ToDisplayString() == "SystemRequired")
+                    if (attributeData.AttributeClass?.Name == "SystemConcept" ||
+                        attributeData.AttributeClass?.ToDisplayString() == "SystemConcept")
                     {
                         CheckRequirementMet(context, typeArg, context.Node);
                         break;
@@ -88,8 +88,8 @@ namespace lychee_sg
 
                 foreach (var attributeData in typeParam.GetAttributes())
                 {
-                    if (attributeData.AttributeClass?.Name == "SystemRequired" ||
-                        attributeData.AttributeClass?.ToDisplayString() == "SystemRequired")
+                    if (attributeData.AttributeClass?.Name == "SystemConcept" ||
+                        attributeData.AttributeClass?.ToDisplayString() == "SystemConcept")
                     {
                         CheckRequirementMet(context, typeArg, context.Node);
                         break;
@@ -119,7 +119,7 @@ namespace lychee_sg
                 {
                     if (symbol.GetMembers("Execute")
                         .OfType<IMethodSymbol>()
-                        .All(m => m.DeclaredAccessibility != Accessibility.Public))
+                        .All(m => m.IsStatic))
                     {
                         Report(context, node, $"{symbol.Name} must contains a public instance method named Execute");
                     }

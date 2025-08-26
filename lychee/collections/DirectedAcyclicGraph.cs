@@ -88,7 +88,7 @@ public sealed class DirectedAcyclicGraph<T>
     }
 
     /// <summary>
-    /// Perform topological sorting to make the graph as a list. If you want a more efficient structure, see <see cref="FrozenDAGNode{T}"/>
+    /// Perform topological sorting to make the graph as a list. If you want a more efficient structure, see <see cref="DirectedAcyclicGraphExtensions.Freeze{T}"/>
     /// </summary>
     /// <returns></returns>
     /// <exception cref="ConstraintException">If graph contains a cycle</exception>
@@ -127,5 +127,13 @@ public sealed class DirectedAcyclicGraph<T>
         }
 
         return result;
+    }
+}
+
+public static class DirectedAcyclicGraphExtensions
+{
+    public static FrozenDAGNode<T>[] Freeze<T>(this IList<DAGNode<T>> nodes)
+    {
+        return nodes.Select(x => new FrozenDAGNode<T>(x)).ToArray();
     }
 }

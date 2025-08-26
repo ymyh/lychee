@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using lychee.attributes;
 using lychee.collections;
 using lychee.interfaces;
 
@@ -52,14 +53,18 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
 
     public Func<ResourcePool, bool> ShouldExecute = _ => true;
 
-    private readonly DirectedAcyclicGraph<ISystem> executionGraph = new();
+    private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
-    private FrozenDAGNode<ISystem>[] frozenDAGNodes = [];
+    private FrozenDAGNode<SystemInfo>[] frozenDAGNodes = [];
 
-    public ISystem AddSystem(ISystem system)
+    private bool isFrozen;
+
+    public T AddSystem<[SystemConcept] [SealedRequired] T>(T system) where T : ISystem
     {
-        var node = executionGraph.AddNode(new(system));
-        var funcExecParamInfo = AnalyzeSystem(system);
+        var systemParamInfo = AnalyzeSystem(system);
+        var node = executionGraph.AddNode(new(new(system, systemParamInfo)));
+
+        isFrozen = false;
 
         if (executionGraph.Count == 1)
         {
@@ -67,8 +72,12 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
         }
 
         var list = executionGraph.AsList();
-        foreach (var frozenDagNode in list)
+        foreach (var n in list)
         {
+            if (CanAddAfterSystem(n.Data, node.Data))
+            {
+                executionGraph.AddEdge(n, node);
+            }
         }
 
         return system;
@@ -78,15 +87,23 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
     {
         if (ShouldExecute(resourcePool))
         {
-            frozenDAGNodes = executionGraph.AsList().Select(x => new FrozenDAGNode<ISystem>(x)).ToArray();
-            throw new NotImplementedException();
+            if (!isFrozen)
+            {
+                frozenDAGNodes = executionGraph.AsList().Freeze();
+                isFrozen = true;
+            }
+
+            foreach (var frozenDagNode in frozenDAGNodes)
+            {
+                frozenDagNode.Data.System.ExecuteAG();
+            }
         }
     }
 
-    private ParameterInfo[] AnalyzeSystem(ISystem system)
+    private SystemParameterInfo[] AnalyzeSystem(ISystem system)
     {
         var type = system.GetType();
-        var method = type.GetMethod("Execute");
+        var method = type.GetMethod("Execute", BindingFlags.Public | BindingFlags.Instance);
         var parameters = method!.GetParameters();
 
         foreach (var param in parameters)
@@ -111,6 +128,31 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
             typeRegistry.GetOrRegister(component.GetType());
         }
 
-        return parameters;
+        return parameters.Select(x =>
+                new SystemParameterInfo(x.ParameterType,
+                    x.CustomAttributes.Any(a => a.AttributeType == typeof(ReadOnly))))
+            .ToArray();
+    }
+
+    private static bool CanAddAfterSystem(SystemInfo info, SystemInfo tryAddAfterInfo)
+    {
+        var intersected = info.Parameters.Intersect(tryAddAfterInfo.Parameters,
+            EqualityComparer<SystemParameterInfo>.Create((a, b) =>
+            {
+                var same = a!.Type == b!.Type;
+                if (same && a.ReadOnly && b.ReadOnly)
+                {
+                    return false;
+                }
+
+                return same;
+            })).ToArray();
+
+        if (intersected.Length > 0)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

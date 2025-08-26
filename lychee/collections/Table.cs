@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace lychee.collections;
@@ -92,6 +93,26 @@ public sealed class Table : IDisposable
         return chunk;
     }
 
+    internal IEnumerable<nint> IterateOverType(int typeIdx)
+    {
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+
+        foreach (var chunk in chunks)
+        {
+            nint ptr;
+
+            unsafe
+            {
+                ptr = (nint)((byte*)chunk.Data + typeInfo.Offset * chunkCapacity);
+            }
+
+            for (var i = 0; i < chunk.Size; i++)
+            {
+                yield return ptr + typeInfo.Size * i;
+            }
+        }
+    }
+
 #endregion
 
 #region IDisposable Member
@@ -141,4 +162,17 @@ public struct MemoryChunk(int capacity) : IDisposable
     }
 
 #endregion
+}
+
+public sealed class TableIterator<T> : IEnumerable<T>
+{
+    public IEnumerator<T> GetEnumerator()
+    {
+        throw new NotImplementedException();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 }

@@ -37,3 +37,10 @@ public sealed class ResourcePool
         }
     }
 }
+
+public abstract class ResBase;
+
+public sealed class Res<T>(T value) : ResBase
+{
+    public T Value = value;
+}

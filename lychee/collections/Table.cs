@@ -108,7 +108,8 @@ public sealed class Table : IDisposable
 
             for (var i = 0; i < chunk.Size; i++)
             {
-                yield return ptr + typeInfo.Size * i;
+                yield return ptr;
+                ptr += typeInfo.Size;
             }
         }
     }
@@ -126,6 +127,80 @@ public sealed class Table : IDisposable
     }
 
 #endregion
+
+    internal readonly struct TableIterable(Table table, int typeIdx) : IEnumerable<nint>
+    {
+        private readonly TypeInfo info = table.Layout.TypeInfoList[typeIdx];
+
+        internal struct Iterator(Table table, TypeInfo info) : IEnumerator<nint>
+        {
+            private nint current;
+
+            private nint chunkEnd;
+
+            private int chunkIdx;
+
+            public bool MoveNext()
+            {
+                if (current == chunkEnd)
+                {
+                    if (chunkIdx < table.chunks.Count)
+                    {
+                        chunkIdx++;
+                        var chunk = table.chunks[chunkIdx];
+                        unsafe
+                        {
+                            current = (nint)((byte*)chunk.Data + info.Offset * table.chunkCapacity);
+                            chunkEnd = current + chunk.Size * info.Size;
+                        }
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    current += info.Size;
+                }
+
+                return true;
+            }
+
+            public void Reset()
+            {
+                var chunk = table.chunks[0];
+                unsafe
+                {
+                    current = (nint)((byte*)chunk.Data + info.Offset * table.chunkCapacity);
+                    chunkEnd = current + chunk.Size * info.Size;
+                }
+            }
+
+            nint IEnumerator<nint>.Current => current;
+
+            object IEnumerator.Current => current;
+
+            public void Dispose()
+            {
+            }
+        }
+
+        public IEnumerator<nint> GetEnumerator()
+        {
+            return new Iterator(table, info);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    internal IEnumerable<nint> IterateOverType2(int typeIdx)
+    {
+        return new TableIterable(this, typeIdx);
+    }
 }
 
 public struct MemoryChunk(int capacity) : IDisposable
@@ -162,17 +237,4 @@ public struct MemoryChunk(int capacity) : IDisposable
     }
 
 #endregion
-}
-
-public sealed class TableIterator<T> : IEnumerable<T>
-{
-    public IEnumerator<T> GetEnumerator()
-    {
-        throw new NotImplementedException();
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
-    }
 }

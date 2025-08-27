@@ -61,6 +61,11 @@ public sealed class ArchetypeManager : IDisposable
         return archetypes[id];
     }
 
+    public void AddEntityInfo(EntityInfo entityInfo)
+    {
+        entitiesInfo.Add(entityInfo);
+    }
+
     public EntityInfo GetEntityInfo(Entity entity)
     {
         Debug.Assert(entity.ID >= 0 && entity.ID < entitiesInfo.Count);
@@ -88,6 +93,22 @@ public sealed class ArchetypeManager : IDisposable
 
 public sealed class Archetype : IDisposable
 {
+#region Fields
+
+    public readonly int ID;
+
+    public readonly int[] TypeIdList;
+
+    private readonly Table table;
+
+    private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
+
+    private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
+
+    private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
+
+#endregion
+
 #region Constructors
 
     public Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
@@ -110,25 +131,8 @@ public sealed class Archetype : IDisposable
             offset += info.Size;
         }
 
-        var layout = new TableLayout(typeInfoList);
-        table = new Table(layout);
+        table = new(new(typeInfoList));
     }
-
-#endregion
-
-#region Fields
-
-    public readonly int ID;
-
-    public readonly int[] TypeIdList;
-
-    private readonly Table table;
-
-    private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
-
-    private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
-
-    private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
 
 #endregion
 
@@ -210,9 +214,8 @@ public sealed class Archetype : IDisposable
         }
     }
 
-    internal unsafe void* GetEntityCompData(int index, Entity entity)
+    internal void GetIterOfComp<T>() where T : unmanaged
     {
-        return null;
     }
 
 #endregion

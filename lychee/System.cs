@@ -2,7 +2,7 @@
 
 namespace lychee;
 
-internal sealed class SystemParameterInfo(Type type, bool readOnly)
+internal struct SystemParameterInfo(Type type, bool readOnly)
 {
     public readonly Type Type = type;
 
@@ -14,4 +14,13 @@ internal struct SystemInfo(ISystem system, SystemParameterInfo[] parameters)
     internal readonly ISystem System = system;
 
     internal readonly SystemParameterInfo[] Parameters = parameters;
+}
+
+public sealed class SystemDescriptor
+{
+    public Type[] AllFilter = [];
+
+    public Type[] AnyFilter = [];
+
+    public Type[] NoneFilter = [];
 }

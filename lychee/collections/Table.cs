@@ -4,11 +4,32 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
-public struct TableLayout(TypeInfo[] typeInfoList)
+public struct TableLayout
 {
-    public readonly int MaxAlignment = typeInfoList.Length == 0 ? 0 : typeInfoList.Max(x => x.Alignment);
+    public readonly int MaxAlignment;
 
-    public readonly TypeInfo[] TypeInfoList = typeInfoList;
+    public readonly TypeInfo[] TypeInfoList;
+
+    public TableLayout(TypeInfo[] typeInfoList)
+    {
+        var offset = 0;
+        for (var i = 0; i < typeInfoList.Length; i++)
+        {
+            var info = typeInfoList[i];
+            if (offset % info.Alignment != 0)
+            {
+                offset += info.Alignment - (offset % info.Alignment);
+            }
+
+            info.Offset = offset;
+            typeInfoList[i] = info;
+
+            offset += info.Size;
+        }
+
+        MaxAlignment = typeInfoList.Length == 0 ? 0 : typeInfoList.Max(x => x.Alignment);
+        TypeInfoList = typeInfoList;
+    }
 }
 
 public sealed class Table : IDisposable

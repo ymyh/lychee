@@ -5,14 +5,15 @@
 /// </summary>
 public interface ISystem
 {
-    public IComponent[] AllFilter { get; }
-
-    public IComponent[] AnyFilter { get; }
-
-    public IComponent[] NoneFilter { get; }
+    /// <summary>
+    /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing <br/>
+    /// Auto configure the system, called when initializing or Archetype change
+    /// </summary>
+    public void ConfigureAG();
 
     /// <summary>
-    /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing
+    /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing <br/>
+    /// Execute the system
     /// </summary>
     public void ExecuteAG();
 }

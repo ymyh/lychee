@@ -61,6 +61,50 @@ public sealed class ArchetypeManager : IDisposable
         return archetypes[id];
     }
 
+    public Archetype[] GetArchetypeByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter, Type[] requires)
+    {
+        return archetypes.Where(a =>
+        {
+            var ret = true;
+
+            foreach (var type in requires)
+            {
+                var typeId = typeRegistry.GetOrRegister(type);
+                ret &= a.TypeIdList.Contains(typeId);
+            }
+
+            foreach (var type in allFilter)
+            {
+                var typeId = typeRegistry.GetOrRegister(type);
+                ret &= a.TypeIdList.Contains(typeId);
+            }
+
+            return ret;
+        }).Where(a =>
+        {
+            var ret = anyFilter.Length == 0;
+
+            foreach (var type in anyFilter)
+            {
+                var typeId = typeRegistry.GetOrRegister(type);
+                ret |= a.TypeIdList.Contains(typeId);
+            }
+
+            return ret;
+        }).Where(a =>
+        {
+            var ret = true;
+
+            foreach (var type in noneFilter)
+            {
+                var typeId = typeRegistry.GetOrRegister(type);
+                ret &= !a.TypeIdList.Contains(typeId);
+            }
+
+            return ret;
+        }).ToArray();
+    }
+
     public void AddEntityInfo(EntityInfo entityInfo)
     {
         entitiesInfo.Add(entityInfo);
@@ -91,48 +135,21 @@ public sealed class ArchetypeManager : IDisposable
 #endregion
 }
 
-public sealed class Archetype : IDisposable
+public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList) : IDisposable
 {
 #region Fields
 
-    public readonly int ID;
+    public readonly int ID = id;
 
-    public readonly int[] TypeIdList;
+    public readonly int[] TypeIdList = typeIdList;
 
-    private readonly Table table;
+    private readonly Table table = new(new(typeInfoList));
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
 
     private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
 
     private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
-
-#endregion
-
-#region Constructors
-
-    public Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
-    {
-        ID = id;
-        TypeIdList = typeIdList;
-
-        var offset = 0;
-        for (var i = 0; i < typeInfoList.Length; i++)
-        {
-            var info = typeInfoList[i];
-            if (offset % info.Alignment != 0)
-            {
-                offset += info.Alignment - (offset % info.Alignment);
-            }
-
-            info.Offset = offset;
-            typeInfoList[i] = info;
-
-            offset += info.Size;
-        }
-
-        table = new(new(typeInfoList));
-    }
 
 #endregion
 
@@ -216,6 +233,7 @@ public sealed class Archetype : IDisposable
 
     internal void GetIterOfComp<T>() where T : unmanaged
     {
+        var type = typeof(T);
     }
 
 #endregion

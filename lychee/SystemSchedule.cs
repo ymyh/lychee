@@ -47,11 +47,11 @@ public sealed class SystemSchedules
     }
 }
 
-public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, ResourcePool resourcePool) : ISchedule
+public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func<bool> shouldExecute) : ISchedule
 {
     public string Name { get; } = name;
 
-    public Func<ResourcePool, bool> ShouldExecute = _ => true;
+    private readonly Func<bool> shouldExecute = shouldExecute;
 
     private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
@@ -61,7 +61,12 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
 
     public T AddSystem<[SystemConcept] [SealedRequired] T>(T system) where T : ISystem
     {
-        var systemParamInfo = AnalyzeSystem(system);
+        return AddSystem(system, new SystemDescriptor());
+    }
+
+    public T AddSystem<[SystemConcept] [SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
+    {
+        var systemParamInfo = AnalyzeSystem(system, descriptor);
         var node = executionGraph.AddNode(new(new(system, systemParamInfo)));
 
         isFrozen = false;
@@ -74,9 +79,13 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
         var list = executionGraph.AsList();
         foreach (var n in list)
         {
-            if (CanAddAfterSystem(n.Data, node.Data))
+            if (!CanParallelWithSystem(n.Data, node.Data))
             {
                 executionGraph.AddEdge(n, node);
+            }
+            else if (n.Parents.Count > 0)
+            {
+                executionGraph.AddEdge(n.Parents[0], node);
             }
         }
 
@@ -85,7 +94,7 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
 
     public void Execute()
     {
-        if (ShouldExecute(resourcePool))
+        if (shouldExecute())
         {
             if (!isFrozen)
             {
@@ -100,10 +109,10 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
         }
     }
 
-    private SystemParameterInfo[] AnalyzeSystem(ISystem system)
+    private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
     {
-        var type = system.GetType();
-        var method = type.GetMethod("Execute", BindingFlags.Public | BindingFlags.Instance);
+        var sysType = system.GetType();
+        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Instance);
         var parameters = method!.GetParameters();
 
         foreach (var param in parameters)
@@ -113,33 +122,35 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Reso
                 : param.ParameterType);
         }
 
-        foreach (var component in system.AllFilter)
+        foreach (var type in descriptor.AllFilter)
         {
-            typeRegistry.GetOrRegister(component.GetType());
+            typeRegistry.GetOrRegister(type);
         }
 
-        foreach (var component in system.AnyFilter)
+        foreach (var type in descriptor.AnyFilter)
         {
-            typeRegistry.GetOrRegister(component.GetType());
+            typeRegistry.GetOrRegister(type);
         }
 
-        foreach (var component in system.NoneFilter)
+        foreach (var type in descriptor.NoneFilter)
         {
-            typeRegistry.GetOrRegister(component.GetType());
+            typeRegistry.GetOrRegister(type);
         }
 
-        return parameters.Select(x =>
+        return parameters.Where(x =>
+                x.CustomAttributes.All(a =>
+                    a.AttributeType != typeof(ResReadOnly) && a.AttributeType != typeof(ResMut))).Select(x =>
                 new SystemParameterInfo(x.ParameterType,
                     x.CustomAttributes.Any(a => a.AttributeType == typeof(ReadOnly))))
             .ToArray();
     }
 
-    private static bool CanAddAfterSystem(SystemInfo info, SystemInfo tryAddAfterInfo)
+    private static bool CanParallelWithSystem(SystemInfo info, SystemInfo tryAddAfterInfo)
     {
         var intersected = info.Parameters.Intersect(tryAddAfterInfo.Parameters,
             EqualityComparer<SystemParameterInfo>.Create((a, b) =>
             {
-                var same = a!.Type == b!.Type;
+                var same = a.Type == b.Type;
                 if (same && a.ReadOnly && b.ReadOnly)
                 {
                     return false;

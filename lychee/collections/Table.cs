@@ -114,7 +114,7 @@ public sealed class Table : IDisposable
         return chunk;
     }
 
-    internal IEnumerable<nint> IterateOverType(int typeIdx)
+    internal IEnumerable<nint> IterateOverComp(int typeIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
@@ -133,6 +133,11 @@ public sealed class Table : IDisposable
                 ptr += typeInfo.Size;
             }
         }
+    }
+
+    internal Span<MemoryChunk> GetChunkSpan()
+    {
+        return CollectionsMarshal.AsSpan(chunks);
     }
 
 #endregion
@@ -218,7 +223,7 @@ public sealed class Table : IDisposable
         }
     }
 
-    internal IEnumerable<nint> IterateOverType2(int typeIdx)
+    internal IEnumerable<nint> IterateOverType(int typeIdx)
     {
         return new TableIterable(this, typeIdx);
     }

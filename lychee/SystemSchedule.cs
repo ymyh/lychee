@@ -112,8 +112,8 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
     private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
-        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Instance);
-        var parameters = method!.GetParameters();
+        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Instance)!;
+        var parameters = method.GetParameters();
 
         foreach (var param in parameters)
         {

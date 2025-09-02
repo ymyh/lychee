@@ -32,7 +32,7 @@ public sealed class ArchetypeManager : IDisposable
 
         var id = archetypes.Count;
         var typeInfoList = array.Select(id => typeRegistry.GetTypeInfo(id).Item2).ToArray();
-        archetypes.Add(new Archetype(id, array, typeInfoList));
+        archetypes.Add(new(id, array, typeInfoList, typeRegistry));
 
         return id;
     }
@@ -135,7 +135,8 @@ public sealed class ArchetypeManager : IDisposable
 #endregion
 }
 
-public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList) : IDisposable
+public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistry typeRegistry)
+    : IDisposable
 {
 #region Fields
 
@@ -231,9 +232,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         }
     }
 
-    internal void GetIterOfComp<T>() where T : unmanaged
+    internal IEnumerable<nint> IterateOverComp<T>() where T : unmanaged
     {
-        var type = typeof(T);
+        var typeId = typeRegistry.GetTypeId<T>()!.Value;
+        var typeIdx = GetTypeIndex(typeId);
+
+        return table.IterateOverComp(typeIdx);
     }
 
 #endregion

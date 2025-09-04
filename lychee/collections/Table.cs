@@ -1,5 +1,4 @@
-﻿using System.Collections;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace lychee.collections;
@@ -34,13 +33,13 @@ public struct TableLayout
 
 public sealed class Table : IDisposable
 {
-    private readonly int chunkCapacity;
+    public readonly TableLayout Layout;
 
-    private readonly List<MemoryChunk> chunks = [];
+    private readonly int chunkCapacity;
 
     private readonly int chunkSizeBytes;
 
-    public readonly TableLayout Layout;
+    private readonly List<MemoryChunk> chunks = [];
 
 #region Constructors
 
@@ -66,9 +65,9 @@ public sealed class Table : IDisposable
 
 #endregion
 
-#region Internal methods
+#region Public methods
 
-    internal unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk) where T : unmanaged
+    public unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk) where T : unmanaged
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
         var ptr = (byte*)chunk.Data;
@@ -76,7 +75,7 @@ public sealed class Table : IDisposable
         return (T*)(ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk));
     }
 
-    internal unsafe void* GetPtr(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
+    public unsafe void* GetPtr(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
         var ptr = (byte*)chunk.Data;
@@ -84,7 +83,7 @@ public sealed class Table : IDisposable
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
-    internal (MemoryChunk, int) GetChunkAndIndex(int idx)
+    public (MemoryChunk, int) GetChunkAndIndex(int idx)
     {
         Debug.Assert(idx >= 0);
 
@@ -99,7 +98,7 @@ public sealed class Table : IDisposable
         return (chunks[chunkIdx], idxInChunk);
     }
 
-    internal MemoryChunk GetOrCreateLastChunk()
+    public MemoryChunk GetOrCreateLastChunk()
     {
         if (chunks.Count > 0)
         {
@@ -114,7 +113,7 @@ public sealed class Table : IDisposable
         return chunk;
     }
 
-    internal IEnumerable<nint> IterateOverComp(int typeIdx)
+    public IEnumerable<nint> IterateOverComp(int typeIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
@@ -135,7 +134,7 @@ public sealed class Table : IDisposable
         }
     }
 
-    internal Span<MemoryChunk> GetChunkSpan()
+    public Span<MemoryChunk> GetChunkSpan()
     {
         return CollectionsMarshal.AsSpan(chunks);
     }
@@ -153,80 +152,6 @@ public sealed class Table : IDisposable
     }
 
 #endregion
-
-    internal readonly struct TableIterable(Table table, int typeIdx) : IEnumerable<nint>
-    {
-        private readonly TypeInfo info = table.Layout.TypeInfoList[typeIdx];
-
-        internal struct Iterator(Table table, TypeInfo info) : IEnumerator<nint>
-        {
-            private nint current;
-
-            private nint chunkEnd;
-
-            private int chunkIdx;
-
-            public bool MoveNext()
-            {
-                if (current == chunkEnd)
-                {
-                    if (chunkIdx < table.chunks.Count)
-                    {
-                        chunkIdx++;
-                        var chunk = table.chunks[chunkIdx];
-                        unsafe
-                        {
-                            current = (nint)((byte*)chunk.Data + info.Offset * table.chunkCapacity);
-                            chunkEnd = current + chunk.Size * info.Size;
-                        }
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    current += info.Size;
-                }
-
-                return true;
-            }
-
-            public void Reset()
-            {
-                var chunk = table.chunks[0];
-                unsafe
-                {
-                    current = (nint)((byte*)chunk.Data + info.Offset * table.chunkCapacity);
-                    chunkEnd = current + chunk.Size * info.Size;
-                }
-            }
-
-            nint IEnumerator<nint>.Current => current;
-
-            object IEnumerator.Current => current;
-
-            public void Dispose()
-            {
-            }
-        }
-
-        public IEnumerator<nint> GetEnumerator()
-        {
-            return new Iterator(table, info);
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-    }
-
-    internal IEnumerable<nint> IterateOverType(int typeIdx)
-    {
-        return new TableIterable(this, typeIdx);
-    }
 }
 
 public struct MemoryChunk(int capacity) : IDisposable
@@ -239,7 +164,9 @@ public struct MemoryChunk(int capacity) : IDisposable
 
     public bool isFull => Size == Capacity;
 
-    internal void Alloc(int sizeBytes)
+#region Public Methods
+
+    public void Alloc(int sizeBytes)
     {
         unsafe
         {
@@ -247,6 +174,8 @@ public struct MemoryChunk(int capacity) : IDisposable
             Data = NativeMemory.AlignedAlloc((nuint)sizeBytes, 64);
         }
     }
+
+#endregion
 
 #region IDisposable Member
 

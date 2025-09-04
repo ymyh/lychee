@@ -144,7 +144,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public readonly int[] TypeIdList = typeIdList;
 
-    private readonly Table table = new(new(typeInfoList));
+    internal readonly Table Table = new(new(typeInfoList));
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
 
@@ -158,7 +158,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public void Dispose()
     {
-        table.Dispose();
+        Table.Dispose();
     }
 
 #endregion
@@ -219,15 +219,15 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             dstArchetypeCommCompIndices.Add(archetype.ID, commCompIndices);
         }
 
-        var (chunk, idx) = table.GetChunkAndIndex(info.ArchetypeIdx);
+        var (chunk, idx) = Table.GetChunkAndIndex(info.ArchetypeIdx);
         foreach (var index in commCompIndices)
         {
             unsafe
             {
-                var src = table.GetPtr(index, ref chunk, idx);
-                var dst = archetype.table.GetPtr(index, ref chunk, chunk.Size);
+                var src = Table.GetPtr(index, ref chunk, idx);
+                var dst = archetype.Table.GetPtr(index, ref chunk, chunk.Size);
 
-                NativeMemory.Copy(src, dst, (nuint)table.Layout.TypeInfoList[index].Size);
+                NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
             }
         }
     }
@@ -237,12 +237,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         var typeId = typeRegistry.GetTypeId<T>()!.Value;
         var typeIdx = GetTypeIndex(typeId);
 
-        return table.IterateOverComp(typeIdx);
+        return Table.IterateOverComp(typeIdx);
     }
 
 #endregion
 
-#region Private Methods
+#region Public Methods
 
 #endregion
 }

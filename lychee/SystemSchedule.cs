@@ -5,13 +5,6 @@ using lychee.interfaces;
 
 namespace lychee;
 
-public interface ISchedule
-{
-    public string Name { get; }
-
-    public void Execute();
-}
-
 public sealed class SystemSchedules
 {
     private readonly List<ISchedule> schedules = [];
@@ -45,13 +38,19 @@ public sealed class SystemSchedules
             schedule.Execute();
         }
     }
+
+    public void Configure()
+    {
+        foreach (var schedule in schedules)
+        {
+            schedule.Configure();
+        }
+    }
 }
 
 public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func<bool> shouldExecute) : ISchedule
 {
     public string Name { get; } = name;
-
-    private readonly Func<bool> shouldExecute = shouldExecute;
 
     private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
@@ -61,7 +60,7 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
 
     public T AddSystem<[SystemConcept] [SealedRequired] T>(T system) where T : ISystem
     {
-        return AddSystem(system, new SystemDescriptor());
+        return AddSystem(system, new());
     }
 
     public T AddSystem<[SystemConcept] [SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
@@ -90,23 +89,6 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
         }
 
         return system;
-    }
-
-    public void Execute()
-    {
-        if (shouldExecute())
-        {
-            if (!isFrozen)
-            {
-                frozenDAGNodes = executionGraph.AsList().Freeze();
-                isFrozen = true;
-            }
-
-            foreach (var frozenDagNode in frozenDAGNodes)
-            {
-                frozenDagNode.Data.System.ExecuteAG();
-            }
-        }
     }
 
     private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
@@ -140,8 +122,7 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
         return parameters.Where(x =>
                 x.CustomAttributes.All(a =>
                     a.AttributeType != typeof(ResReadOnly) && a.AttributeType != typeof(ResMut))).Select(x =>
-                new SystemParameterInfo(x.ParameterType,
-                    x.CustomAttributes.Any(a => a.AttributeType == typeof(ReadOnly))))
+                new SystemParameterInfo(x.ParameterType, x.IsIn))
             .ToArray();
     }
 
@@ -159,11 +140,38 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
                 return same;
             })).ToArray();
 
-        if (intersected.Length > 0)
-        {
-            return false;
-        }
-
-        return true;
+        return intersected.Length == 0;
     }
+
+#region ISchedule Members
+
+    public void Execute()
+    {
+        if (shouldExecute())
+        {
+            if (!isFrozen)
+            {
+                frozenDAGNodes = executionGraph.AsList().Freeze();
+                isFrozen = true;
+            }
+
+            foreach (var frozenDagNode in frozenDAGNodes)
+            {
+                frozenDagNode.Data.System.ExecuteAG();
+            }
+        }
+    }
+
+    public void Configure()
+    {
+        frozenDAGNodes = executionGraph.AsList().Freeze();
+        isFrozen = true;
+
+        foreach (var frozenDagNode in frozenDAGNodes)
+        {
+            frozenDagNode.Data.System.ConfigureAG();
+        }
+    }
+
+#endregion
 }

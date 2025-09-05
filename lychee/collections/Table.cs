@@ -134,9 +134,21 @@ public sealed class Table : IDisposable
         }
     }
 
-    public Span<MemoryChunk> GetChunkSpan()
+    public IEnumerable<(nint, int)> IterateOfTypeAmongChunk(int typeIdx)
     {
-        return CollectionsMarshal.AsSpan(chunks);
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+
+        foreach (var chunk in chunks)
+        {
+            nint ptr;
+
+            unsafe
+            {
+                ptr = (nint)chunk.Data + typeInfo.Offset * chunkCapacity;
+            }
+
+            yield return (ptr, chunk.Size);
+        }
     }
 
 #endregion

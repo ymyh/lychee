@@ -61,25 +61,15 @@ public sealed class ArchetypeManager : IDisposable
         return archetypes[id];
     }
 
-    public Archetype[] GetArchetypeByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter, Type[] requires)
+    public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
+        Type[] requires)
     {
         return archetypes.Where(a =>
         {
-            var ret = true;
-
-            foreach (var type in requires)
-            {
-                var typeId = typeRegistry.GetOrRegister(type);
-                ret &= a.TypeIdList.Contains(typeId);
-            }
-
-            foreach (var type in allFilter)
-            {
-                var typeId = typeRegistry.GetOrRegister(type);
-                ret &= a.TypeIdList.Contains(typeId);
-            }
-
-            return ret;
+            var ret = requires.Select(type => typeRegistry.GetOrRegister(type))
+                .Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+            return allFilter.Select(type => typeRegistry.GetOrRegister(type))
+                .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
         }).Where(a =>
         {
             var ret = anyFilter.Length == 0;
@@ -232,17 +222,22 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
-    internal IEnumerable<nint> IterateOverComp<T>() where T : unmanaged
+#endregion
+
+#region Public Methods
+
+    public IEnumerable<(nint ptr, int size)> GetAllDataOfType<T>() where T : unmanaged
     {
         var typeId = typeRegistry.GetTypeId<T>()!.Value;
         var typeIdx = GetTypeIndex(typeId);
 
-        return Table.IterateOverComp(typeIdx);
+        return GetAllDataOfType(typeIdx);
     }
 
-#endregion
-
-#region Public Methods
+    public IEnumerable<(nint ptr, int size)> GetAllDataOfType(int typeIdx)
+    {
+        return Table.IterateOfTypeAmongChunk(typeIdx);
+    }
 
 #endregion
 }

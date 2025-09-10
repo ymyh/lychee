@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
@@ -83,6 +82,15 @@ public sealed class Table : IDisposable
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
+    public unsafe void* GetLastPtr(int typeIdx, int chunkIdx)
+    {
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+        var view =  chunkViews[chunkIdx];
+        var ptr = (byte*)view.Data;
+
+        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * view.Size);
+    }
+
     public (int, int) GetChunkAndIndex(int idx)
     {
         Debug.Assert(idx >= 0);
@@ -105,7 +113,7 @@ public sealed class Table : IDisposable
             return chunkViews.Count - 1;
         }
 
-        var view = new TableView();
+        var view = new TableView(chunkCapacity);
         view.Chunk.Alloc(chunkSizeBytes);
 
         chunkViews.Add(view);
@@ -145,10 +153,8 @@ public sealed class Table : IDisposable
 #endregion
 }
 
-public struct TableView(TableLayout layout, int capacity) : IDisposable
+public struct TableView(int capacity) : IDisposable
 {
-    private readonly TableLayout layout = layout;
-
     public MemoryChunk Chunk = new();
 
     public int Size = 0;
@@ -165,40 +171,6 @@ public struct TableView(TableLayout layout, int capacity) : IDisposable
     public void Dispose()
     {
         Chunk.Dispose();
-    }
-
-#endregion
-}
-
-public struct MemoryChunk() : IDisposable
-{
-    public unsafe void* Data { get; private set; } = null;
-
-#region Public Methods
-
-    public void Alloc(int sizeBytes)
-    {
-        unsafe
-        {
-            Debug.Assert(Data == null);
-            Data = NativeMemory.AlignedAlloc((nuint)sizeBytes, 64);
-        }
-    }
-
-#endregion
-
-#region IDisposable Member
-
-    public void Dispose()
-    {
-        unsafe
-        {
-            if (Data != null)
-            {
-                NativeMemory.AlignedFree(Data);
-                Data = null;
-            }
-        }
     }
 
 #endregion

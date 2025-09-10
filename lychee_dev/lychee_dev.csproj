@@ -14,4 +14,8 @@
         <ProjectReference Include="..\lychee_sg\lychee_sg.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
     </ItemGroup>
 
+    <ItemGroup>
+      <PackageReference Include="BenchmarkDotNet" Version="0.15.2" />
+    </ItemGroup>
+
 </Project>

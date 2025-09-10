@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
 using lychee.utils;
@@ -133,7 +134,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public readonly int[] TypeIdList = typeIdList;
 
-    internal readonly Table Table = new(new(typeInfoList));
+    internal readonly ReaderWriterLockSlim ArchetypeLock = new();
+
+    private readonly Table Table = new(new(typeInfoList));
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
 
@@ -213,10 +216,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         {
             unsafe
             {
-                // var src = Table.GetPtr(index, chunkIdx, idx);
-                // var dst = archetype.Table.GetPtr(index, chunkIdx, chunk.Size);
-                //
-                // NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
+                var src = Table.GetPtr(index, chunkIdx, idx);
+                var dst = archetype.Table.GetLastPtr(index, chunkIdx);
+
+                NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
             }
         }
     }

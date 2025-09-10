@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
-public struct TableLayout
+public sealed class TableLayout
 {
     public readonly int MaxAlignment;
 
@@ -39,7 +39,7 @@ public sealed class Table : IDisposable
 
     private readonly int chunkSizeBytes;
 
-    private readonly List<MemoryChunk> chunks = [];
+    private readonly List<TableView> chunkViews = [];
 
 #region Constructors
 
@@ -67,87 +67,66 @@ public sealed class Table : IDisposable
 
 #region Public methods
 
-    public unsafe T* GetPtr<T>(int typeIdx, ref MemoryChunk chunk, int indexInChunk) where T : unmanaged
+    public unsafe T* GetPtr<T>(int typeIdx, int chunkIdx, int indexInChunk) where T : unmanaged
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*)chunk.Data;
+        var ptr = (byte*)chunkViews[chunkIdx].Data;
 
         return (T*)(ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk));
     }
 
-    public unsafe void* GetPtr(int typeIdx, ref MemoryChunk chunk, int indexInChunk)
+    public unsafe void* GetPtr(int typeIdx, int chunkIdx, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*)chunk.Data;
+        var ptr = (byte*)chunkViews[chunkIdx].Data;
 
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
-    public (MemoryChunk, int) GetChunkAndIndex(int idx)
+    public (int, int) GetChunkAndIndex(int idx)
     {
         Debug.Assert(idx >= 0);
 
         var chunkIdx = idx / chunkCapacity;
 
-        Debug.Assert(chunkIdx < chunks.Count);
+        Debug.Assert(chunkIdx < chunkViews.Count);
 
         var idxInChunk = idx % chunkCapacity;
 
-        Debug.Assert(idxInChunk < chunks[chunkIdx].Size);
+        Debug.Assert(idxInChunk < chunkViews[chunkIdx].Size);
 
-        return (chunks[chunkIdx], idxInChunk);
+        return (chunkIdx, idxInChunk);
     }
 
-    public MemoryChunk GetOrCreateLastChunk()
+    public int GetOrCreateLastChunk()
     {
-        if (chunks.Count > 0)
+        if (chunkViews.Count > 0)
         {
-            return chunks[^1];
+            return chunkViews.Count - 1;
         }
 
-        var chunk = new MemoryChunk();
-        chunk.Alloc(chunkSizeBytes);
+        var view = new TableView();
+        view.Chunk.Alloc(chunkSizeBytes);
 
-        chunks.Add(chunk);
+        chunkViews.Add(view);
 
-        return chunk;
-    }
-
-    public IEnumerable<nint> IterateOverComp(int typeIdx)
-    {
-        var typeInfo = Layout.TypeInfoList[typeIdx];
-
-        foreach (var chunk in chunks)
-        {
-            nint ptr;
-
-            unsafe
-            {
-                ptr = (nint)((byte*)chunk.Data + typeInfo.Offset * chunkCapacity);
-            }
-
-            for (var i = 0; i < chunk.Size; i++)
-            {
-                yield return ptr;
-                ptr += typeInfo.Size;
-            }
-        }
+        return chunkViews.Count - 1;
     }
 
     public IEnumerable<(nint, int)> IterateOfTypeAmongChunk(int typeIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
-        foreach (var chunk in chunks)
+        foreach (var view in chunkViews)
         {
             nint ptr;
 
             unsafe
             {
-                ptr = (nint)chunk.Data + typeInfo.Offset * chunkCapacity;
+                ptr = (nint)view.Data + typeInfo.Offset * chunkCapacity;
             }
 
-            yield return (ptr, chunk.Size);
+            yield return (ptr, view.Size);
         }
     }
 
@@ -157,24 +136,43 @@ public sealed class Table : IDisposable
 
     public void Dispose()
     {
-        foreach (var memoryChunk in chunks)
+        foreach (var view in chunkViews)
         {
-            memoryChunk.Dispose();
+            view.Dispose();
         }
     }
 
 #endregion
 }
 
-public struct MemoryChunk(int capacity) : IDisposable
+public struct TableView(TableLayout layout, int capacity) : IDisposable
 {
-    public unsafe void* Data { get; private set; } = null;
+    private readonly TableLayout layout = layout;
+
+    public MemoryChunk Chunk = new();
 
     public int Size = 0;
 
     public readonly int Capacity = capacity;
 
     public bool isFull => Size == Capacity;
+
+    public unsafe void* Data => Chunk.Data;
+
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        Chunk.Dispose();
+    }
+
+#endregion
+}
+
+public struct MemoryChunk() : IDisposable
+{
+    public unsafe void* Data { get; private set; } = null;
 
 #region Public Methods
 

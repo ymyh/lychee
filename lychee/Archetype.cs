@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
 using lychee.utils;
@@ -209,15 +208,15 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             dstArchetypeCommCompIndices.Add(archetype.ID, commCompIndices);
         }
 
-        var (chunk, idx) = Table.GetChunkAndIndex(info.ArchetypeIdx);
+        var (chunkIdx, idx) = Table.GetChunkAndIndex(info.ArchetypeIdx);
         foreach (var index in commCompIndices)
         {
             unsafe
             {
-                var src = Table.GetPtr(index, ref chunk, idx);
-                var dst = archetype.Table.GetPtr(index, ref chunk, chunk.Size);
-
-                NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
+                // var src = Table.GetPtr(index, chunkIdx, idx);
+                // var dst = archetype.Table.GetPtr(index, chunkIdx, chunk.Size);
+                //
+                // NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
             }
         }
     }

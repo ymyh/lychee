@@ -4,25 +4,32 @@ public sealed class EntityCommandBuffer
 {
 #region Fields
 
-    private ArchetypeManager archetypeManager;
+    internal Archetype SrcArchetype;
 
-    private TypeRegistry typeRegistry;
+    internal readonly ArchetypeManager ArchetypeManager;
+
+    internal readonly TypeRegistry TypeRegistry;
+
+    internal Dictionary<nint, Archetype> Unnamed = new();
 
 #endregion
 
-#region Methods
+#region Public Methods
 
-    public void AddComponent<T>(Entity entity, in T component) where T : unmanaged
+    public void AddComponent<T>(EntityCommandBuffer buffer, Entity entity, in T component) where T : unmanaged
     {
-        var info = archetypeManager.GetEntityInfo(entity);
-        var src = archetypeManager.GetArchetype(info.ArchetypeId);
-        var typeId = typeRegistry.GetOrRegister(typeof(T));
-        var dst = src.GetInsertCompTargetArchetype(typeId) ?? archetypeManager.GetArchetype(archetypeManager.GetOrCreateArchetype(src.TypeIdList.Append(typeId)));
+        var info = buffer.ArchetypeManager.GetEntityInfo(entity);
+        var typeId = buffer.TypeRegistry.GetOrRegister<T>();
+        var dst = buffer.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
+                  buffer.ArchetypeManager.GetArchetype(
+                      buffer.ArchetypeManager.GetOrCreateArchetype(buffer.SrcArchetype.TypeIdList.Append(typeId)));
+
+        Monitor.Enter(dst);
     }
 
     public void AddComponents<T>(Entity entity, Func<T> func) where T : unmanaged
     {
-
+        func.Method.MethodHandle.GetFunctionPointer();
     }
 
     public void RemoveComponent<T>(Entity entity) where T : unmanaged
@@ -34,4 +41,36 @@ public sealed class EntityCommandBuffer
     }
 
 #endregion
+
+#region Internal Methods
+
+    internal void ChangeSrcArchetype(Archetype archetype)
+    {
+        SrcArchetype = archetype;
+    }
+
+#endregion
+}
+
+public static class EntityCommandBufferExtensions
+{
+    extension(EntityCommandBuffer buffer)
+    {
+        public void AddComponent<T>(Entity entity, in T component) where T : unmanaged
+        {
+            var info = buffer.ArchetypeManager.GetEntityInfo(entity);
+            var typeId = buffer.TypeRegistry.GetOrRegister<T>();
+            var dst = buffer.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
+                      buffer.ArchetypeManager.GetArchetype(
+                          buffer.ArchetypeManager.GetOrCreateArchetype(buffer.SrcArchetype.TypeIdList.Append(typeId)));
+
+            unsafe
+            {
+                delegate* <EntityCommandBuffer, Entity, in T, void> ptr = &AddComponent<T>;
+                buffer.Unnamed.Add((nint)ptr, dst);
+            }
+
+            Monitor.Enter(dst);
+        }
+    }
 }

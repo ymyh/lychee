@@ -134,8 +134,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public readonly int[] TypeIdList = typeIdList;
 
-    internal readonly ReaderWriterLockSlim ArchetypeLock = new();
-
     private readonly Table Table = new(new(typeInfoList));
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();

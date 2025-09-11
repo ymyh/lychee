@@ -132,8 +132,11 @@ public sealed class DirectedAcyclicGraph<T>
 
 public static class DirectedAcyclicGraphExtensions
 {
-    public static FrozenDAGNode<T>[] Freeze<T>(this IList<DAGNode<T>> nodes)
+    extension<T>(IList<DAGNode<T>> nodes)
     {
-        return nodes.Select(x => new FrozenDAGNode<T>(x)).ToArray();
+        public FrozenDAGNode<T>[] Freeze()
+        {
+            return nodes.Select(x => new FrozenDAGNode<T>(x)).ToArray();
+        }
     }
 }

@@ -6,6 +6,10 @@ public sealed class EntityCommandBuffer
 
     internal Archetype SrcArchetype;
 
+    internal Archetype? DstArchetype;
+
+    internal EntityPool EntityPool;
+
     internal readonly ArchetypeManager ArchetypeManager;
 
     internal readonly TypeRegistry TypeRegistry;
@@ -16,20 +20,10 @@ public sealed class EntityCommandBuffer
 
 #region Public Methods
 
-    public void AddComponent<T>(EntityCommandBuffer buffer, Entity entity, in T component) where T : unmanaged
+    public Entity SpawnEntity()
     {
-        var info = buffer.ArchetypeManager.GetEntityInfo(entity);
-        var typeId = buffer.TypeRegistry.GetOrRegister<T>();
-        var dst = buffer.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
-                  buffer.ArchetypeManager.GetArchetype(
-                      buffer.ArchetypeManager.GetOrCreateArchetype(buffer.SrcArchetype.TypeIdList.Append(typeId)));
-
-        Monitor.Enter(dst);
-    }
-
-    public void AddComponents<T>(Entity entity, Func<T> func) where T : unmanaged
-    {
-        func.Method.MethodHandle.GetFunctionPointer();
+        var entity = EntityPool.NewEntity();
+        return entity;
     }
 
     public void RemoveComponent<T>(Entity entity) where T : unmanaged
@@ -54,23 +48,43 @@ public sealed class EntityCommandBuffer
 
 public static class EntityCommandBufferExtensions
 {
-    extension(EntityCommandBuffer buffer)
+    extension(EntityCommandBuffer self)
     {
         public void AddComponent<T>(Entity entity, in T component) where T : unmanaged
         {
-            var info = buffer.ArchetypeManager.GetEntityInfo(entity);
-            var typeId = buffer.TypeRegistry.GetOrRegister<T>();
-            var dst = buffer.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
-                      buffer.ArchetypeManager.GetArchetype(
-                          buffer.ArchetypeManager.GetOrCreateArchetype(buffer.SrcArchetype.TypeIdList.Append(typeId)));
+            nint ptr;
 
-            unsafe
+            if (self.DstArchetype == null)
             {
-                delegate* <EntityCommandBuffer, Entity, in T, void> ptr = &AddComponent<T>;
-                buffer.Unnamed.Add((nint)ptr, dst);
+                unsafe
+                {
+                    delegate* <EntityCommandBuffer, Entity, in T, void> fptr = &AddComponent<T>;
+                    ptr = (nint)fptr;
+                }
+
+                if (self.Unnamed.TryGetValue(ptr, out var value))
+                {
+                    self.DstArchetype = value;
+                }
+                else
+                {
+                    var typeId = self.TypeRegistry.GetOrRegister<T>();
+                    self.DstArchetype = self.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
+                                        self.ArchetypeManager.GetArchetype(
+                                            self.ArchetypeManager.GetOrCreateArchetype(
+                                                self.SrcArchetype.TypeIdList.Append(typeId)));
+                }
             }
 
-            Monitor.Enter(dst);
+            var entityInfo = self.EntityPool.GetEntityInfo(entity);
+
+            if (entityInfo is { } info)
+            {
+            }
+        }
+
+        public void AddComponents<T>(Entity entity, in T component) where T : unmanaged
+        {
         }
     }
 }

@@ -85,7 +85,7 @@ public sealed class Table : IDisposable
     public unsafe void* GetLastPtr(int typeIdx, int chunkIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var view =  chunkViews[chunkIdx];
+        var view = chunkViews[chunkIdx];
         var ptr = (byte*)view.Data;
 
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * view.Size);
@@ -159,9 +159,11 @@ public struct TableView(int capacity) : IDisposable
 
     public int Size = 0;
 
+    public int Reserve = 0;
+
     public readonly int Capacity = capacity;
 
-    public bool isFull => Size == Capacity;
+    public bool isFull => Size + Reserve == Capacity;
 
     public unsafe void* Data => Chunk.Data;
 

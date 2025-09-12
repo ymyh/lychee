@@ -10,6 +10,8 @@ public sealed class ArchetypeManager : IDisposable
 {
     private readonly List<Archetype> archetypes = [];
 
+    private readonly List<Entity> entities = [];
+
     private readonly List<EntityInfo> entitiesInfo = [];
 
     private readonly TypeRegistry typeRegistry;
@@ -95,9 +97,10 @@ public sealed class ArchetypeManager : IDisposable
         }).ToArray();
     }
 
-    public void AddEntityInfo(EntityInfo entityInfo)
+    public void AddEntity(Entity entity)
     {
-        entitiesInfo.Add(entityInfo);
+        entities.Add(entity);
+        entitiesInfo.Add(new(0, 0));
     }
 
     public EntityInfo GetEntityInfo(Entity entity)

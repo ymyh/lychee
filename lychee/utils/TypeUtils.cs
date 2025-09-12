@@ -8,6 +8,18 @@ public static class TypeUtils
     private static readonly MethodInfo? GetTupleTypesMethod =
         typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static);
 
+    private static readonly Type[] TupleTypes =
+    [
+        typeof(ValueTuple<>),
+        typeof(ValueTuple<,>),
+        typeof(ValueTuple<,,>),
+        typeof(ValueTuple<,,,>),
+        typeof(ValueTuple<,,,,>),
+        typeof(ValueTuple<,,,,,>),
+        typeof(ValueTuple<,,,,,,>),
+        typeof(ValueTuple<,,,,,,,>),
+    ];
+
     /// <summary>
     /// Recursively gets tuple type as list.
     /// </summary>
@@ -41,6 +53,16 @@ public static class TypeUtils
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Check if a type is a value tuple.
+    /// </summary>
+    /// <param name="t"></param>
+    /// <returns></returns>
+    public static bool IsValueTuple(Type t)
+    {
+        return TupleTypes.Any(x => x == t.GetGenericTypeDefinition());
     }
 
     /// <summary>

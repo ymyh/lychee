@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace lychee;
 
@@ -10,7 +11,7 @@ public sealed class EntityPool
 
     private readonly List<EntityInfo> entityInfoList = [];
 
-    private readonly Stack<int> reusableEntitiesId = new();
+    private readonly ConcurrentStack<int> reusableEntitiesId = new();
 
     /// <summary>
     /// Create a new Entity
@@ -31,11 +32,14 @@ public sealed class EntityPool
             return entities[id];
         }
 
-        id = latestEntityId;
-        latestEntityId += 1;
+        id = Interlocked.Increment(ref latestEntityId);
 
-        entities.Add(new Entity(id, 0));
-        entityInfoList.Add(new EntityInfo());
+        // Maybe low performance
+        lock (reusableEntitiesId)
+        {
+            entities.Add(new(id, 0));
+            entityInfoList.Add(new());
+        }
 
         return entities[^1];
     }
@@ -45,15 +49,24 @@ public sealed class EntityPool
     /// </summary>
     /// <param name="id"></param>
     /// <exception cref="ArgumentOutOfRangeException">if id is invalid</exception>
-    public void RemoveEntity(int id)
+    public bool RemoveEntity(Entity entity)
     {
+        var id = entity.ID;
         Debug.Assert(id >= 0 && id < entities.Count);
 
-        var entity = entities[id];
+        var storedEntity = entities[id];
+
+        if (entity.Generation != storedEntity.Generation)
+        {
+            return false;
+        }
+
         entity.Generation += 1;
         entities[id] = entity;
 
         reusableEntitiesId.Push(id);
+
+        return true;
     }
 
     public EntityInfo? GetEntityInfo(Entity entity)

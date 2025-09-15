@@ -156,6 +156,23 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
 #endregion
 
+#region Public Methods
+
+    public IEnumerable<(nint ptr, int size)> GetAllDataOfType<T>() where T : unmanaged
+    {
+        var typeId = typeRegistry.GetTypeId<T>()!.Value;
+        var typeIdx = GetTypeIndex(typeId);
+
+        return GetAllDataOfType(typeIdx);
+    }
+
+    public IEnumerable<(nint ptr, int size)> GetAllDataOfType(int typeIdx)
+    {
+        return Table.IterateOfTypeAmongChunk(typeIdx);
+    }
+
+#endregion
+
 #region Internal Methods
 
     internal Archetype? GetInsertCompTargetArchetype(int typeId)
@@ -178,21 +195,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     internal void AddRemoveCompDstArchetype(int typeId, Archetype archetype)
     {
         removeTypeArchetypeDict.Add(typeId, archetype);
-    }
-
-    internal int GetTypeIndex(int typeId)
-    {
-        return Array.IndexOf(TypeIdList, typeId);
-    }
-
-    internal void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)
-    {
-        var i = 0;
-        foreach (var typeId in typeIdList)
-        {
-            output[i] = Array.IndexOf(TypeIdList, typeId);
-            i += 1;
-        }
     }
 
     internal void MoveDataTo(EntityInfo info, Archetype archetype)
@@ -225,21 +227,35 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
-#endregion
-
-#region Public Methods
-
-    public IEnumerable<(nint ptr, int size)> GetAllDataOfType<T>() where T : unmanaged
+    internal void PutPartialData<T>(EntityInfo info, int typeIdx, in T data) where T : unmanaged
     {
-        var typeId = typeRegistry.GetTypeId<T>()!.Value;
-        var typeIdx = GetTypeIndex(typeId);
-
-        return GetAllDataOfType(typeIdx);
+        unsafe
+        {
+            var dstPtr = Table.GetLastPtr(typeIdx, info.ArchetypeIdx);
+            fixed (T* srcPtr = &data)
+            {
+                NativeMemory.Copy(srcPtr, dstPtr, (nuint)Table.Layout.TypeInfoList[typeIdx].Size);
+            }
+        }
     }
 
-    public IEnumerable<(nint ptr, int size)> GetAllDataOfType(int typeIdx)
+#endregion
+
+#region Private methods
+
+    private int GetTypeIndex(int typeId)
     {
-        return Table.IterateOfTypeAmongChunk(typeIdx);
+        return Array.IndexOf(TypeIdList, typeId);
+    }
+
+    private void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)
+    {
+        var i = 0;
+        foreach (var typeId in typeIdList)
+        {
+            output[i] = Array.IndexOf(TypeIdList, typeId);
+            i += 1;
+        }
     }
 
 #endregion

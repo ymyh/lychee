@@ -1,5 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 using lychee.exceptions;
+using lychee.interfaces;
 using lychee.utils;
 
 namespace lychee;
@@ -54,7 +55,7 @@ public sealed class TypeRegistry
         return types.Count - 1;
     }
 
-    public int Register<T>(int alignment = 0) where T : unmanaged
+    public int Register<T>(int alignment = 0) where T : unmanaged, IComponent
     {
         return Register(typeof(T), alignment);
     }
@@ -63,7 +64,7 @@ public sealed class TypeRegistry
     {
         var name = type.FullName ?? type.Name;
 
-        if (!TypeUtils.IsUnmanaged(type))
+        if (type.GetInterface("lycheee.interfaces.IComponent") is null || !TypeUtils.IsUnmanaged(type))
         {
             throw new UnsupportedTypeException(name);
         }
@@ -85,7 +86,7 @@ public sealed class TypeRegistry
         return types.Count - 1;
     }
 
-    public int GetOrRegister<T>(int alignment = 0) where T : unmanaged
+    public int GetOrRegister<T>(int alignment = 0) where T : unmanaged, IComponent
     {
         return GetOrRegister(typeof(T), alignment);
     }

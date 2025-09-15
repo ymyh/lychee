@@ -1,7 +1,4 @@
-﻿using lychee.interfaces;
-using lychee.utils;
-
-namespace lychee;
+﻿namespace lychee;
 
 public sealed class World(TypeRegistry typeRegistry) : IDisposable
 {
@@ -9,90 +6,67 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
 
     public readonly SystemSchedules SystemSchedules = new();
 
-    private readonly EntityPool entityPool = new();
+    public readonly EntityPool EntityPool = new();
 
-    private readonly ArchetypeManager archetypeManager = new(typeRegistry);
+    public readonly ArchetypeManager ArchetypeManager = new(typeRegistry);
+
+    internal readonly TypeRegistry TypeRegistry = typeRegistry;
 
 #endregion
 
 #region Methods
 
-    public int GetOrCreateArchetype(IEnumerable<int> typeIdList)
-    {
-        return archetypeManager.GetOrCreateArchetype(typeIdList);
-    }
+    // public void AddComponent<T>(Entity entity, T component) where T : unmanaged, IComponent
+    // {
+    //     AddComponent(entity, ref component);
+    // }
 
-    public int GetOrCreateArchetype<T>()
-    {
-        return archetypeManager.GetOrCreateArchetype<T>();
-    }
+    // public void AddComponent<T>(Entity entity, ref T component) where T : unmanaged, IComponent
+    // {
+    //     var info = EntityPool.GetEntityInfo(entity);
+    //
+    //     if (info is { } entityInfo)
+    //     {
+    //         var typeId = typeRegistry.GetOrRegister<T>();
+    //         var srcArchetype = archetypeManager.GetArchetype(entityInfo.ArchetypeId);
+    //         var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
+    //
+    //         if (dstArchetype == null)
+    //         {
+    //             var typeIdList = srcArchetype.TypeIdList.Append(typeRegistry.GetOrRegister<T>());
+    //             var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
+    //
+    //             dstArchetype = archetypeManager.GetArchetype(archetypeId);
+    //             srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
+    //         }
+    //
+    //         srcArchetype.MoveDataTo(entityInfo, dstArchetype);
+    //     }
+    // }
 
-    public Entity NewEntity()
-    {
-        return entityPool.NewEntity();
-    }
-
-    /// <summary>
-    /// Remove entity by id
-    /// </summary>
-    /// <param name="id"></param>
-    /// <exception cref="ArgumentOutOfRangeException">if id is invalid</exception>
-    public void RemoveEntity(int id)
-    {
-        entityPool.RemoveEntity(id);
-    }
-
-    public void AddComponent<T>(Entity entity, T component) where T : unmanaged, IComponent
-    {
-        AddComponent(entity, ref component);
-    }
-
-    public void AddComponent<T>(Entity entity, ref T component) where T : unmanaged, IComponent
-    {
-        var info = entityPool.GetEntityInfo(entity);
-
-        if (info is { } entityInfo)
-        {
-            var typeId = typeRegistry.GetOrRegister<T>();
-            var srcArchetype = archetypeManager.GetArchetype(entityInfo.ArchetypeId);
-            var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
-
-            if (dstArchetype == null)
-            {
-                var typeIdList = srcArchetype.TypeIdList.Append(typeRegistry.GetOrRegister<T>());
-                var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
-
-                dstArchetype = archetypeManager.GetArchetype(archetypeId);
-                srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
-            }
-
-            srcArchetype.MoveDataTo(entityInfo, dstArchetype);
-        }
-    }
-
-    public void AddComponents<T>(Entity entity, T bundle) where T : unmanaged, IComponentBundle
-    {
-        var info = entityPool.GetEntityInfo(entity);
-        var typeId = typeRegistry.GetOrRegister<T>();
-
-        if (info is { } bundleInfo)
-        {
-            var srcArchetype = archetypeManager.GetArchetype(bundleInfo.ArchetypeId);
-            var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
-
-            if (dstArchetype == null)
-            {
-                var typeIdList = srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>()
-                    .Select(t => typeRegistry.GetOrRegister(t)));
-                var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
-
-                dstArchetype = archetypeManager.GetArchetype(archetypeId);
-                srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
-            }
-
-            _ = dstArchetype.ID;
-        }
-    }
+    // public void AddComponents<T>(Entity entity, T bundle) where T : unmanaged, IComponentBundle
+    // {
+    //     var info = EntityPool.GetEntityInfo(entity);
+    //     var typeId = typeRegistry.GetOrRegister<T>();
+    //
+    //     if (info is { } bundleInfo)
+    //     {
+    //         var srcArchetype = archetypeManager.GetArchetype(bundleInfo.ArchetypeId);
+    //         var dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId);
+    //
+    //         if (dstArchetype == null)
+    //         {
+    //             var typeIdList = srcArchetype.TypeIdList.Concat(TypeUtils.GetBundleTypes<T>()
+    //                 .Select(t => typeRegistry.GetOrRegister(t)));
+    //             var archetypeId = archetypeManager.GetOrCreateArchetype(typeIdList);
+    //
+    //             dstArchetype = archetypeManager.GetArchetype(archetypeId);
+    //             srcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
+    //         }
+    //
+    //         _ = dstArchetype.ID;
+    //     }
+    // }
 
     public void Update()
     {
@@ -103,7 +77,7 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
 
     public void Dispose()
     {
-        archetypeManager.Dispose();
+        ArchetypeManager.Dispose();
     }
 
 #endregion

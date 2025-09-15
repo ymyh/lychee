@@ -6,7 +6,11 @@ public interface IComponent
 
 public interface IComponentBundle
 {
-    public unsafe void SetDataWithPtr(int typeId, void* ptr);
-
-    public static abstract int[] TypeIds { get; set; }
+    /// <summary>
+    /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing. <br/>
+    /// Copy data to pointer with given index.
+    /// </summary>
+    /// <param name="index">Type index</param>
+    /// <param name="ptr">Target pointer.</param>
+    public unsafe void SetDataAG(int index, void* ptr);
 }

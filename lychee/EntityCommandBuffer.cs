@@ -1,6 +1,8 @@
-﻿namespace lychee;
+﻿using lychee.interfaces;
 
-public sealed class EntityCommandBuffer
+namespace lychee;
+
+public sealed class EntityCommandBuffer(World world)
 {
 #region Fields
 
@@ -8,22 +10,27 @@ public sealed class EntityCommandBuffer
 
     internal Archetype? DstArchetype;
 
-    internal EntityPool EntityPool;
+    internal readonly EntityPool EntityPool = world.EntityPool;
 
-    internal readonly ArchetypeManager ArchetypeManager;
+    internal readonly ArchetypeManager ArchetypeManager = world.ArchetypeManager;
 
-    internal readonly TypeRegistry TypeRegistry;
+    internal readonly TypeRegistry TypeRegistry = world.TypeRegistry;
 
-    internal Dictionary<nint, Archetype> Unnamed = new();
+    internal readonly Dictionary<nint, Archetype> Unnamed = new();
 
 #endregion
 
 #region Public Methods
 
-    public Entity SpawnEntity()
+    public Entity NewEntity()
     {
         var entity = EntityPool.NewEntity();
         return entity;
+    }
+
+    public bool RemoveEntity(Entity entity)
+    {
+        return EntityPool.RemoveEntity(entity);
     }
 
     public void RemoveComponent<T>(Entity entity) where T : unmanaged
@@ -41,6 +48,13 @@ public sealed class EntityCommandBuffer
     internal void ChangeSrcArchetype(Archetype archetype)
     {
         SrcArchetype = archetype;
+
+        if (DstArchetype != null)
+        {
+            Monitor.Exit(DstArchetype);
+        }
+
+        DstArchetype = null;
     }
 
 #endregion
@@ -50,15 +64,20 @@ public static class EntityCommandBufferExtensions
 {
     extension(EntityCommandBuffer self)
     {
-        public void AddComponent<T>(Entity entity, in T component) where T : unmanaged
+        public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
         {
-            nint ptr;
+            var entityInfo = self.EntityPool.GetEntityInfo(entity);
+            if (entityInfo is null)
+            {
+                return false;
+            }
 
             if (self.DstArchetype == null)
             {
+                nint ptr;
                 unsafe
                 {
-                    delegate* <EntityCommandBuffer, Entity, in T, void> fptr = &AddComponent<T>;
+                    delegate* <EntityCommandBuffer, Entity, in T, bool> fptr = &AddComponent<T>;
                     ptr = (nint)fptr;
                 }
 
@@ -74,16 +93,16 @@ public static class EntityCommandBufferExtensions
                                             self.ArchetypeManager.GetOrCreateArchetype(
                                                 self.SrcArchetype.TypeIdList.Append(typeId)));
                 }
+
+                Monitor.Enter(self.DstArchetype);
             }
 
-            var entityInfo = self.EntityPool.GetEntityInfo(entity);
+            self.SrcArchetype.MoveDataTo(entityInfo.Value, self.DstArchetype);
 
-            if (entityInfo is { } info)
-            {
-            }
+            return true;
         }
 
-        public void AddComponents<T>(Entity entity, in T component) where T : unmanaged
+        public void AddComponents<T>(Entity entity, in T component) where T : unmanaged, IComponentBundle
         {
         }
     }

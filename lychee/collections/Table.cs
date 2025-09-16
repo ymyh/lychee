@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
@@ -66,6 +67,22 @@ public sealed class Table : IDisposable
 
 #region Public methods
 
+    public ref TableView GetFirstAvailableView()
+    {
+        var span = CollectionsMarshal.AsSpan(chunkViews);
+
+        for (var i = 0; i < span.Length; i++)
+        {
+            if (!span[i].isFull)
+            {
+                return ref span[i];
+            }
+        }
+
+        CreateNewChunk();
+        return ref span[^1];
+    }
+
     public unsafe T* GetPtr<T>(int typeIdx, int chunkIdx, int indexInChunk) where T : unmanaged
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
@@ -106,21 +123,6 @@ public sealed class Table : IDisposable
         return (chunkIdx, idxInChunk);
     }
 
-    public int GetOrCreateLastChunk()
-    {
-        if (chunkViews.Count > 0)
-        {
-            return chunkViews.Count - 1;
-        }
-
-        var view = new TableView(chunkCapacity);
-        view.Chunk.Alloc(chunkSizeBytes);
-
-        chunkViews.Add(view);
-
-        return chunkViews.Count - 1;
-    }
-
     public IEnumerable<(nint, int)> IterateOfTypeAmongChunk(int typeIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
@@ -136,6 +138,18 @@ public sealed class Table : IDisposable
 
             yield return (ptr, view.Size);
         }
+    }
+
+#endregion
+
+#region Private methods
+
+    private void CreateNewChunk()
+    {
+        var view = new TableView(chunkCapacity);
+        view.Chunk.Alloc(chunkSizeBytes);
+
+        chunkViews.Add(view);
     }
 
 #endregion

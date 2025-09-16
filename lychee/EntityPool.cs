@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace lychee;
 
@@ -48,21 +49,18 @@ public sealed class EntityPool
     /// Remove entity by id
     /// </summary>
     /// <param name="id"></param>
-    /// <exception cref="ArgumentOutOfRangeException">if id is invalid</exception>
     public bool RemoveEntity(Entity entity)
     {
         var id = entity.ID;
         Debug.Assert(id >= 0 && id < entities.Count);
 
-        var storedEntity = entities[id];
-
-        if (entity.Generation != storedEntity.Generation)
+        if (entity.Generation != entities[id].Generation)
         {
             return false;
         }
 
-        entity.Generation += 1;
-        entities[id] = entity;
+        var span = CollectionsMarshal.AsSpan(entities);
+        Interlocked.Increment(ref span[id].Generation);
 
         reusableEntitiesId.Push(id);
 

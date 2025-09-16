@@ -18,6 +18,8 @@ public sealed class EntityCommandBuffer(World world)
 
     internal readonly Dictionary<nint, Archetype> Unnamed = new();
 
+    internal int DstArchetypeExtraTypeId;
+
 #endregion
 
 #region Public Methods
@@ -94,9 +96,11 @@ public static class EntityCommandBufferExtensions
                                                 self.SrcArchetype.TypeIdList.Append(typeId)));
                 }
 
+                self.DstArchetypeExtraTypeId = self.DstArchetype.GetTypeIndex(self.TypeRegistry.GetTypeId<T>()!.Value);
                 Monitor.Enter(self.DstArchetype);
             }
 
+            self.DstArchetype.PutPartialData(entityInfo.Value, self.DstArchetypeExtraTypeId, in component);
             self.SrcArchetype.MoveDataTo(entityInfo.Value, self.DstArchetype);
 
             return true;

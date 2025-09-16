@@ -137,7 +137,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public readonly int[] TypeIdList = typeIdList;
 
-    private readonly Table Table = new(new(typeInfoList));
+    internal readonly Table Table = new(new(typeInfoList));
 
     private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
 
@@ -239,14 +239,14 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
-#endregion
-
-#region Private methods
-
-    private int GetTypeIndex(int typeId)
+    internal int GetTypeIndex(int typeId)
     {
         return Array.IndexOf(TypeIdList, typeId);
     }
+
+#endregion
+
+#region Private methods
 
     private void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)
     {

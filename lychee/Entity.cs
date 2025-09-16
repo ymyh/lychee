@@ -2,9 +2,9 @@
 
 public struct Entity(int id, int generation)
 {
-    public int ID { get; } = id;
+    public int ID = id;
 
-    internal int Generation { get; set; } = generation;
+    internal int Generation = generation;
 }
 
 public struct EntityInfo(int archetypeId, int archetypeIdx)

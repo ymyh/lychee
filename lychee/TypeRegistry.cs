@@ -1,5 +1,5 @@
-﻿using System.Runtime.InteropServices;
-using lychee.exceptions;
+﻿using System.Reflection;
+using System.Runtime.InteropServices;
 using lychee.interfaces;
 using lychee.utils;
 
@@ -17,78 +17,59 @@ public struct TypeInfo(int size, int alignment)
 
 public sealed class TypeRegistry
 {
-    private readonly List<(Type, TypeInfo)> types = [];
+    private readonly List<(Type, TypeInfo)> typeList = [];
 
-    private readonly Dictionary<string, int> typenameMap = new();
+    private readonly Dictionary<string, int> typenameDict = new();
 
-    /// <summary>
-    /// Register a type
-    /// </summary>
-    /// <param name="type"></param>
-    /// <param name="alignment"></param>
-    /// <returns>ID of the type</returns>
-    /// <exception cref="TypeAlreadyRegisteredException">if the type already registered</exception>
-    /// <exception cref="UnsupportedTypeException">if the type is not a class, value type or array type</exception>
-    public int Register(Type type, int alignment = 0)
-    {
-        var name = type.FullName ?? type.Name;
+    private readonly Dictionary<string, int> bundleSizeDict = new();
 
-        if (!TypeUtils.IsUnmanaged(type))
-        {
-            throw new UnsupportedTypeException(name);
-        }
+    private static readonly MethodInfo RegisterMethod =
+        typeof(TypeRegistry).GetMethod("Register", BindingFlags.Public | BindingFlags.Instance, [typeof(int)])!;
 
-        if (typenameMap.ContainsKey(name))
-        {
-            throw new TypeAlreadyRegisteredException(name);
-        }
-
-        typenameMap.Add(type.Name, types.Count);
-        var size = Marshal.SizeOf(type);
-        if (alignment == 0)
-        {
-            alignment = TypeUtils.GetOrGuessAlignment(type, size);
-        }
-
-        types.Add((type, new TypeInfo(size, alignment)));
-
-        return types.Count - 1;
-    }
+    private static readonly MethodInfo RegisterBundleMethod =
+        typeof(TypeRegistry).GetMethod("RegisterBundle", BindingFlags.Public | BindingFlags.Instance, [])!;
 
     public int Register<T>(int alignment = 0) where T : unmanaged, IComponent
     {
-        return Register(typeof(T), alignment);
-    }
-
-    public int GetOrRegister(Type type, int alignment = 0)
-    {
+        var type = typeof(T);
         var name = type.FullName ?? type.Name;
 
-        if (type.GetInterface("lycheee.interfaces.IComponent") is null || !TypeUtils.IsUnmanaged(type))
-        {
-            throw new UnsupportedTypeException(name);
-        }
-
-        if (typenameMap.TryGetValue(name, out var value))
+        if (typenameDict.TryGetValue(name, out var value))
         {
             return value;
         }
 
-        typenameMap.Add(name, types.Count);
+        typenameDict.Add(name, typeList.Count);
         var size = Marshal.SizeOf(type);
         if (alignment == 0)
         {
             alignment = TypeUtils.GetOrGuessAlignment(type, size);
         }
 
-        types.Add((type, new TypeInfo(size, alignment)));
+        typeList.Add((type, new(size, alignment)));
 
-        return types.Count - 1;
+        return typeList.Count - 1;
     }
 
-    public int GetOrRegister<T>(int alignment = 0) where T : unmanaged, IComponent
+    public int Register(Type type, int alignment = 0)
     {
-        return GetOrRegister(typeof(T), alignment);
+        return (int)RegisterMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
+    }
+
+    public void RegisterBundle<T>() where T : unmanaged, IComponentBundle
+    {
+        var type = typeof(T);
+        var fields = type.GetFields();
+        var typeIds = fields.Select(f => Register(f.FieldType)).ToArray();
+
+        T.TypeIdAG = typeIds;
+
+        bundleSizeDict.Add(type.FullName ?? type.Name, fields.Length);
+    }
+
+    public void RegisterBundle(Type type)
+    {
+        RegisterBundleMethod.MakeGenericMethod(type).Invoke(this, []);
     }
 
     /// <summary>
@@ -99,7 +80,7 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public (Type, TypeInfo) GetTypeInfo(int id)
     {
-        return types[id];
+        return typeList[id];
     }
 
     /// <summary>
@@ -110,7 +91,7 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public (Type, TypeInfo) GetTypeInfo(string fullName)
     {
-        return types[typenameMap[fullName]];
+        return typeList[typenameDict[fullName]];
     }
 
     /// <summary>
@@ -136,7 +117,7 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public int? GetTypeId(string fullName)
     {
-        if (typenameMap.TryGetValue(fullName, out var id))
+        if (typenameDict.TryGetValue(fullName, out var id))
         {
             return id;
         }

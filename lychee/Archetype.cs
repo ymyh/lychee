@@ -42,7 +42,7 @@ public sealed class ArchetypeManager : IDisposable
     public int GetOrCreateArchetype<T>()
     {
         var typeList = TypeUtils.GetTupleTypes<T>();
-        var typeIds = typeList.Select(x => typeRegistry.GetOrRegister(x)).ToArray();
+        var typeIds = typeList.Select(x => typeRegistry.Register(x)).ToArray();
 
         return GetOrCreateArchetype(typeIds);
     }
@@ -51,7 +51,7 @@ public sealed class ArchetypeManager : IDisposable
     {
         var type = typeof(T);
         var fields = type.GetFields();
-        var typeIds = fields.Select(f => typeRegistry.GetOrRegister(f.FieldType)).ToArray();
+        var typeIds = fields.Select(f => typeRegistry.Register(f.FieldType)).ToArray();
         Array.Sort(typeIds);
 
         return GetOrCreateArchetype(typeIds);
@@ -68,9 +68,9 @@ public sealed class ArchetypeManager : IDisposable
     {
         return archetypes.Where(a =>
         {
-            var ret = requires.Select(type => typeRegistry.GetOrRegister(type))
+            var ret = requires.Select(type => typeRegistry.Register(type))
                 .Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
-            return allFilter.Select(type => typeRegistry.GetOrRegister(type))
+            return allFilter.Select(type => typeRegistry.Register(type))
                 .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
         }).Where(a =>
         {
@@ -78,7 +78,7 @@ public sealed class ArchetypeManager : IDisposable
 
             foreach (var type in anyFilter)
             {
-                var typeId = typeRegistry.GetOrRegister(type);
+                var typeId = typeRegistry.Register(type);
                 ret |= a.TypeIdList.Contains(typeId);
             }
 
@@ -89,7 +89,7 @@ public sealed class ArchetypeManager : IDisposable
 
             foreach (var type in noneFilter)
             {
-                var typeId = typeRegistry.GetOrRegister(type);
+                var typeId = typeRegistry.Register(type);
                 ret &= !a.TypeIdList.Contains(typeId);
             }
 

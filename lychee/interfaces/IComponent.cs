@@ -13,4 +13,9 @@ public interface IComponentBundle
     /// <param name="index">Type index</param>
     /// <param name="ptr">Target pointer.</param>
     public unsafe void SetDataAG(int index, void* ptr);
+
+    /// <summary>
+    /// AG stands for auto generated. Don't modify this property manually unless you know what are you doing.
+    /// </summary>
+    public static abstract int[] TypeIdAG { get; set; }
 }

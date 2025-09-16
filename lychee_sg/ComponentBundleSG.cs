@@ -1,11 +1,22 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 namespace lychee_sg
 {
+    internal sealed class StructDecl
+    {
+        public string Name;
+
+        public string Namespace;
+
+        public List<(string type, string name)> FieldProp;
+    }
+
     [Generator]
     public class ComponentBundleSG : IIncrementalGenerator
     {
@@ -20,36 +31,52 @@ namespace lychee_sg
                 )
                 .Where(m => m != null);
 
-            context.RegisterSourceOutput(values, (spc, classInfo) =>
+            context.RegisterSourceOutput(values, (spc, structDecl) =>
             {
-                var (declType, name, ns) = classInfo.Value;
+                var switchCases = new StringBuilder();
+
+                for (var i = 0; i < structDecl.FieldProp.Count; i++)
+                {
+                    var fieldName = structDecl.FieldProp[i].name;
+                    switchCases.AppendLine($@"
+        case {i}:
+            fixed (void* srcPtr = &{fieldName})
+            {{
+                NativeMemory.Copy(srcPtr, ptr, (nuint) sizeof({structDecl.FieldProp[i].type}));
+            }}
+            break;");
+                }
+
                 var sb = new StringBuilder($@"
 using System;
+using System.Runtime.InteropServices;
 using lychee.interfaces;
 
-namespace {ns};
+namespace {structDecl.Namespace};
 
-public partial {declType} {name} : IComponentBundle
+public partial struct {structDecl.Name} : IComponentBundle
 {{
-    public unsafe void SetDataWithPtr(int typeId, void* ptr)
+    public unsafe void SetDataAG(int index, void* ptr)
     {{
-            
+        switch (index)
+        {{
+        {switchCases}
+        }}
     }}
 
-    public static int[] TypeIds {{ get; set; }} = [];
+    public static int[] TypeIdAG {{ get; set; }}
 }}
 ");
 
-                spc.AddSource($"{name}_ComponentBundle.g.cs", SourceText.From(sb.ToString(), Encoding.UTF8));
+                spc.AddSource($"{structDecl.Name}_ComponentBundle.g.cs", SourceText.From(sb.ToString(), Encoding.UTF8));
             });
         }
 
         private static bool HasAttribute(SyntaxNode node)
         {
-            if (node is ClassDeclarationSyntax || node is StructDeclarationSyntax)
+            if (node is StructDeclarationSyntax structDecl)
             {
-                var typeDeclNode = (TypeDeclarationSyntax)node;
-                return typeDeclNode.AttributeLists.Any(attributeList =>
+                return structDecl.AttributeLists.Any(attributeList =>
                     attributeList.Attributes.Select(attr => attr.Name.ToString()).Any(name =>
                         name == "ComponentBundle" || name == "lychee.attributes.ComponentBundle"));
             }
@@ -57,13 +84,28 @@ public partial {declType} {name} : IComponentBundle
             return false;
         }
 
-        private static (string declType, string name, string ns)? GetTargetMethodInfo(
-            ref GeneratorSyntaxContext context)
+        private static StructDecl GetTargetMethodInfo(ref GeneratorSyntaxContext context)
         {
-            var typeDecl = (TypeDeclarationSyntax)context.Node;
-            var ns = Utils.GetNamespace(typeDecl);
+            var structDecl = (StructDeclarationSyntax)context.Node;
+            var ns = Utils.GetNamespace(structDecl);
+            var fields = structDecl.Members.OfType<FieldDeclarationSyntax>()
+                .Where(m => m.Modifiers.Any(mo => mo.IsKind(SyntaxKind.PublicKeyword))).ToArray();
+            var fieldProp = new List<(string type, string name)>();
 
-            return (typeDecl is ClassDeclarationSyntax ? "class" : "struct", typeDecl.Identifier.Text, ns);
+            foreach (var field in fields)
+            {
+                var typeName = context.SemanticModel.GetTypeInfo(field.Declaration.Type).Type.Name;
+
+                fieldProp.AddRange(
+                    field.Declaration.Variables.Select(variable => (typeName, variable.Identifier.Text)));
+            }
+
+            return new StructDecl
+            {
+                Name = structDecl.Identifier.Text,
+                Namespace = ns,
+                FieldProp = fieldProp,
+            };
         }
     }
 }

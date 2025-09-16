@@ -87,7 +87,7 @@ public static class EntityCommandBufferExtensions
                 }
                 else
                 {
-                    var typeId = self.TypeRegistry.GetOrRegister<T>();
+                    var typeId = self.TypeRegistry.Register<T>();
                     self.DstArchetype = self.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
                                         self.ArchetypeManager.GetArchetype(
                                             self.ArchetypeManager.GetOrCreateArchetype(

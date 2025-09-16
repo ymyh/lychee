@@ -99,24 +99,24 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
 
         foreach (var param in parameters)
         {
-            typeRegistry.GetOrRegister(param.ParameterType.IsByRef
+            typeRegistry.Register(param.ParameterType.IsByRef
                 ? param.ParameterType.GetElementType()!
                 : param.ParameterType);
         }
 
         foreach (var type in descriptor.AllFilter)
         {
-            typeRegistry.GetOrRegister(type);
+            typeRegistry.Register(type);
         }
 
         foreach (var type in descriptor.AnyFilter)
         {
-            typeRegistry.GetOrRegister(type);
+            typeRegistry.Register(type);
         }
 
         foreach (var type in descriptor.NoneFilter)
         {
-            typeRegistry.GetOrRegister(type);
+            typeRegistry.Register(type);
         }
 
         return parameters.Where(x =>

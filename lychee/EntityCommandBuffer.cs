@@ -100,6 +100,9 @@ public static class EntityCommandBufferExtensions
                 Monitor.Enter(self.DstArchetype);
             }
 
+            ref var dstView = ref self.DstArchetype.Table.GetFirstAvailableView();
+            dstView.ReserveOne();
+
             self.DstArchetype.PutPartialData(entityInfo.Value, self.DstArchetypeExtraTypeId, in component);
             self.SrcArchetype.MoveDataTo(entityInfo.Value, self.DstArchetype);
 

@@ -41,6 +41,8 @@ public sealed class Table : IDisposable
 
     private readonly List<TableView> chunkViews = [];
 
+    private int lastAvailableViewIndex;
+
 #region Constructors
 
     public Table(TableLayout layout, int chunkSizeBytesHint = 16384)
@@ -71,16 +73,29 @@ public sealed class Table : IDisposable
     {
         var span = CollectionsMarshal.AsSpan(chunkViews);
 
+        if (!span[lastAvailableViewIndex].IsFull)
+        {
+            return ref span[lastAvailableViewIndex];
+        }
+
         for (var i = 0; i < span.Length; i++)
         {
-            if (!span[i].isFull)
+            if (!span[i].IsFull)
             {
+                lastAvailableViewIndex = i;
                 return ref span[i];
             }
         }
 
         CreateNewChunk();
+        span = CollectionsMarshal.AsSpan(chunkViews);
+        lastAvailableViewIndex = chunkViews.Count - 1;
+
         return ref span[^1];
+    }
+
+    public void PutData<T>(in TableView view, in T data) where T : unmanaged
+    {
     }
 
     public unsafe T* GetPtr<T>(int typeIdx, int chunkIdx, int indexInChunk) where T : unmanaged
@@ -173,14 +188,33 @@ public struct TableView(int capacity) : IDisposable
 
     public int Size = 0;
 
-    public int Reserve = 0;
-
     public readonly int Capacity = capacity;
 
-    public bool isFull => Size + Reserve == Capacity;
+    private int reserve = 0;
+
+    public bool IsFull => Size == Capacity;
 
     public unsafe void* Data => Chunk.Data;
 
+
+#region Public methods
+
+    /// <summary>
+    /// Try to reserve one extra slot in chunk.
+    /// </summary>
+    /// <returns>Whether succeed</returns>
+    public bool ReserveOne()
+    {
+        if (IsFull)
+        {
+            return false;
+        }
+
+        reserve++;
+        return true;
+    }
+
+#endregion
 
 #region IDisposable Member
 

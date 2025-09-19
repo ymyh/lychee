@@ -2,6 +2,13 @@
 
 namespace lychee;
 
+internal sealed class DstArchetypeInfo
+{
+    public Archetype Archetype;
+
+    public int ViewIdx;
+}
+
 public sealed class EntityCommandBuffer(World world)
 {
 #region Fields
@@ -100,8 +107,8 @@ public static class EntityCommandBufferExtensions
                 Monitor.Enter(self.DstArchetype);
             }
 
-            ref var dstView = ref self.DstArchetype.Table.GetFirstAvailableView();
-            dstView.ReserveOne();
+            var dstViewIdx = self.DstArchetype.Table.GetFirstAvailableViewIdx();
+            self.DstArchetype.Table.ReserveOne(dstViewIdx);
 
             self.DstArchetype.PutPartialData(entityInfo.Value, self.DstArchetypeExtraTypeId, in component);
             self.SrcArchetype.MoveDataTo(entityInfo.Value, self.DstArchetype);

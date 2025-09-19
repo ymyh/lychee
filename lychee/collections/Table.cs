@@ -1,7 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
-
-namespace lychee.collections;
+﻿namespace lychee.collections;
 
 public sealed class TableLayout
 {
@@ -69,32 +66,34 @@ public sealed class Table : IDisposable
 
 #region Public methods
 
-    public ref TableView GetFirstAvailableView()
+    public int GetFirstAvailableViewIdx()
     {
-        var span = CollectionsMarshal.AsSpan(chunkViews);
-
-        if (!span[lastAvailableViewIndex].IsFull)
+        if (!chunkViews[lastAvailableViewIndex].IsFull)
         {
-            return ref span[lastAvailableViewIndex];
+            return lastAvailableViewIndex;
         }
 
-        for (var i = 0; i < span.Length; i++)
+        for (var i = 0; i < chunkViews.Count; i++)
         {
-            if (!span[i].IsFull)
+            if (!chunkViews[i].IsFull)
             {
                 lastAvailableViewIndex = i;
-                return ref span[i];
+                return lastAvailableViewIndex;
             }
         }
 
         CreateNewChunk();
-        span = CollectionsMarshal.AsSpan(chunkViews);
         lastAvailableViewIndex = chunkViews.Count - 1;
 
-        return ref span[^1];
+        return lastAvailableViewIndex;
     }
 
-    public void PutData<T>(in TableView view, in T data) where T : unmanaged
+    public bool ReserveOne(int viewIdx)
+    {
+        return chunkViews[viewIdx].ReserveOne();
+    }
+
+    public void PutData<T>(TableView view, in T data) where T : unmanaged
     {
     }
 
@@ -125,17 +124,15 @@ public sealed class Table : IDisposable
 
     public (int, int) GetChunkAndIndex(int idx)
     {
-        Debug.Assert(idx >= 0);
+        var chunkIdx = 0;
 
-        var chunkIdx = idx / chunkCapacity;
+        while (idx >= chunkViews[chunkIdx].Size)
+        {
+            idx -= chunkViews[chunkIdx].Size;
+            chunkIdx++;
+        }
 
-        Debug.Assert(chunkIdx < chunkViews.Count);
-
-        var idxInChunk = idx % chunkCapacity;
-
-        Debug.Assert(idxInChunk < chunkViews[chunkIdx].Size);
-
-        return (chunkIdx, idxInChunk);
+        return (chunkIdx, idx);
     }
 
     public IEnumerable<(nint, int)> IterateOfTypeAmongChunk(int typeIdx)
@@ -182,7 +179,7 @@ public sealed class Table : IDisposable
 #endregion
 }
 
-public struct TableView(int capacity) : IDisposable
+public sealed class TableView(int capacity) : IDisposable
 {
     public MemoryChunk Chunk = new();
 
@@ -192,7 +189,7 @@ public struct TableView(int capacity) : IDisposable
 
     private int reserve = 0;
 
-    public bool IsFull => Size == Capacity;
+    public bool IsFull => Size + reserve == Capacity;
 
     public unsafe void* Data => Chunk.Data;
 

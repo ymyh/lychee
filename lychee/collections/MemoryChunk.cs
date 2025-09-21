@@ -9,7 +9,7 @@ public struct MemoryChunk() : IDisposable
 
     public int Size { get; private set; } = 0;
 
-    #region Public Methods
+#region Public Methods
 
     public void Alloc(int sizeBytes)
     {
@@ -21,9 +21,9 @@ public struct MemoryChunk() : IDisposable
         }
     }
 
-    #endregion
+#endregion
 
-    #region IDisposable Member
+#region IDisposable Member
 
     public void Dispose()
     {
@@ -38,5 +38,5 @@ public struct MemoryChunk() : IDisposable
         }
     }
 
-    #endregion
+#endregion
 }

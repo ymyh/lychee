@@ -1,15 +1,17 @@
-﻿namespace lychee.collections;
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace lychee.collections;
 
 public interface AsInt
 {
     int AsInt();
 }
 
-public sealed class SparseMap<T> where T : AsInt
+public sealed class SparseMap<T> : IDisposable where T : AsInt
 {
 #region Private fields
 
-    private readonly List<int> sparseArray = [];
+    private readonly NativeList<int> sparseArray = [];
 
     private readonly List<(int, T)> denseArray = [];
 
@@ -24,23 +26,25 @@ public sealed class SparseMap<T> where T : AsInt
     public void Add(T value)
     {
         var id = value.AsInt();
-        var denseIndex = denseArray.Count;
 
         // 确保sparseArray足够大以容纳新的id
         if (id >= sparseArray.Count)
         {
-            sparseArray.AddRange(Enumerable.Repeat(-1, id - sparseArray.Count + 1));
+            sparseArray.Resize(id + 1, -1);
         }
 
-        // 如果这个id已经存在，先移除旧值
+        // 如果这个id已经存在，直接替换旧值而不改变数组结构
         if (sparseArray[id] != -1)
         {
-            RemoveAt(sparseArray[id]);
+            var existingIndex = sparseArray[id];
+            denseArray[existingIndex] = (id, value);
+
+            return;
         }
 
         // 添加新值到denseArray并更新sparseArray
         denseArray.Add((id, value));
-        sparseArray[id] = denseIndex;
+        sparseArray[id] = denseArray.Count - 1;
     }
 
     /// <summary>
@@ -94,7 +98,7 @@ public sealed class SparseMap<T> where T : AsInt
     /// <param name="id">要获取的值的id</param>
     /// <param name="value">获取到的值</param>
     /// <returns>如果找到指定id的值则返回true，否则返回false</returns>
-    public bool TryGetValue(int id, out T value)
+    public bool TryGetValue(int id, [MaybeNullWhen(false)] out T value)
     {
         value = default;
         if (id < 0 || id >= sparseArray.Count || sparseArray[id] == -1)
@@ -110,6 +114,15 @@ public sealed class SparseMap<T> where T : AsInt
     /// 获取映射中的元素数量
     /// </summary>
     public int Count => denseArray.Count;
+
+#endregion
+
+#region IDisposable method
+
+    public void Dispose()
+    {
+        sparseArray.Dispose();
+    }
 
 #endregion
 }

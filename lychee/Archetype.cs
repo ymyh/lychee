@@ -129,7 +129,7 @@ public sealed class ArchetypeManager : IDisposable
 }
 
 public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistry typeRegistry)
-    : IDisposable
+    : IDisposable, IKeyOfSparseMap
 {
 #region Fields
 
@@ -144,15 +144,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
 
     private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
-
-#endregion
-
-#region IDisposable Member
-
-    public void Dispose()
-    {
-        Table.Dispose();
-    }
 
 #endregion
 
@@ -256,6 +247,24 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             output[i] = Array.IndexOf(TypeIdList, typeId);
             i += 1;
         }
+    }
+
+#endregion
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        Table.Dispose();
+    }
+
+#endregion
+
+#region IKeyOfSparseMap Member
+
+    public int AsInt()
+    {
+        return ID;
     }
 
 #endregion

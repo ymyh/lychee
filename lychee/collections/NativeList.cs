@@ -36,7 +36,6 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
     public NativeList()
     {
-        EnsureCapacity(16);
     }
 
     public NativeList(int capacity)
@@ -65,7 +64,14 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
     {
         if (IsFull)
         {
-            EnsureCapacity(capacity * 2);
+            if (capacity != 0)
+            {
+                EnsureCapacity(capacity * 2);
+            }
+            else
+            {
+                EnsureCapacity(16);
+            }
         }
 
         unsafe
@@ -173,7 +179,7 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
                 {
                     NativeMemory.Free(data);
                     data = null;
-                    capacity = 16;
+                    capacity = 0;
                 }
             }
         }
@@ -231,7 +237,7 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         return ((IEnumerable)this).GetEnumerator();
     }
 
-    public struct Enumerator(NativeList<T> list) : IEnumerator<T>
+    private struct Enumerator(NativeList<T> list) : IEnumerator<T>
     {
         private int index = -1;
 

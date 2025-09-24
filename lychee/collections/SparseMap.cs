@@ -2,12 +2,12 @@
 
 namespace lychee.collections;
 
-public interface AsInt
+public interface IKeyOfSparseMap
 {
     int AsInt();
 }
 
-public sealed class SparseMap<T> : IDisposable where T : AsInt
+public sealed class SparseMap<T> : IDisposable where T : IKeyOfSparseMap
 {
 #region Private fields
 
@@ -17,23 +17,45 @@ public sealed class SparseMap<T> : IDisposable where T : AsInt
 
 #endregion
 
+#region Public properties
+
+    public int Count => denseArray.Count;
+
+    public T this[int id]
+    {
+        get
+        {
+            if (id < 0 || id >= sparseArray.Count || sparseArray[id] == -1)
+            {
+                throw new KeyNotFoundException();
+            }
+
+            return denseArray[sparseArray[id]].Item2;
+        }
+    }
+
+#endregion
+
+    ~SparseMap()
+    {
+        Dispose();
+    }
+
 #region Public Methods
 
     /// <summary>
-    /// 添加一个值到稀疏映射中
+    /// Add an element to the sparse map, take the return value of AsInt() as the key.
     /// </summary>
-    /// <param name="value">要添加的值</param>
+    /// <param name="value">The value to add</param>
     public void Add(T value)
     {
         var id = value.AsInt();
 
-        // 确保sparseArray足够大以容纳新的id
         if (id >= sparseArray.Count)
         {
             sparseArray.Resize(id + 1, -1);
         }
 
-        // 如果这个id已经存在，直接替换旧值而不改变数组结构
         if (sparseArray[id] != -1)
         {
             var existingIndex = sparseArray[id];
@@ -42,13 +64,12 @@ public sealed class SparseMap<T> : IDisposable where T : AsInt
             return;
         }
 
-        // 添加新值到denseArray并更新sparseArray
         denseArray.Add((id, value));
         sparseArray[id] = denseArray.Count - 1;
     }
 
     /// <summary>
-    /// 从稀疏映射中移除指定id的值
+    /// Remove element by id
     /// </summary>
     /// <param name="id">要移除的值的id</param>
     /// <returns>如果成功移除则返回true，否则返回false</returns>
@@ -109,11 +130,6 @@ public sealed class SparseMap<T> : IDisposable where T : AsInt
         value = denseArray[sparseArray[id]].Item2;
         return true;
     }
-
-    /// <summary>
-    /// 获取映射中的元素数量
-    /// </summary>
-    public int Count => denseArray.Count;
 
 #endregion
 

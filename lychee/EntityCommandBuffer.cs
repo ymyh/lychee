@@ -1,15 +1,18 @@
-﻿using lychee.interfaces;
+﻿using lychee.collections;
+using lychee.interfaces;
 
 namespace lychee;
 
-internal sealed class DstArchetypeInfo
+internal sealed class EntityMovingInfo(Archetype srcArchetype)
 {
-    public Archetype Archetype;
+    private readonly Archetype srcArchetype = srcArchetype;
+
+    public readonly SparseMap<Archetype> DstArchetypeList = new();
 
     public int ViewIdx;
 }
 
-public sealed class EntityCommandBuffer(World world)
+public sealed class EntityCommandBuffer(World world) : IDisposable
 {
 #region Fields
 
@@ -24,6 +27,10 @@ public sealed class EntityCommandBuffer(World world)
     internal readonly TypeRegistry TypeRegistry = world.TypeRegistry;
 
     internal readonly Dictionary<nint, Archetype> Unnamed = new();
+
+    internal readonly SparseMap<EntityMovingInfo> Unnamed2 = new();
+
+    internal EntityMovingInfo? CurrentTransferInfo;
 
     internal int DstArchetypeExtraTypeId;
 
@@ -56,14 +63,22 @@ public sealed class EntityCommandBuffer(World world)
 
     internal void ChangeSrcArchetype(Archetype archetype)
     {
-        SrcArchetype = archetype;
-
-        if (DstArchetype != null)
+        if (CurrentTransferInfo != null)
         {
-            Monitor.Exit(DstArchetype);
+            Monitor.Exit(CurrentTransferInfo.DstArchetypeList);
         }
 
-        DstArchetype = null;
+        Unnamed2.TryGetValue(archetype.ID, out CurrentTransferInfo);
+        SrcArchetype = archetype;
+    }
+
+#endregion
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        Unnamed2.Dispose();
     }
 
 #endregion
@@ -79,6 +94,21 @@ public static class EntityCommandBufferExtensions
             if (entityInfo is null)
             {
                 return false;
+            }
+
+            EntityMovingInfo entityMovingInfo;
+
+            if (self.CurrentTransferInfo == null)
+            {
+                var typeId = self.TypeRegistry.Register<T>();
+                var dstArchetype = self.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
+                                    self.ArchetypeManager.GetArchetype(
+                                        self.ArchetypeManager.GetOrCreateArchetype(
+                                            self.SrcArchetype.TypeIdList.Append(typeId)));
+
+                entityMovingInfo = new(self.SrcArchetype);
+
+                self.Unnamed2.Add(self.SrcArchetype.ID, entityMovingInfo);
             }
 
             if (self.DstArchetype == null)

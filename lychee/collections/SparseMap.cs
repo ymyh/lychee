@@ -2,12 +2,7 @@
 
 namespace lychee.collections;
 
-public interface IKeyOfSparseMap
-{
-    int AsInt();
-}
-
-public sealed class SparseMap<T> : IDisposable where T : IKeyOfSparseMap
+public sealed class SparseMap<T> : IDisposable
 {
 #region Private fields
 
@@ -46,11 +41,10 @@ public sealed class SparseMap<T> : IDisposable where T : IKeyOfSparseMap
     /// <summary>
     /// Add an element to the sparse map, take the return value of AsInt() as the key.
     /// </summary>
+    /// <param name="id">The id of the value</param>
     /// <param name="value">The value to add</param>
-    public void Add(T value)
+    public void Add(int id, T value)
     {
-        var id = value.AsInt();
-
         if (id >= sparseArray.Count)
         {
             sparseArray.Resize(id + 1, -1);

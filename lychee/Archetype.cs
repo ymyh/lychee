@@ -129,7 +129,7 @@ public sealed class ArchetypeManager : IDisposable
 }
 
 public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistry typeRegistry)
-    : IDisposable, IKeyOfSparseMap
+    : IDisposable
 {
 #region Fields
 
@@ -139,11 +139,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     internal readonly Table Table = new(new(typeInfoList));
 
-    private readonly Dictionary<int, Archetype> addTypeArchetypeDict = new();
+    private readonly SparseMap<Archetype> addTypeArchetypeDict = new();
 
-    private readonly Dictionary<int, Archetype> removeTypeArchetypeDict = new();
+    private readonly SparseMap<Archetype> removeTypeArchetypeDict = new();
 
-    private readonly Dictionary<int, int[]> dstArchetypeCommCompIndices = new();
+    private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
 #endregion
 
@@ -255,16 +255,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public void Dispose()
     {
+        addTypeArchetypeDict.Dispose();
+        removeTypeArchetypeDict.Dispose();
+        dstArchetypeCommCompIndices.Dispose();
+
         Table.Dispose();
-    }
-
-#endregion
-
-#region IKeyOfSparseMap Member
-
-    public int AsInt()
-    {
-        return ID;
     }
 
 #endregion

@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace lychee.collections;
@@ -23,13 +24,15 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         set => EnsureCapacity(value);
     }
 
-    public ref T this[int index]
+    public ref T this[int id]
     {
         get
         {
+            Debug.Assert((uint)id < (uint)size);
+
             unsafe
             {
-                return ref data[index];
+                return ref data[id];
             }
         }
     }
@@ -105,6 +108,30 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         {
             var span = new Span<T>(data, size);
             span.Slice(begin, end - begin).Fill(item);
+        }
+    }
+
+    public delegate void ForEachDelegate(ref T item);
+
+    public void ForEach(ForEachDelegate del)
+    {
+        unsafe
+        {
+            for (var i = 0; i < size; i++)
+            {
+                del(ref data[i]);
+            }
+        }
+    }
+
+    public void ForEach(Action<T> act)
+    {
+        unsafe
+        {
+            for (var i = 0; i < size; i++)
+            {
+                act(data[i]);
+            }
         }
     }
 

@@ -67,15 +67,17 @@ public sealed class EntityPool
         return true;
     }
 
-    public EntityInfo? GetEntityInfo(Entity entity)
+    public bool GetEntityInfo(Entity entity, out EntityInfo info)
     {
         var e = entities[entity.ID];
 
         if (e.Generation == entity.Generation)
         {
-            return entityInfoList[e.ID];
+            info = entityInfoList[e.ID];
+            return true;
         }
 
-        return null;
+        info = default;
+        return false;
     }
 }

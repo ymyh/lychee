@@ -1,8 +1,9 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 
 namespace lychee.collections;
 
-public sealed class SparseMap<T> : IDisposable
+public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
 {
 #region Private fields
 
@@ -16,16 +17,16 @@ public sealed class SparseMap<T> : IDisposable
 
     public int Count => denseArray.Count;
 
-    public T this[int id]
+    public T this[int key]
     {
         get
         {
-            if (id < 0 || id >= sparseArray.Count || sparseArray[id] == -1)
+            if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
             {
                 throw new KeyNotFoundException();
             }
 
-            return denseArray[sparseArray[id]].Item2;
+            return denseArray[sparseArray[key]].Item2;
         }
     }
 
@@ -65,16 +66,16 @@ public sealed class SparseMap<T> : IDisposable
     /// <summary>
     /// Remove element by id
     /// </summary>
-    /// <param name="id">要移除的值的id</param>
+    /// <param name="key">要移除的值的id</param>
     /// <returns>如果成功移除则返回true，否则返回false</returns>
-    public bool Remove(int id)
+    public bool Remove(int key)
     {
-        if (id < 0 || id >= sparseArray.Count || sparseArray[id] == -1)
+        if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
         {
             return false;
         }
 
-        RemoveAt(sparseArray[id]);
+        RemoveAt(sparseArray[key]);
         return true;
     }
 
@@ -84,7 +85,7 @@ public sealed class SparseMap<T> : IDisposable
     /// <param name="denseIndex">denseArray中的索引</param>
     private void RemoveAt(int denseIndex)
     {
-        if (denseIndex < 0 || denseIndex >= denseArray.Count)
+        if ((uint)denseIndex >= (uint)denseArray.Count)
         {
             return;
         }
@@ -132,6 +133,46 @@ public sealed class SparseMap<T> : IDisposable
     public void Dispose()
     {
         sparseArray.Dispose();
+    }
+
+#endregion
+
+#region ICollection members
+
+    public bool IsReadOnly { get; } = false;
+
+    public void Add((int, T) item)
+    {
+        Add(item.Item1, item.Item2);
+    }
+
+    public void Clear()
+    {
+        sparseArray.Clear();
+        denseArray.Clear();
+    }
+
+    public bool Contains(int key)
+    {
+        if ((uint)key < (uint)sparseArray.Count && sparseArray[key] != -1)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public IEnumerator<(int, T)> GetEnumerator()
+    {
+        foreach (var valueTuple in denseArray)
+        {
+            yield return valueTuple;
+        }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 
 #endregion

@@ -7,9 +7,9 @@ internal sealed class EntityTransferInfo(Archetype archetype, int typeId, int vi
 {
     public readonly Archetype Archetype = archetype;
 
-    public int TypeId = typeId;
+    public readonly int TypeId = typeId;
 
-    public int ViewIdx = viewIdx;
+    public readonly int ViewIdx = viewIdx;
 }
 
 public sealed class EntityCommandBuffer(World world) : IDisposable
@@ -24,11 +24,11 @@ public sealed class EntityCommandBuffer(World world) : IDisposable
 
     internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeAddingTypeDict = new();
 
-    internal Archetype SrcArchetype;
+    internal Archetype SrcArchetype = null!;
 
     internal EntityTransferInfo? CurrentTransferInfo;
 
-    internal bool ArchetypeChanged = false;
+    internal bool ArchetypeChanged;
 
 #endregion
 
@@ -99,8 +99,7 @@ public static class EntityCommandBufferExtensions
                 nint ptr;
                 unsafe
                 {
-                    delegate* <EntityCommandBuffer, Entity, in T, bool> fptr = &AddComponent<T>;
-                    ptr = (nint)fptr;
+                    ptr = (nint)(delegate* <EntityCommandBuffer, Entity, in T, bool>)&AddComponent<T>;
                 }
 
                 if (self.SrcArchetypeAddingTypeDict.TryGetValue(ptr, out var map))

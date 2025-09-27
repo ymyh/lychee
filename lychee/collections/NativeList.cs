@@ -12,6 +12,8 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
     private int capacity;
 
+#region Public properties
+
     public bool IsFull => size == capacity;
 
     public bool IsEmpty => size == 0;
@@ -36,6 +38,10 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
             }
         }
     }
+
+#endregion
+
+#region Constructors & Destructors
 
     public NativeList()
     {
@@ -62,6 +68,8 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
     {
         Dispose();
     }
+
+#endregion
 
     public void Add(in T item)
     {
@@ -212,7 +220,7 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         }
     }
 
-    private unsafe void EnsureCapacity(int capacity)
+    private void EnsureCapacity(int capacity)
     {
         if (capacity < 0)
         {
@@ -226,17 +234,20 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
         this.capacity = Math.Max(this.capacity * 2, capacity);
 
-        if (data != null)
+        unsafe
         {
-            var ptr = NativeMemory.Alloc((nuint)(this.capacity * sizeof(T)));
-            NativeMemory.Copy(data, ptr, (nuint)(size * sizeof(T)));
-            NativeMemory.Free(data);
+            if (data != null)
+            {
+                var ptr = NativeMemory.Alloc((nuint)(this.capacity * sizeof(T)));
+                NativeMemory.Copy(data, ptr, (nuint)(size * sizeof(T)));
+                NativeMemory.Free(data);
 
-            data = (T*)ptr;
-        }
-        else
-        {
-            data = (T*)NativeMemory.Alloc((nuint)(this.capacity * sizeof(T)));
+                data = (T*)ptr;
+            }
+            else
+            {
+                data = (T*)NativeMemory.Alloc((nuint)(this.capacity * sizeof(T)));
+            }
         }
     }
 

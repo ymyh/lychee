@@ -59,10 +59,14 @@ public sealed class TypeRegistry
     public void RegisterBundle<T>() where T : unmanaged, IComponentBundle
     {
         var type = typeof(T);
-        var fields = type.GetFields();
-        var typeIds = fields.Select(f => Register(f.FieldType)).ToArray();
+        var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
 
-        T.TypeIdAG = typeIds;
+        if (fields.Length == 0)
+        {
+            throw new ArgumentException("Bundle type must have at least one field", nameof(T));
+        }
+
+        T.StructInfo = fields.Select(f => (Marshal.OffsetOf<T>(f.Name), Register(f.FieldType))).ToArray();
 
         bundleSizeDict.Add(type.FullName ?? type.Name, fields.Length);
     }

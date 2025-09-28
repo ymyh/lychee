@@ -11,7 +11,7 @@ namespace lychee_sg
     {
         public string Name;
 
-        public string Namesapce;
+        public string Namespace;
 
         public ParamInfo[] Params;
     }
@@ -43,7 +43,7 @@ namespace lychee_sg
 using System;
 using lychee.interfaces;
 
-namespace {sysInfo.Namesapce};
+namespace {sysInfo.Namespace};
 
 public partial class {sysInfo.Name} : ISystem
 {{
@@ -100,7 +100,7 @@ public partial class {sysInfo.Name} : ISystem
                         return new SystemInfo
                         {
                             Name = classDecl.Identifier.Text,
-                            Namesapce = Utils.GetNamespace(classDecl),
+                            Namespace = Utils.GetNamespace(classDecl),
                             Params = paramList,
                         };
                     }

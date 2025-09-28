@@ -64,10 +64,34 @@ public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
     }
 
     /// <summary>
-    /// Remove element by id
+    /// Clear all elements in the sparse map
     /// </summary>
-    /// <param name="key">要移除的值的id</param>
-    /// <returns>如果成功移除则返回true，否则返回false</returns>
+    public void Clear()
+    {
+        sparseArray.Clear();
+        denseArray.Clear();
+    }
+
+    /// <summary>
+    /// Check if the sparse map contains the specified key
+    /// </summary>
+    /// <param name="key">The key of the value</param>
+    /// <returns>Returns true if the value is found, otherwise false</returns>
+    public bool Contains(int key)
+    {
+        if ((uint)key < (uint)sparseArray.Count && sparseArray[key] != -1)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Remove element by key
+    /// </summary>
+    /// <param name="key">The key of the value</param>
+    /// <returns>Returns true if the value is found, otherwise false</returns>
     public bool Remove(int key)
     {
         if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
@@ -80,9 +104,9 @@ public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
     }
 
     /// <summary>
-    /// 从denseArray的指定索引处移除元素
+    /// Remove element by dense index
     /// </summary>
-    /// <param name="denseIndex">denseArray中的索引</param>
+    /// <param name="denseIndex">The dense index of the value</param>
     private void RemoveAt(int denseIndex)
     {
         if ((uint)denseIndex >= (uint)denseArray.Count)
@@ -109,20 +133,20 @@ public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
     }
 
     /// <summary>
-    /// 尝试获取指定id的值
+    /// Try to get value by key
     /// </summary>
-    /// <param name="id">要获取的值的id</param>
-    /// <param name="value">获取到的值</param>
-    /// <returns>如果找到指定id的值则返回true，否则返回false</returns>
-    public bool TryGetValue(int id, [MaybeNullWhen(false)] out T value)
+    /// <param name="key">The key of the value</param>
+    /// <param name="value">The value</param>
+    /// <returns>Returns true if the value is found, otherwise false</returns>
+    public bool TryGetValue(int key, [MaybeNullWhen(false)] out T value)
     {
         value = default;
-        if (id < 0 || id >= sparseArray.Count || sparseArray[id] == -1)
+        if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
         {
             return false;
         }
 
-        value = denseArray[sparseArray[id]].Item2;
+        value = denseArray[sparseArray[key]].Item2;
         return true;
     }
 
@@ -137,30 +161,7 @@ public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
 
 #endregion
 
-#region ICollection members
-
-    public bool IsReadOnly { get; } = false;
-
-    public void Add((int, T) item)
-    {
-        Add(item.Item1, item.Item2);
-    }
-
-    public void Clear()
-    {
-        sparseArray.Clear();
-        denseArray.Clear();
-    }
-
-    public bool Contains(int key)
-    {
-        if ((uint)key < (uint)sparseArray.Count && sparseArray[key] != -1)
-        {
-            return true;
-        }
-
-        return false;
-    }
+#region IEnumerable members
 
     public IEnumerator<(int, T)> GetEnumerator()
     {

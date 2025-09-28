@@ -71,7 +71,7 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
 #endregion
 
-    public void Add(in T item)
+    public void Add(in T value)
     {
         if (IsFull)
         {
@@ -87,7 +87,7 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
         unsafe
         {
-            data[size++] = item;
+            data[size++] = value;
         }
     }
 
@@ -143,7 +143,50 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         }
     }
 
-    public void Remove(int index)
+    public int IndexOf(T value, EqualityComparer<T>? comparer)
+    {
+        unsafe
+        {
+            var span = new Span<T>(data, size);
+            return span.IndexOf(value, comparer);
+        }
+    }
+
+    public void Insert(int index, T value)
+    {
+        unsafe
+        {
+            if ((uint)index > (uint)size)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            if (IsFull)
+            {
+                if (capacity != 0)
+                {
+                    EnsureCapacity(capacity * 2);
+                }
+                else
+                {
+                    EnsureCapacity(16);
+                }
+            }
+
+            if (index == size)
+            {
+                Add(value);
+                return;
+            }
+
+            NativeMemory.Copy(data + index, data + index + 1, (nuint)(sizeof(T) * (size - index - 0)));
+
+            data[index] = value;
+            size++;
+        }
+    }
+
+    public void RemoveAt(int index)
     {
         if (index < 0 || index >= size)
         {

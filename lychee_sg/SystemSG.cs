@@ -39,29 +39,53 @@ namespace lychee_sg
 
             context.RegisterSourceOutput(values, (spc, sysInfo) =>
             {
+                var componentTypes = sysInfo.Params.Where(p => p.Type.ToDisplayString() != "lychee.EntityCommander");
+                var registerTypes = string.Join(", ",
+                    componentTypes.Select(p => $"app.TypeRegistry.Register<{p.Type}>()"));
+
+                var getIters = new StringBuilder();
+                for (var i = 0; i < componentTypes.Count(); i++)
+                {
+                    getIters.AppendLine(
+                        $"var iter{i} = archetype.IterateTypeAmongChunk(SystemDataAG.TypeIdList[{i}]);");
+                }
+
                 var sb = new StringBuilder($@"
 using System;
+using lychee;
 using lychee.interfaces;
 
 namespace {sysInfo.Namespace};
 
-public partial class {sysInfo.Name} : ISystem
+public sealed partial class {sysInfo.Name} : ISystem
 {{
     private static class SystemDataAG
     {{
         public static int[] TypeIdList;
 
         public static Archetype[] Archetypes;
+
+        public static EntityCommander EntityCommander;
     }}
 
-    public void ConfigureAG(ArchetypeManager manager)
+    public void InitializeAG(App app)
     {{
-        // SystemDataAG.Archetypes = manager.
+        SystemDataAG.TypeIdList = [{registerTypes}];
+        SystemDataAG.EntityCommander = new(app.World);
+    }}
+
+    public void ConfigureAG(App app)
+    {{
+        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate([], [], [], SystemDataAG.TypeIdList);
     }}
 
     public unsafe void ExecuteAG()
     {{
-        
+        foreach (var archetype in SystemDataAG.Archetypes)
+        {{
+            {getIters}
+            Execute(new {sysInfo.Params[0].Type.Name}(), SystemDataAG.EntityCommander);  
+        }}
     }}
 }}
 
@@ -77,7 +101,7 @@ public partial class {sysInfo.Name} : ISystem
             {
                 return typeDeclNode.AttributeLists.Any(attributeList =>
                     attributeList.Attributes.Select(attr => attr.Name.ToString()).Any(name =>
-                        name == "System" || name == "lychee.attributes.System"));
+                        name == "AutoImplSystem" || name == "lychee.attributes.AutoImplSystem"));
             }
 
             return false;
@@ -93,7 +117,7 @@ public partial class {sysInfo.Name} : ISystem
                 {
                     if (memberDecl.Kind() == SyntaxKind.MethodDeclaration && methodDecl.Identifier.Text == "Execute")
                     {
-                        var symbol = context.SemanticModel.GetSymbolInfo(methodDecl).Symbol as IMethodSymbol;
+                        var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
                         var paramList = symbol.Parameters.Select(x => new ParamInfo { Type = x.Type, Kind = x.RefKind })
                             .ToArray();
 

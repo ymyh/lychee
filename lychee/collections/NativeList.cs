@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
-public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmanaged
+public sealed class NativeList<T> : IDisposable, IList<T>, IReadOnlyList<T> where T : unmanaged
 {
     private unsafe T* data;
 
@@ -20,13 +20,15 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
     public int Count => size;
 
+    public bool IsReadOnly => false;
+
     public int Capacity
     {
         get => capacity;
         set => EnsureCapacity(value);
     }
 
-    public ref T this[int id]
+    public T this[int id]
     {
         get
         {
@@ -34,10 +36,22 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
 
             unsafe
             {
-                return ref data[id];
+                return data[id];
+            }
+        }
+
+        set
+        {
+            Debug.Assert((uint)id < (uint)size);
+
+            unsafe
+            {
+                data[id] = value;
             }
         }
     }
+
+    public static implicit operator Span<T>(NativeList<T> list) => list.AsSpan();
 
 #endregion
 
@@ -91,9 +105,32 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         }
     }
 
+    public void Add(T value)
+    {
+        Add(in value);
+    }
+
+    public Span<T> AsSpan()
+    {
+        unsafe
+        {
+            return new(data, size);
+        }
+    }
+
     public void Clear()
     {
         size = 0;
+    }
+
+    public bool Contains(T item)
+    {
+        return IndexOf(item) != -1;
+    }
+
+    public void CopyTo(T[] array, int arrayIndex)
+    {
+        AsSpan().CopyTo(array.AsSpan(arrayIndex));
     }
 
     public void Fill(in T item)
@@ -143,13 +180,18 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
         }
     }
 
-    public int IndexOf(T value, EqualityComparer<T>? comparer)
+    public int IndexOf(in T value, EqualityComparer<T>? comparer)
     {
         unsafe
         {
             var span = new Span<T>(data, size);
             return span.IndexOf(value, comparer);
         }
+    }
+
+    public int IndexOf(T value)
+    {
+        return IndexOf(in value, null);
     }
 
     public void Insert(int index, T value)
@@ -184,6 +226,23 @@ public sealed class NativeList<T> : IDisposable, IEnumerable<T> where T : unmana
             data[index] = value;
             size++;
         }
+    }
+
+    public bool Remove(T value)
+    {
+        return Remove(in value);
+    }
+
+    public bool Remove(in T value)
+    {
+        var index = IndexOf(value);
+        if (index == -1)
+        {
+            return false;
+        }
+
+        RemoveAt(index);
+        return true;
     }
 
     public void RemoveAt(int index)

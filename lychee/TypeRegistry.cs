@@ -66,7 +66,8 @@ public sealed class TypeRegistry
             throw new ArgumentException("Bundle type must have at least one field", nameof(T));
         }
 
-        T.StructInfo = fields.Select(f => (Marshal.OffsetOf<T>(f.Name), Register(f.FieldType))).ToArray();
+        T.StructInfo = fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
+            Register(f.FieldType))).ToArray();
 
         bundleSizeDict.Add(type.FullName ?? type.Name, fields.Length);
     }

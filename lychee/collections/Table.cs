@@ -1,4 +1,6 @@
-﻿namespace lychee.collections;
+﻿using System.Runtime.CompilerServices;
+
+namespace lychee.collections;
 
 public sealed class TableLayout
 {
@@ -93,18 +95,6 @@ public sealed class Table : IDisposable
         return chunkViews[viewIdx].ReserveOne();
     }
 
-    public void PutData<T>(TableView view, in T data) where T : unmanaged
-    {
-    }
-
-    public unsafe T* GetPtr<T>(int typeIdx, int chunkIdx, int indexInChunk) where T : unmanaged
-    {
-        var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*)chunkViews[chunkIdx].Data;
-
-        return (T*)(ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk));
-    }
-
     public unsafe void* GetPtr(int typeIdx, int chunkIdx, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
@@ -113,6 +103,7 @@ public sealed class Table : IDisposable
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public unsafe void* GetLastPtr(int typeIdx, int chunkIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
@@ -135,7 +126,7 @@ public sealed class Table : IDisposable
         return (chunkIdx, idx);
     }
 
-    public IEnumerable<(nint, int)> IterateOfTypeAmongChunk(int typeIdx)
+    public IEnumerable<(nint ptr, int size)> IterateOfTypeAmongChunk(int typeIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
@@ -187,7 +178,7 @@ public sealed class TableView(int capacity) : IDisposable
 
     public readonly int Capacity = capacity;
 
-    private int reserve = 0;
+    private int reserve;
 
     public bool IsFull => Size + reserve == Capacity;
 

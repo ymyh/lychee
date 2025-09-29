@@ -5,4 +5,4 @@
 /// Target class must be partial
 /// </summary>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class System : Attribute;
+public sealed class AutoImplSystem : Attribute;

@@ -1,4 +1,5 @@
-﻿using lychee.collections;
+﻿using System.Runtime.InteropServices;
+using lychee.collections;
 using lychee.interfaces;
 
 namespace lychee;
@@ -9,7 +10,7 @@ internal sealed class EntityTransferInfo(Archetype archetype, int[] typeIndices,
 
     public readonly int[] TypeIndices = typeIndices;
 
-    public readonly int ViewIdx = viewIdx;
+    public int ViewIdx = viewIdx;
 }
 
 public sealed class EntityCommander(World world) : IDisposable
@@ -124,6 +125,8 @@ public static class EntityCommandBufferExtensions
                         dstArchetype.Table.GetFirstAvailableViewIdx());
                     map.Add(self.SrcArchetype.ID, self.TransferInfo);
                 }
+
+                Monitor.Enter(self.TransferInfo!.Archetype);
             }
 
             self.TransferInfo!.Archetype.Table.ReserveOne(self.TransferInfo.ViewIdx);
@@ -161,7 +164,7 @@ public static class EntityCommandBufferExtensions
 
                 if (self.TransferInfo is null)
                 {
-                    if (T.StructInfo.Length == 0)
+                    if (T.StructInfo == null)
                     {
                         self.TypeRegistry.RegisterBundle<T>();
                     }
@@ -169,7 +172,7 @@ public static class EntityCommandBufferExtensions
                     Archetype dstArchetype = null!;
                     var srcArchetype = self.SrcArchetype;
 
-                    foreach (var (offset, typeId) in T.StructInfo)
+                    foreach (var (offset, typeId) in T.StructInfo!)
                     {
                         dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId) ??
                                        self.ArchetypeManager.GetArchetype(
@@ -179,19 +182,34 @@ public static class EntityCommandBufferExtensions
                         srcArchetype = dstArchetype;
                     }
 
-                    self.TransferInfo = new(dstArchetype, T.StructInfo.Select(x => x.Item2).ToArray(),
+                    self.TransferInfo = new(dstArchetype,
+                        T.StructInfo.Select(x => dstArchetype.GetTypeIndex(x.typeId)).ToArray(),
                         dstArchetype.Table.GetFirstAvailableViewIdx());
                     map.Add(self.SrcArchetype.ID, self.TransferInfo);
                 }
+
+                Monitor.Enter(self.TransferInfo!.Archetype);
             }
 
-            self.TransferInfo!.Archetype.Table.ReserveOne(self.TransferInfo.ViewIdx);
+            if (!self.TransferInfo!.Archetype.Table.ReserveOne(self.TransferInfo.ViewIdx))
+            {
+                self.TransferInfo.ViewIdx = self.TransferInfo.Archetype.Table.GetFirstAvailableViewIdx();
+                self.TransferInfo.Archetype.Table.ReserveOne(self.TransferInfo.ViewIdx);
+            }
 
             for (var i = 0; i < self.TransferInfo.TypeIndices.Length; i++)
             {
                 unsafe
                 {
-                    // bundle.SetDataAG(i, self.CurrentTransferInfo.Archetype.Table.GetLastPtr(self.CurrentTransferInfo.TypeIndices[i], self.CurrentTransferInfo.ViewIdx));
+                    var info = T.StructInfo![i].info;
+                    var ptr = self.TransferInfo.Archetype.Table.GetLastPtr(self.TransferInfo.TypeIndices[i],
+                        self.TransferInfo.ViewIdx);
+
+                    fixed (T* bundlePtr = &bundle)
+                    {
+                        var componentPtr = (byte*)bundlePtr + info.Offset;
+                        NativeMemory.Copy(componentPtr, ptr, (nuint)info.Size);
+                    }
                 }
             }
 

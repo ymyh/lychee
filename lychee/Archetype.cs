@@ -64,12 +64,11 @@ public sealed class ArchetypeManager : IDisposable
     }
 
     public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
-        Type[] requires)
+        int[] requires)
     {
         return archetypes.Where(a =>
         {
-            var ret = requires.Select(type => typeRegistry.Register(type))
-                .Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+            var ret = requires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
             return allFilter.Select(type => typeRegistry.Register(type))
                 .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
         }).Where(a =>
@@ -149,16 +148,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
 #region Public Methods
 
-    public IEnumerable<(nint ptr, int size)> GetAllDataOfType<T>() where T : unmanaged
+    public IEnumerable<(nint ptr, int size)> IterateTypeAmongChunk(int typeId)
     {
-        var typeId = typeRegistry.GetTypeId<T>()!.Value;
         var typeIdx = GetTypeIndex(typeId);
-
-        return GetAllDataOfType(typeIdx);
-    }
-
-    public IEnumerable<(nint ptr, int size)> GetAllDataOfType(int typeIdx)
-    {
         return Table.IterateOfTypeAmongChunk(typeIdx);
     }
 

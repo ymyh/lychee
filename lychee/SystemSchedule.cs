@@ -48,7 +48,7 @@ public sealed class SystemSchedules
     }
 }
 
-public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func<bool> shouldExecute) : ISchedule
+public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecute) : ISchedule
 {
     public string Name { get; } = name;
 
@@ -65,6 +65,8 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
 
     public T AddSystem<[SystemConcept] [SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
     {
+        system.InitializeAG(app);
+
         var systemParamInfo = AnalyzeSystem(system, descriptor);
         var node = executionGraph.AddNode(new(new(system, systemParamInfo)));
 
@@ -99,24 +101,24 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
 
         foreach (var param in parameters)
         {
-            typeRegistry.Register(param.ParameterType.IsByRef
+            app.World.TypeRegistry.Register(param.ParameterType.IsByRef
                 ? param.ParameterType.GetElementType()!
                 : param.ParameterType);
         }
 
         foreach (var type in descriptor.AllFilter)
         {
-            typeRegistry.Register(type);
+            app.World.TypeRegistry.Register(type);
         }
 
         foreach (var type in descriptor.AnyFilter)
         {
-            typeRegistry.Register(type);
+            app.World.TypeRegistry.Register(type);
         }
 
         foreach (var type in descriptor.NoneFilter)
         {
-            typeRegistry.Register(type);
+            app.World.TypeRegistry.Register(type);
         }
 
         return parameters.Where(x =>
@@ -169,7 +171,7 @@ public sealed class DefaultSchedule(string name, TypeRegistry typeRegistry, Func
 
         foreach (var frozenDagNode in frozenDAGNodes)
         {
-            frozenDagNode.Data.System.ConfigureAG();
+            frozenDagNode.Data.System.ConfigureAG(app);
         }
     }
 

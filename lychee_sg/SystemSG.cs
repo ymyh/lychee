@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -21,6 +22,8 @@ namespace lychee_sg
         public ITypeSymbol Type;
 
         public RefKind Kind;
+
+        public bool IsEntityCommander;
     }
 
     [Generator]
@@ -39,15 +42,73 @@ namespace lychee_sg
 
             context.RegisterSourceOutput(values, (spc, sysInfo) =>
             {
-                var componentTypes = sysInfo.Params.Where(p => p.Type.ToDisplayString() != "lychee.EntityCommander");
-                var registerTypes = string.Join(", ",
-                    componentTypes.Select(p => $"app.TypeRegistry.Register<{p.Type}>()"));
+                var componentTypes = sysInfo.Params.Where(p => !p.IsEntityCommander).ToArray();
+                var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistry.Register<{p.Type}>()"));
+                var declIterCode = new StringBuilder();
 
-                var getIters = new StringBuilder();
-                for (var i = 0; i < componentTypes.Count(); i++)
+                for (var i = 0; i < componentTypes.Length; i++)
                 {
-                    getIters.AppendLine(
-                        $"var iter{i} = archetype.IterateTypeAmongChunk(SystemDataAG.TypeIdList[{i}]);");
+                    declIterCode.AppendLine(
+                        $"            var iter{i} = archetype.IterateTypeAmongChunk(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
+                }
+
+                var iterMoveNextCode = new List<string>(componentTypes.Length);
+                var iterateChunkWhileExpr = "";
+
+                if (declIterCode.Length > 0)
+                {
+                    for (var i = 0; i < componentTypes.Length; i++)
+                    {
+                        iterMoveNextCode.Add($"iter{i}.MoveNext()");
+                    }
+
+                    var iterDeclCurrentCode = new StringBuilder();
+                    var diff = 0;
+                    var execParams = string.Join(", ", sysInfo.Params.Select((param, idx) =>
+                    {
+                        if (!param.IsEntityCommander)
+                        {
+                            var derefCode = $"*((({param.Type.Name}*)ptr{idx - diff}) + i)";
+                            switch (param.Kind)
+                            {
+                                case RefKind.In:
+                                case RefKind.RefReadOnlyParameter:
+                                    return "in " + derefCode;
+                                case RefKind.Out:
+                                    return "out " + derefCode;
+                                case RefKind.Ref:
+                                    return $"ref {derefCode}";
+                                case RefKind.None:
+                                    return derefCode;
+                            }
+                        }
+
+                        diff++;
+                        return "SystemDataAG.EntityCommander";
+                    }));
+
+                    for (var i = 0; i < componentTypes.Length; i++)
+                    {
+                        if (i == 0)
+                        {
+                            iterDeclCurrentCode.AppendLine($"                var (ptr{i}, size) = iter{i}.Current;");
+                        }
+                        else
+                        {
+                            iterDeclCurrentCode.AppendLine($"                var (ptr{i}, _) = iter{i}.Current;");
+                        }
+                    }
+
+                    iterateChunkWhileExpr = $@"
+            while ({string.Join(" & ", iterMoveNextCode)})
+            {{
+{iterDeclCurrentCode}
+                for (var i = 0; i < size; i++)
+                {{
+                    Execute({execParams});
+                }}
+            }}
+";
                 }
 
                 var sb = new StringBuilder($@"
@@ -83,8 +144,7 @@ public sealed partial class {sysInfo.Name} : ISystem
     {{
         foreach (var archetype in SystemDataAG.Archetypes)
         {{
-            {getIters}
-            Execute(new {sysInfo.Params[0].Type.Name}(), SystemDataAG.EntityCommander);  
+{declIterCode}{iterateChunkWhileExpr}
         }}
     }}
 }}
@@ -118,8 +178,12 @@ public sealed partial class {sysInfo.Name} : ISystem
                     if (memberDecl.Kind() == SyntaxKind.MethodDeclaration && methodDecl.Identifier.Text == "Execute")
                     {
                         var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
-                        var paramList = symbol.Parameters.Select(x => new ParamInfo { Type = x.Type, Kind = x.RefKind })
-                            .ToArray();
+                        var paramList = symbol.Parameters.Select(x => new ParamInfo
+                        {
+                            Type = x.Type,
+                            Kind = x.RefKind,
+                            IsEntityCommander = x.Type.ToDisplayString() == "lychee.EntityCommander",
+                        }).ToArray();
 
                         return new SystemInfo
                         {

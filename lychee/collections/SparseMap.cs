@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace lychee.collections;
 
-public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
+public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int, T)>
 {
 #region Private fields
 
@@ -32,10 +32,22 @@ public sealed class SparseMap<T> : IDisposable, IEnumerable<(int, T)>
 
 #endregion
 
+#region Constructors & Destructors
+
+    public SparseMap(IEnumerable<(int, T)> enumerable) : this()
+    {
+        foreach (var valueTuple in enumerable)
+        {
+            Add(valueTuple.Item1, valueTuple.Item2);
+        }
+    }
+
     ~SparseMap()
     {
         Dispose();
     }
+
+#endregion
 
 #region Public Methods
 

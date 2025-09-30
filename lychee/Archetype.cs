@@ -34,7 +34,7 @@ public sealed class ArchetypeManager : IDisposable
 
         var id = archetypes.Count;
         var typeInfoList = array.Select(id => typeRegistry.GetTypeInfo(id).Item2).ToArray();
-        archetypes.Add(new(id, array, typeInfoList, typeRegistry));
+        archetypes.Add(new(id, array, typeInfoList));
 
         return id;
     }
@@ -127,7 +127,7 @@ public sealed class ArchetypeManager : IDisposable
 #endregion
 }
 
-public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistry typeRegistry)
+public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
     : IDisposable
 {
 #region Fields
@@ -136,11 +136,13 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public readonly int[] TypeIdList = typeIdList;
 
+    private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
+
     internal readonly Table Table = new(new(typeInfoList));
 
-    private readonly SparseMap<Archetype> addTypeArchetypeDict = new();
+    private readonly SparseMap<Archetype> addTypeArchetypeMap = new();
 
-    private readonly SparseMap<Archetype> removeTypeArchetypeDict = new();
+    private readonly SparseMap<Archetype> removeTypeArchetypeMap = new();
 
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
@@ -160,24 +162,24 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     internal Archetype? GetInsertCompTargetArchetype(int typeId)
     {
-        addTypeArchetypeDict.TryGetValue(typeId, out var archetype);
+        addTypeArchetypeMap.TryGetValue(typeId, out var archetype);
         return archetype;
     }
 
     internal Archetype? GetRemoveCompDstArchetype(int typeId)
     {
-        removeTypeArchetypeDict.TryGetValue(typeId, out var archetype);
+        removeTypeArchetypeMap.TryGetValue(typeId, out var archetype);
         return archetype;
     }
 
     internal void SetInsertCompTargetArchetype(int typeId, Archetype archetype)
     {
-        addTypeArchetypeDict.Add(typeId, archetype);
+        addTypeArchetypeMap.Add(typeId, archetype);
     }
 
     internal void AddRemoveCompDstArchetype(int typeId, Archetype archetype)
     {
-        removeTypeArchetypeDict.Add(typeId, archetype);
+        removeTypeArchetypeMap.Add(typeId, archetype);
     }
 
     internal void MoveDataTo(EntityInfo info, Archetype archetype)
@@ -224,7 +226,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     internal int GetTypeIndex(int typeId)
     {
-        return Array.IndexOf(TypeIdList, typeId);
+        return typeIdxMap[typeId];
     }
 
 #endregion
@@ -236,8 +238,8 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         var i = 0;
         foreach (var typeId in typeIdList)
         {
-            output[i] = Array.IndexOf(TypeIdList, typeId);
-            i += 1;
+            output[i] = typeIdxMap[typeId];
+            i++;
         }
     }
 
@@ -247,9 +249,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public void Dispose()
     {
-        addTypeArchetypeDict.Dispose();
-        removeTypeArchetypeDict.Dispose();
+        addTypeArchetypeMap.Dispose();
+        removeTypeArchetypeMap.Dispose();
         dstArchetypeCommCompIndices.Dispose();
+        typeIdxMap.Dispose();
 
         Table.Dispose();
     }

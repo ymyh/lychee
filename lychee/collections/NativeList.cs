@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
-public sealed class NativeList<T> : IDisposable, IList<T>, IReadOnlyList<T> where T : unmanaged
+public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> where T : unmanaged
 {
     private unsafe T* data;
 
@@ -57,16 +57,12 @@ public sealed class NativeList<T> : IDisposable, IList<T>, IReadOnlyList<T> wher
 
 #region Constructors & Destructors
 
-    public NativeList()
-    {
-    }
-
-    public NativeList(int capacity)
+    public NativeList(int capacity) : this()
     {
         EnsureCapacity(capacity);
     }
 
-    public NativeList(T[] array)
+    public NativeList(T[] array) : this()
     {
         EnsureCapacity(array.Length);
         size = array.Length;

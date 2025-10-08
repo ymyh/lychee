@@ -29,12 +29,7 @@ namespace lychee_sg
                 }
             }
 
-            if (namespaces.Count == 0)
-            {
-                return string.Empty;
-            }
-
-            return string.Join(".", namespaces);
+            return namespaces.Count == 0 ? string.Empty : string.Join(".", namespaces);
         }
     }
 }

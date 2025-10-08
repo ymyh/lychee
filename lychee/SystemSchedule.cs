@@ -54,7 +54,9 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
 
     private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
-    private FrozenDAGNode<SystemInfo>[] frozenDAGNodes = [];
+    private FrozenDAGNode<SystemInfo>[][] frozenDAGNodes = [];
+
+    private List<Task> tasks = [];
 
     private bool isFrozen;
 
@@ -68,7 +70,7 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
         system.InitializeAG(app);
 
         var systemParamInfo = AnalyzeSystem(system, descriptor);
-        var node = executionGraph.AddNode(new(new(system, systemParamInfo)));
+        var node = executionGraph.AddNode(new(new(system, systemParamInfo, descriptor)));
 
         isFrozen = false;
 
@@ -96,36 +98,44 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
     private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
-        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Instance)!;
+        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static)!;
         var parameters = method.GetParameters();
 
         foreach (var param in parameters)
         {
-            app.World.TypeRegistry.Register(param.ParameterType.IsByRef
+            app.World.TypeRegistry.RegisterComponent(param.ParameterType.IsByRef
                 ? param.ParameterType.GetElementType()!
                 : param.ParameterType);
         }
 
         foreach (var type in descriptor.AllFilter)
         {
-            app.World.TypeRegistry.Register(type);
+            app.World.TypeRegistry.RegisterComponent(type);
         }
 
         foreach (var type in descriptor.AnyFilter)
         {
-            app.World.TypeRegistry.Register(type);
+            app.World.TypeRegistry.RegisterComponent(type);
         }
 
         foreach (var type in descriptor.NoneFilter)
         {
-            app.World.TypeRegistry.Register(type);
+            app.World.TypeRegistry.RegisterComponent(type);
         }
 
-        return parameters.Where(x =>
-                x.CustomAttributes.All(a =>
-                    a.AttributeType != typeof(ResReadOnly) && a.AttributeType != typeof(ResMut))).Select(x =>
-                new SystemParameterInfo(x.ParameterType, x.IsIn))
-            .ToArray();
+        return parameters.Select(p =>
+        {
+            var targetAttrs = p.CustomAttributes.Where(a =>
+                a.AttributeType == typeof(ResReadOnly) || a.AttributeType == typeof(ResMut)).ToArray();
+
+            return targetAttrs.Length switch
+            {
+                > 1 => throw new CustomAttributeFormatException(
+                    $"Parameter {p.Name} has both ResReadOnly and ResMut attribute"),
+                1 => new(p.ParameterType, targetAttrs[0].AttributeType == typeof(ResReadOnly)),
+                _ => new SystemParameterInfo(p.ParameterType, p.IsIn)
+            };
+        }).ToArray();
     }
 
     private static bool CanParallelWithSystem(SystemInfo info, SystemInfo tryAddAfterInfo)
@@ -153,26 +163,29 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
         {
             if (!isFrozen)
             {
-                frozenDAGNodes = executionGraph.AsList().Freeze();
+                frozenDAGNodes = executionGraph.AsList().Freeze().AsExecutionGroup();
                 isFrozen = true;
             }
 
-            foreach (var frozenDagNode in frozenDAGNodes)
+            foreach (var group in frozenDAGNodes)
             {
-                frozenDagNode.Data.System.ExecuteAG();
+                foreach (var frozenDagNode in group)
+                {
+                    tasks.Add(Task.Run(() =>
+                    {
+                        frozenDagNode.Data.System.ExecuteAG();
+                    }));
+                }
+
+                Task.WaitAll(tasks);
+                tasks.Clear();
             }
         }
     }
 
     public void Configure()
     {
-        frozenDAGNodes = executionGraph.AsList().Freeze();
-        isFrozen = true;
-
-        foreach (var frozenDagNode in frozenDAGNodes)
-        {
-            frozenDagNode.Data.System.ConfigureAG(app);
-        }
+        executionGraph.AsList().ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
     }
 
 #endregion

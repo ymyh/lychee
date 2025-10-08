@@ -2,13 +2,14 @@
 
 namespace lychee;
 
-public sealed class ResourcePool
+public sealed class ResourcePool(TypeRegistry typeRegistry)
 {
     private readonly Dictionary<Type, object> dataMap = new();
 
-    public void AddResource<T>(T resource)
+    public void AddResource<T>(T resource) where T : class
     {
         Debug.Assert(resource != null);
+        typeRegistry.Register<T>();
 
         if (!dataMap.TryAdd(typeof(T), resource))
         {
@@ -16,14 +17,14 @@ public sealed class ResourcePool
         }
     }
 
-    public T GetResource<T>()
+    public T GetResource<T>() where T : class
     {
         Debug.Assert(dataMap.ContainsKey(typeof(T)));
 
         return (T)dataMap[typeof(T)];
     }
 
-    public void ReplaceResource<T>(T resource)
+    public void ReplaceResource<T>(T resource) where T : class
     {
         Debug.Assert(resource != null);
 

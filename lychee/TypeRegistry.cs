@@ -24,12 +24,22 @@ public sealed class TypeRegistry
     private readonly Dictionary<string, int> bundleSizeDict = new();
 
     private static readonly MethodInfo RegisterMethod =
-        typeof(TypeRegistry).GetMethod("Register", BindingFlags.Public | BindingFlags.Instance, [typeof(int)])!;
+        typeof(TypeRegistry).GetMethod("RegisterComponent", BindingFlags.Public | BindingFlags.Instance, [typeof(int)])!;
 
     private static readonly MethodInfo RegisterBundleMethod =
         typeof(TypeRegistry).GetMethod("RegisterBundle", BindingFlags.Public | BindingFlags.Instance, [])!;
 
-    public int Register<T>(int alignment = 0) where T : unmanaged, IComponent
+    public int RegisterComponent<T>(int alignment = 0) where T : unmanaged, IComponent
+    {
+        return Register<T>(alignment);
+    }
+
+    public int RegisterComponent(Type type, int alignment = 0)
+    {
+        return (int)RegisterMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
+    }
+
+    internal int Register<T>(int alignment = 0)
     {
         var type = typeof(T);
         var name = type.FullName ?? type.Name;
@@ -51,11 +61,6 @@ public sealed class TypeRegistry
         return typeList.Count - 1;
     }
 
-    public int Register(Type type, int alignment = 0)
-    {
-        return (int)RegisterMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
-    }
-
     public void RegisterBundle<T>() where T : unmanaged, IComponentBundle
     {
         var type = typeof(T);
@@ -67,7 +72,7 @@ public sealed class TypeRegistry
         }
 
         T.StructInfo = fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
-            Register(f.FieldType))).ToArray();
+            RegisterComponent(f.FieldType))).ToArray();
 
         bundleSizeDict.Add(type.FullName ?? type.Name, fields.Length);
     }
@@ -129,8 +134,4 @@ public sealed class TypeRegistry
 
         return null;
     }
-
-#region Private methods
-
-#endregion
 }

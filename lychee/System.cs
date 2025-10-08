@@ -9,11 +9,13 @@ internal struct SystemParameterInfo(Type type, bool readOnly)
     public readonly bool ReadOnly = readOnly;
 }
 
-internal struct SystemInfo(ISystem system, SystemParameterInfo[] parameters)
+internal struct SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemDescriptor descriptor)
 {
     internal readonly ISystem System = system;
 
     internal readonly SystemParameterInfo[] Parameters = parameters;
+
+    internal readonly SystemDescriptor Descriptor = descriptor;
 }
 
 public sealed class SystemDescriptor

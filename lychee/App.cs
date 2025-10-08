@@ -10,7 +10,7 @@ public sealed class App : IDisposable
 
     public readonly TypeRegistry TypeRegistry = new();
 
-    public readonly ResourcePool ResourcePool = new();
+    public readonly ResourcePool ResourcePool;
 
     public readonly World World;
     public RunnerDelegate Runner { get; set; }
@@ -23,7 +23,9 @@ public sealed class App : IDisposable
 
     public App()
     {
-        World = new World(TypeRegistry);
+        World = new(TypeRegistry);
+        ResourcePool = new(TypeRegistry);
+
         Runner = () =>
         {
             while (!shouldExit)

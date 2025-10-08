@@ -128,15 +128,32 @@ public sealed class DirectedAcyclicGraph<T>
 
         return result;
     }
+
+    public void ForEach(Action<DAGNode<T>> action)
+    {
+        foreach (var node in Nodes)
+        {
+            action(node);
+            node.Children.ForEach(action);
+        }
+    }
 }
 
 public static class DirectedAcyclicGraphExtensions
 {
-    extension<T>(IList<DAGNode<T>> nodes)
+    extension<T>(IEnumerable<DAGNode<T>> nodes)
     {
-        public FrozenDAGNode<T>[] Freeze()
+        public IEnumerable<FrozenDAGNode<T>> Freeze()
         {
-            return nodes.Select(x => new FrozenDAGNode<T>(x)).ToArray();
+            return nodes.Select(x => new FrozenDAGNode<T>(x));
+        }
+    }
+
+    extension<T>(IEnumerable<FrozenDAGNode<T>> nodes)
+    {
+        public FrozenDAGNode<T>[][] AsExecutionGroup()
+        {
+            return nodes.GroupBy(x => new {x.Group}).Select(x => x.ToArray()).ToArray();
         }
     }
 }

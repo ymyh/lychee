@@ -17,13 +17,18 @@ namespace lychee_sg
         public ParamInfo[] Params;
     }
 
+    internal enum ParamKind
+    {
+        Component, Resource, EntityCommander
+    }
+
     internal struct ParamInfo
     {
         public ITypeSymbol Type;
 
-        public RefKind Kind;
+        public RefKind RefKind;
 
-        public bool IsEntityCommander;
+        public ParamKind ParamKind;
     }
 
     [Generator]
@@ -42,75 +47,8 @@ namespace lychee_sg
 
             context.RegisterSourceOutput(values, (spc, sysInfo) =>
             {
-                var componentTypes = sysInfo.Params.Where(p => !p.IsEntityCommander).ToArray();
-                var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistry.Register<{p.Type}>()"));
-                var declIterCode = new StringBuilder();
-
-                for (var i = 0; i < componentTypes.Length; i++)
-                {
-                    declIterCode.AppendLine(
-                        $"            var iter{i} = archetype.IterateTypeAmongChunk(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
-                }
-
-                var iterMoveNextCode = new List<string>(componentTypes.Length);
-                var iterateChunkWhileExpr = "";
-
-                if (declIterCode.Length > 0)
-                {
-                    for (var i = 0; i < componentTypes.Length; i++)
-                    {
-                        iterMoveNextCode.Add($"iter{i}.MoveNext()");
-                    }
-
-                    var iterDeclCurrentCode = new StringBuilder();
-                    var diff = 0;
-                    var execParams = string.Join(", ", sysInfo.Params.Select((param, idx) =>
-                    {
-                        if (!param.IsEntityCommander)
-                        {
-                            var derefCode = $"*((({param.Type.Name}*)ptr{idx - diff}) + i)";
-                            switch (param.Kind)
-                            {
-                                case RefKind.In:
-                                case RefKind.RefReadOnlyParameter:
-                                    return "in " + derefCode;
-                                case RefKind.Out:
-                                    return "out " + derefCode;
-                                case RefKind.Ref:
-                                    return $"ref {derefCode}";
-                                case RefKind.None:
-                                    return derefCode;
-                            }
-                        }
-
-                        diff++;
-                        return "SystemDataAG.EntityCommander";
-                    }));
-
-                    for (var i = 0; i < componentTypes.Length; i++)
-                    {
-                        if (i == 0)
-                        {
-                            iterDeclCurrentCode.AppendLine($"                var (ptr{i}, size) = iter{i}.Current;");
-                        }
-                        else
-                        {
-                            iterDeclCurrentCode.AppendLine($"                var (ptr{i}, _) = iter{i}.Current;");
-                        }
-                    }
-
-                    iterateChunkWhileExpr = $@"
-            while ({string.Join(" & ", iterMoveNextCode)})
-            {{
-{iterDeclCurrentCode}
-                for (var i = 0; i < size; i++)
-                {{
-                    Execute({execParams});
-                }}
-            }}
-";
-                }
-
+                var componentTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Component).ToArray();
+                var resourceTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Resource).ToArray();
                 var sb = new StringBuilder($@"
 using System;
 using lychee;
@@ -118,35 +56,26 @@ using lychee.interfaces;
 
 namespace {sysInfo.Namespace};
 
-public sealed partial class {sysInfo.Name} : ISystem
+sealed partial class {sysInfo.Name} : ISystem
 {{
     private static class SystemDataAG
     {{
+        public static ResourcePool Pool;
+
         public static int[] TypeIdList;
 
         public static Archetype[] Archetypes;
 
         public static EntityCommander EntityCommander;
     }}
+{MakeInitializeAGCode(componentTypes)}
 
-    public void InitializeAG(App app)
+    public void ConfigureAG(App app, SystemDescriptor descriptor)
     {{
-        SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.EntityCommander = new(app.World);
+        SystemDataAG.Pool = app.ResourcePool;
+        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(descriptor.AllFilter, descriptor.AnyFilter, descriptor.NoneFilter, SystemDataAG.TypeIdList);
     }}
-
-    public void ConfigureAG(App app)
-    {{
-        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate([], [], [], SystemDataAG.TypeIdList);
-    }}
-
-    public unsafe void ExecuteAG()
-    {{
-        foreach (var archetype in SystemDataAG.Archetypes)
-        {{
-{declIterCode}{iterateChunkWhileExpr}
-        }}
-    }}
+{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes)}
 }}
 
 ");
@@ -178,11 +107,31 @@ public sealed partial class {sysInfo.Name} : ISystem
                     if (memberDecl.Kind() == SyntaxKind.MethodDeclaration && methodDecl.Identifier.Text == "Execute")
                     {
                         var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
-                        var paramList = symbol.Parameters.Select(x => new ParamInfo
+
+                        var paramList = symbol.Parameters.Select(x =>
                         {
-                            Type = x.Type,
-                            Kind = x.RefKind,
-                            IsEntityCommander = x.Type.ToDisplayString() == "lychee.EntityCommander",
+                            var paramKind = ParamKind.Component;
+
+                            if (x.Type.ToDisplayString() == "lychee.EntityCommander")
+                            {
+                                paramKind = ParamKind.EntityCommander;
+                            }
+
+                            if (x.GetAttributes().Any(a =>
+                                {
+                                    var name = a.AttributeClass.ToDisplayString();
+                                    return name == "lychee.attributes.ResReadOnly" ||  name == "lychee.attributes.ResMut";
+                                }))
+                            {
+                                paramKind = ParamKind.Resource;
+                            }
+
+                            return new ParamInfo
+                            {
+                                Type = x.Type,
+                                RefKind = x.RefKind,
+                                ParamKind = paramKind,
+                            };
                         }).ToArray();
 
                         return new SystemInfo
@@ -196,6 +145,108 @@ public sealed partial class {sysInfo.Name} : ISystem
             }
 
             return null;
+        }
+
+        private static string MakeInitializeAGCode(ParamInfo[] componentTypes)
+        {
+            var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistry.RegisterComponent<{p.Type}>()"));
+
+            return $@"
+    public void InitializeAG(App app)
+    {{
+        SystemDataAG.TypeIdList = [{registerTypes}];
+        SystemDataAG.EntityCommander = new(app.World);
+    }}";
+        }
+
+        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams)
+        {
+            string body;
+
+            var execParams = string.Join(", ", allParams.Select((param, idx) =>
+            {
+                switch (param.ParamKind)
+                {
+                    case ParamKind.Component:
+                        var derefCode = $"(({param.Type}*){param.Type.Name.ToLower()})[i]";
+                        switch (param.RefKind)
+                        {
+                            case RefKind.In:
+                            case RefKind.RefReadOnlyParameter:
+                                return "in " + derefCode;
+                            case RefKind.Out:
+                                return "out " + derefCode;
+                            case RefKind.Ref:
+                                return $"ref {derefCode}";
+                            case RefKind.None:
+                                return derefCode;
+                        }
+                        break;
+                    case ParamKind.Resource:
+                        return $"{param.Type.Name.ToLower()}";
+                        break;
+                    case ParamKind.EntityCommander:
+                        break;
+                }
+
+                return "SystemDataAG.EntityCommander";
+            }));
+
+            var declResourceCode = new StringBuilder();
+
+            if (resourceParams.Length > 0)
+            {
+                foreach (var resourceParam in resourceParams)
+                {
+                    declResourceCode.AppendLine($"        var {resourceParam.Type.Name.ToLower()} = SystemDataAG.Pool.GetResource<{resourceParam.Type}>();");
+                }
+            }
+
+            if (componentParams.Length > 0)
+            {
+                var declIterCode = new StringBuilder();
+                var iterDeclCurrentCode = new StringBuilder();
+                var iterMoveNextCode = new List<string>(componentParams.Length);
+
+                for (var i = 0; i < componentParams.Length; i++)
+                {
+                    declIterCode.AppendLine(
+                        $"            var iter{i} = archetype.IterateTypeAmongChunk(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
+                    iterMoveNextCode.Add($"iter{i}.MoveNext()");
+
+                    iterDeclCurrentCode.AppendLine(i == 0
+                        ? $"                var ({componentParams[i].Type.Name.ToLower()}, size) = iter{i}.Current;"
+                        : $"                var ({componentParams[i].Type.Name.ToLower()}, _) = iter{i}.Current;");
+                }
+
+                var iterateChunkWhileExpr = $@"
+            while ({string.Join(" & ", iterMoveNextCode)})
+            {{
+{iterDeclCurrentCode}
+                for (var i = 0; i < size; i++)
+                {{
+                    Execute({execParams});
+                }}
+            }}";
+
+                body = $@"
+{declResourceCode}
+        foreach (var archetype in SystemDataAG.Archetypes)
+        {{
+{declIterCode}{iterateChunkWhileExpr}
+        }}";
+            }
+            else
+            {
+                body = $@"
+{declResourceCode}
+        Execute({execParams});";
+            }
+
+            return $@"
+    public unsafe void ExecuteAG()
+    {{{body}
+    }}";
         }
     }
 }

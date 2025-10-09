@@ -2,68 +2,88 @@
 
 namespace lychee.threading;
 
-public sealed class ThreadPool
+public sealed class ThreadPool : IDisposable
 {
     private readonly List<Thread> threads;
 
-    private readonly List<Channel<Action>> sendTaskChannels;
+    private readonly Channel<Action> sendTaskChannel;
+
+    private readonly Channel<int> taskCompleteChannel;
 
     private int taskCount;
-
-    private int currentChannel;
 
     public ThreadPool(int threadCount)
     {
         threads = new(threadCount);
-        sendTaskChannels = new(threadCount);
+        sendTaskChannel = Channel.CreateBounded<Action>(new BoundedChannelOptions(64)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = true,
+        });
+        taskCompleteChannel = Channel.CreateBounded<int>(new BoundedChannelOptions(64)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false,
+        });
 
         for (var i = 0; i < threadCount; i++)
         {
-            var sendTaskChannel = Channel.CreateBounded<Action>(64);
-            var taskCompleteChannel = Channel.CreateBounded<int>(64);
-
             var thread = new Thread(async () =>
             {
-                var act = await sendTaskChannel.Reader.ReadAsync();
-                Interlocked.Increment(ref taskCount);
-                act();
-                Interlocked.Decrement(ref taskCount);
-                taskCompleteChannel.Writer.TryWrite(0);
+                while (true)
+                {
+                    try
+                    {
+                        var act = await sendTaskChannel.Reader.ReadAsync();
+                        act();
+                        taskCompleteChannel.Writer.TryWrite(0);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        break;
+                    }
+                }
             });
 
-            sendTaskChannels.Add(sendTaskChannel);
             threads.Add(thread);
-
             thread.Start();
         }
     }
 
     ~ThreadPool()
     {
-        foreach (var channel in sendTaskChannels)
-        {
-            channel.Writer.Complete();
-        }
-
-        foreach (var thread in threads)
-        {
-            thread.Join();
-        }
+        Dispose();
     }
 
     public void Dispatch(Action act)
     {
-        if (currentChannel == sendTaskChannels.Count)
-        {
-            currentChannel = 0;
-        }
-
-        sendTaskChannels[currentChannel].Writer.WriteAsync(act);
-        currentChannel++;
+        taskCount++;
+        sendTaskChannel.Writer.TryWrite(act);
     }
 
-    public void Wait()
+    public async Task AsTask()
     {
-        SpinWait.SpinUntil(() => taskCount == 0, 16);
+        while (true)
+        {
+            await taskCompleteChannel.Reader.ReadAsync();
+            taskCount--;
+
+            if (taskCount == 0)
+            {
+                break;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        sendTaskChannel.Writer.Complete();
+        taskCompleteChannel.Writer.Complete();
+        threads.ForEach(x => x.Join());
+
+        GC.SuppressFinalize(this);
     }
 }

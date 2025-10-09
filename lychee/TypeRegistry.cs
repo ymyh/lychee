@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Collections.Concurrent;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using lychee.interfaces;
 using lychee.utils;
@@ -17,13 +18,14 @@ public struct TypeInfo(int size, int alignment)
 
 public sealed class TypeRegistry
 {
-    private readonly List<(Type, TypeInfo)> typeList = [];
+    private readonly ReadWriteLock<List<(Type, TypeInfo)>> typeListLock = new([]);
 
-    private readonly Dictionary<string, int> typenameDict = new();
-
-    private readonly Dictionary<string, int> bundleSizeDict = new();
+    private readonly ConcurrentDictionary<string, int> typenameToIdDict = new();
 
     private static readonly MethodInfo RegisterMethod =
+        typeof(TypeRegistry).GetMethod("Register", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(int)])!;
+
+    private static readonly MethodInfo RegisterComponentMethod =
         typeof(TypeRegistry).GetMethod("RegisterComponent", BindingFlags.Public | BindingFlags.Instance, [typeof(int)])!;
 
     private static readonly MethodInfo RegisterBundleMethod =
@@ -36,6 +38,11 @@ public sealed class TypeRegistry
 
     public int RegisterComponent(Type type, int alignment = 0)
     {
+        return (int)RegisterComponentMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
+    }
+
+    public int Register(Type type, int alignment = 0)
+    {
         return (int)RegisterMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
     }
 
@@ -44,19 +51,25 @@ public sealed class TypeRegistry
         var type = typeof(T);
         var name = type.FullName ?? type.Name;
 
-        if (typenameDict.TryGetValue(name, out var value))
+        using var wg = typeListLock.EnterWriteLock();
+        var typeList = wg.Data;
+
+        if (typenameToIdDict.TryGetValue(name, out var value))
         {
             return value;
         }
 
-        typenameDict.Add(name, typeList.Count);
-        var size = Marshal.SizeOf(type);
-        if (alignment == 0)
+        typenameToIdDict.TryAdd(name, typeList.Count);
+        unsafe
         {
-            alignment = TypeUtils.GetOrGuessAlignment(type, size);
-        }
+            var size = typeof(T).IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
+            if (alignment == 0)
+            {
+                alignment = TypeUtils.GetOrGuessAlignment(type, size);
+            }
 
-        typeList.Add((type, new(size, alignment)));
+            typeList.Add((type, new(size, alignment)));
+        }
 
         return typeList.Count - 1;
     }
@@ -73,8 +86,6 @@ public sealed class TypeRegistry
 
         T.StructInfo = fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
             RegisterComponent(f.FieldType))).ToArray();
-
-        bundleSizeDict.Add(type.FullName ?? type.Name, fields.Length);
     }
 
     public void RegisterBundle(Type type)
@@ -90,7 +101,8 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public (Type, TypeInfo) GetTypeInfo(int id)
     {
-        return typeList[id];
+        using var rg = typeListLock.EnterReadLock();
+        return rg.Data[id];
     }
 
     /// <summary>
@@ -101,7 +113,8 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public (Type, TypeInfo) GetTypeInfo(string fullName)
     {
-        return typeList[typenameDict[fullName]];
+        using var rg = typeListLock.EnterReadLock();
+        return rg.Data[typenameToIdDict[fullName]];
     }
 
     /// <summary>
@@ -127,7 +140,7 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public int? GetTypeId(string fullName)
     {
-        if (typenameDict.TryGetValue(fullName, out var id))
+        if (typenameToIdDict.TryGetValue(fullName, out var id))
         {
             return id;
         }

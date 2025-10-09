@@ -19,7 +19,9 @@ namespace lychee_sg
 
     internal enum ParamKind
     {
-        Component, Resource, EntityCommander
+        Component,
+        Resource,
+        EntityCommander
     }
 
     internal struct ParamInfo
@@ -120,7 +122,7 @@ sealed partial class {sysInfo.Name} : ISystem
                             if (x.GetAttributes().Any(a =>
                                 {
                                     var name = a.AttributeClass.ToDisplayString();
-                                    return name == "lychee.attributes.ResReadOnly" ||  name == "lychee.attributes.ResMut";
+                                    return name == "lychee.attributes.Resource";
                                 }))
                             {
                                 paramKind = ParamKind.Resource;
@@ -155,7 +157,7 @@ sealed partial class {sysInfo.Name} : ISystem
     public void InitializeAG(App app)
     {{
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.EntityCommander = new(app.World);
+        SystemDataAG.EntityCommander = new(app);
     }}";
         }
 
@@ -181,6 +183,7 @@ sealed partial class {sysInfo.Name} : ISystem
                             case RefKind.None:
                                 return derefCode;
                         }
+
                         break;
                     case ParamKind.Resource:
                         return $"{param.Type.Name.ToLower()}";

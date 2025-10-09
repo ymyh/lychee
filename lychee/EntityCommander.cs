@@ -13,15 +13,15 @@ internal sealed class EntityTransferInfo(Archetype archetype, int[] typeIndices,
     public int ViewIdx = viewIdx;
 }
 
-public sealed class EntityCommander(World world) : IDisposable
+public sealed class EntityCommander(App app) : IDisposable
 {
 #region Fields
 
-    internal readonly EntityPool EntityPool = world.EntityPool;
+    internal readonly EntityPool EntityPool = app.World.EntityPool;
 
-    internal readonly ArchetypeManager ArchetypeManager = world.ArchetypeManager;
+    internal readonly ArchetypeManager ArchetypeManager = app.World.ArchetypeManager;
 
-    internal readonly TypeRegistry TypeRegistry = world.TypeRegistry;
+    internal readonly TypeRegistry TypeRegistry = app.TypeRegistry;
 
     internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeAddingTypeDict = new();
 
@@ -29,7 +29,7 @@ public sealed class EntityCommander(World world) : IDisposable
 
     internal EntityTransferInfo? TransferInfo;
 
-    internal bool ArchetypeChanged;
+    internal bool SrcArchetypeChanged;
 
 #endregion
 
@@ -65,7 +65,7 @@ public sealed class EntityCommander(World world) : IDisposable
             Monitor.Exit(TransferInfo.Archetype);
         }
 
-        ArchetypeChanged = true;
+        SrcArchetypeChanged = true;
         SrcArchetype = archetype;
     }
 
@@ -95,7 +95,7 @@ public static class EntityCommandBufferExtensions
                 return false;
             }
 
-            if (self.ArchetypeChanged)
+            if (self.SrcArchetypeChanged)
             {
                 nint ptr;
                 unsafe
@@ -144,7 +144,7 @@ public static class EntityCommandBufferExtensions
                 return false;
             }
 
-            if (self.ArchetypeChanged)
+            if (self.SrcArchetypeChanged)
             {
                 nint ptr;
                 unsafe

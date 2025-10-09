@@ -11,21 +11,27 @@ public sealed class SystemSchedules
 
     public void AddSchedule(ISchedule schedule)
     {
-        var index = schedules.FindIndex(x => x.Name == schedule.Name);
+        var index = schedules.IndexOf(schedule);
         if (index != -1)
         {
-            throw new ArgumentException($"Schedule {schedule.Name} already exists");
+            throw new ArgumentException($"Schedule {schedule} already exists");
         }
 
         schedules.Add(schedule);
     }
 
-    public void AddSchedule(ISchedule schedule, string addAfterScheduleName)
+    public void AddSchedule(ISchedule schedule, ISchedule addAfterSchedule)
     {
-        var index = schedules.FindIndex(x => x.Name == addAfterScheduleName);
+        var index = schedules.IndexOf(schedule);
+        if (index != -1)
+        {
+            throw new ArgumentException($"Schedule {schedule} already exists");
+        }
+
+        index = schedules.IndexOf(addAfterSchedule);
         if (index == -1)
         {
-            throw new ArgumentException($"Schedule {addAfterScheduleName} not found");
+            throw new ArgumentException($"Schedule {addAfterSchedule} not found");
         }
 
         schedules.Insert(index + 1, schedule);
@@ -38,34 +44,44 @@ public sealed class SystemSchedules
             schedule.Execute();
         }
     }
-
-    public void Configure()
-    {
-        foreach (var schedule in schedules)
-        {
-            schedule.Configure();
-        }
-    }
 }
 
-public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecute) : ISchedule
+public sealed class DefaultSchedule : ISchedule
 {
-    public string Name { get; } = name;
+    private readonly App app;
+
+    private readonly Func<bool> shouldExecute;
 
     private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
     private FrozenDAGNode<SystemInfo>[][] frozenDAGNodes = [];
 
-    private List<Task> tasks = [];
+    private readonly List<Task> tasks = [];
 
     private bool isFrozen;
 
-    public T AddSystem<[SystemConcept] [SealedRequired] T>(T system) where T : ISystem
+    private bool needConfigure;
+
+#region Constructor
+
+    public DefaultSchedule(App app, Func<bool> shouldExecute)
+    {
+        this.app = app;
+        this.shouldExecute = shouldExecute;
+
+        this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
+    }
+
+#endregion
+
+#region Public methods
+
+    public T AddSystem<[SystemConcept, SealedRequired] T>(T system) where T : ISystem
     {
         return AddSystem(system, new());
     }
 
-    public T AddSystem<[SystemConcept] [SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
+    public T AddSystem<[SystemConcept, SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
     {
         system.InitializeAG(app);
 
@@ -95,6 +111,8 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
         return system;
     }
 
+#endregion
+
     private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
@@ -103,38 +121,41 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
 
         foreach (var param in parameters)
         {
-            app.World.TypeRegistry.RegisterComponent(param.ParameterType.IsByRef
-                ? param.ParameterType.GetElementType()!
-                : param.ParameterType);
+            if (param.ParameterType.IsByRef)
+            {
+                app.TypeRegistry.RegisterComponent(param.ParameterType.GetElementType()!);
+            }
+            else
+            {
+                app.TypeRegistry.Register(param.ParameterType);
+            }
         }
 
         foreach (var type in descriptor.AllFilter)
         {
-            app.World.TypeRegistry.RegisterComponent(type);
+            app.TypeRegistry.RegisterComponent(type);
         }
 
         foreach (var type in descriptor.AnyFilter)
         {
-            app.World.TypeRegistry.RegisterComponent(type);
+            app.TypeRegistry.RegisterComponent(type);
         }
 
         foreach (var type in descriptor.NoneFilter)
         {
-            app.World.TypeRegistry.RegisterComponent(type);
+            app.TypeRegistry.RegisterComponent(type);
         }
 
         return parameters.Select(p =>
         {
-            var targetAttrs = p.CustomAttributes.Where(a =>
-                a.AttributeType == typeof(ResReadOnly) || a.AttributeType == typeof(ResMut)).ToArray();
+            var targetAttrs = p.CustomAttributes.Where(a => a.AttributeType == typeof(Resource));
 
-            return targetAttrs.Length switch
+            if (targetAttrs.Count() == 1)
             {
-                > 1 => throw new CustomAttributeFormatException(
-                    $"Parameter {p.Name} has both ResReadOnly and ResMut attribute"),
-                1 => new(p.ParameterType, targetAttrs[0].AttributeType == typeof(ResReadOnly)),
-                _ => new SystemParameterInfo(p.ParameterType, p.IsIn)
-            };
+                return new(p.ParameterType, !(bool)targetAttrs.First().ConstructorArguments[0].Value!);
+            }
+
+            return new SystemParameterInfo(p.ParameterType, p.IsIn);
         }).ToArray();
     }
 
@@ -155,6 +176,11 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
         return intersected.Length == 0;
     }
 
+    public void Configure()
+    {
+        executionGraph.ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
+    }
+
 #region ISchedule Members
 
     public void Execute()
@@ -171,21 +197,19 @@ public sealed class DefaultSchedule(string name, App app, Func<bool> shouldExecu
             {
                 foreach (var frozenDagNode in group)
                 {
-                    tasks.Add(Task.Run(() =>
-                    {
-                        frozenDagNode.Data.System.ExecuteAG();
-                    }));
+                    tasks.Add(Task.Run(() => { frozenDagNode.Data.System.ExecuteAG(); }));
                 }
 
                 Task.WaitAll(tasks);
                 tasks.Clear();
+
+                if (needConfigure)
+                {
+                    Configure();
+                    needConfigure = false;
+                }
             }
         }
-    }
-
-    public void Configure()
-    {
-        executionGraph.AsList().ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
     }
 
 #endregion

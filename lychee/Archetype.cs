@@ -16,7 +16,14 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly TypeRegistry typeRegistry;
 
-    public ArchetypeManager(TypeRegistry typeRegistry)
+    public delegate void ArchetypeCreatedHandler();
+
+    /// <summary>
+    /// Invoked when a new archetype is created.
+    /// </summary>
+    public event ArchetypeCreatedHandler? ArchetypeCreated;
+
+    public ArchetypeManager(TypeRegistry typeRegistry, SystemSchedules systemSchedules)
     {
         this.typeRegistry = typeRegistry;
         GetOrCreateArchetype([]);
@@ -25,16 +32,25 @@ public sealed class ArchetypeManager : IDisposable
     public int GetOrCreateArchetype(IEnumerable<int> typeIdList)
     {
         var array = typeIdList.ToArray();
+        int id;
         Array.Sort(array);
 
-        foreach (var archetype in archetypes.Where(archetype => archetype.TypeIdList.SequenceEqual(array)))
+        lock (archetypes)
         {
-            return archetype.ID;
-        }
+            foreach (var archetype in archetypes)
+            {
+                if (archetype.TypeIdList.SequenceEqual(array))
+                {
+                    return archetype.ID;
+                }
+            }
 
-        var id = archetypes.Count;
-        var typeInfoList = array.Select(id => typeRegistry.GetTypeInfo(id).Item2).ToArray();
-        archetypes.Add(new(id, array, typeInfoList));
+            id = archetypes.Count;
+            var typeInfoList = array.Select(id => typeRegistry.GetTypeInfo(id).Item2).ToArray();
+            archetypes.Add(new(id, array, typeInfoList));
+
+            ArchetypeCreated?.Invoke();
+        }
 
         return id;
     }
@@ -52,8 +68,8 @@ public sealed class ArchetypeManager : IDisposable
         var type = typeof(T);
         var fields = type.GetFields();
         var typeIds = fields.Select(f => typeRegistry.RegisterComponent(f.FieldType)).ToArray();
-        Array.Sort(typeIds);
 
+        Array.Sort(typeIds);
         return GetOrCreateArchetype(typeIds);
     }
 
@@ -136,9 +152,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     public readonly int[] TypeIdList = typeIdList;
 
-    private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
-
     internal readonly Table Table = new(new(typeInfoList));
+
+    private readonly SparseMap<Entity> entities = [];
+
+    private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
 
     private readonly SparseMap<Archetype> addTypeArchetypeMap = new();
 
@@ -159,6 +177,21 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 #endregion
 
 #region Internal Methods
+
+    internal void AddEntity(Entity entity)
+    {
+        entities.Add(entity.ID, entity);
+    }
+
+    internal void RemoveEntity(Entity entity)
+    {
+        entities.Remove(entity.ID);
+    }
+
+    public IEnumerable<(int, Entity)> GetEntitiesEnumerable()
+    {
+        return entities;
+    }
 
     internal Archetype? GetInsertCompTargetArchetype(int typeId)
     {

@@ -1,6 +1,6 @@
 ﻿namespace lychee;
 
-public sealed class World(TypeRegistry typeRegistry) : IDisposable
+public sealed class World : IDisposable
 {
 #region Fields
 
@@ -8,13 +8,20 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
 
     public readonly EntityPool EntityPool = new();
 
-    public readonly ArchetypeManager ArchetypeManager = new(typeRegistry);
-
-    internal readonly TypeRegistry TypeRegistry = typeRegistry;
+    public readonly ArchetypeManager ArchetypeManager;
 
 #endregion
 
-#region Methods
+#region Constructors
+
+    public World(TypeRegistry typeRegistry)
+    {
+        ArchetypeManager = new(typeRegistry, SystemSchedules);
+    }
+
+#endregion
+
+#region Public methods
 
     // public void AddComponent<T>(Entity entity, T component) where T : unmanaged, IComponent
     // {
@@ -73,14 +80,14 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
         SystemSchedules.Execute();
     }
 
+#endregion
+
 #region IDisposable Member
 
     public void Dispose()
     {
         ArchetypeManager.Dispose();
     }
-
-#endregion
 
 #endregion
 }

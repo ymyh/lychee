@@ -1,52 +1,56 @@
 ﻿namespace lychee.utils;
 
-public sealed class ReadWriteLock<T>(T data)
+public sealed class ReadWriteLock<T>(T data) : IDisposable
 {
-    private readonly ReaderWriterLockSlim locker = new();
+    private readonly ReaderWriterLockSlim rwLock = new();
 
-    private readonly T data = data;
+    private T data = data;
 
-    public readonly struct ReadLockGuard(ReadWriteLock<T> locker) : IDisposable
+    ~ReadWriteLock()
     {
-        public T Get()
-        {
-            return locker.data;
-        }
+        Dispose();
+    }
+
+    public readonly struct ReadLockGuard(ReadWriteLock<T> rwl) : IDisposable
+    {
+        public T Data => rwl.data;
 
         public void Dispose()
         {
-            locker.locker.ExitReadLock();
+            rwl.rwLock.ExitReadLock();
         }
     }
 
-    public readonly struct WriteLockGuard(ReadWriteLock<T> locker) : IDisposable
+    public readonly struct WriteLockGuard(ReadWriteLock<T> rwl) : IDisposable
     {
-        public T Get()
+        public T Data
         {
-            return locker.data;
+            get => rwl.data;
+
+            set => rwl.data = value;
         }
 
         public void Dispose()
         {
-            locker.locker.ExitWriteLock();
+            rwl.rwLock.ExitWriteLock();
         }
     }
 
     public ReadLockGuard EnterReadLock()
     {
-        locker.EnterReadLock();
+        rwLock.EnterReadLock();
         return new(this);
     }
 
     public WriteLockGuard EnterWriteLock()
     {
-        locker.EnterReadLock();
+        rwLock.EnterWriteLock();
         return new(this);
     }
 
     public ReadLockGuard? TryEnterReadLock(TimeSpan timeout)
     {
-        if (locker.TryEnterReadLock(timeout))
+        if (rwLock.TryEnterReadLock(timeout))
         {
             return new(this);
         }
@@ -56,7 +60,7 @@ public sealed class ReadWriteLock<T>(T data)
 
     public ReadLockGuard? TryEnterReadLock(int millisecondsTimeout)
     {
-        if (locker.TryEnterReadLock(millisecondsTimeout))
+        if (rwLock.TryEnterReadLock(millisecondsTimeout))
         {
             return new(this);
         }
@@ -66,7 +70,7 @@ public sealed class ReadWriteLock<T>(T data)
 
     public WriteLockGuard? TryEnterWriteLock(TimeSpan timeout)
     {
-        if (locker.TryEnterWriteLock(timeout))
+        if (rwLock.TryEnterWriteLock(timeout))
         {
             return new(this);
         }
@@ -76,11 +80,17 @@ public sealed class ReadWriteLock<T>(T data)
 
     public WriteLockGuard? TryEnterWriteLock(int millisecondsTimeout)
     {
-        if (locker.TryEnterWriteLock(millisecondsTimeout))
+        if (rwLock.TryEnterWriteLock(millisecondsTimeout))
         {
             return new(this);
         }
 
         return null;
+    }
+
+    public void Dispose()
+    {
+        rwLock.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

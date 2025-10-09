@@ -48,7 +48,7 @@ public sealed class EntityPool
     /// <summary>
     /// Remove entity by id
     /// </summary>
-    /// <param name="id"></param>
+    /// <param name="entity"></param>
     public bool RemoveEntity(Entity entity)
     {
         var id = entity.ID;
@@ -67,6 +67,12 @@ public sealed class EntityPool
         return true;
     }
 
+    /// <summary>
+    /// Get entity info by entity
+    /// </summary>
+    /// <param name="entity"></param>
+    /// <param name="info"></param>
+    /// <returns></returns>
     public bool GetEntityInfo(Entity entity, out EntityInfo info)
     {
         var e = entities[entity.ID];

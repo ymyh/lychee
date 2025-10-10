@@ -28,7 +28,6 @@ public sealed class ArchetypeManager : IDisposable
     public Archetype GetOrCreateArchetype(IEnumerable<int> typeIdList)
     {
         var array = typeIdList.ToArray();
-        int id;
         Array.Sort(array);
 
         lock (archetypes)
@@ -41,7 +40,7 @@ public sealed class ArchetypeManager : IDisposable
                 }
             }
 
-            id = archetypes.Count;
+            var id = archetypes.Count;
             var typeInfoList = array.Select(id => typeRegistry.GetTypeInfo(id).Item2).ToArray();
             archetypes.Add(new(id, array, typeInfoList));
 
@@ -172,9 +171,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         entities.Remove(entity.ID);
     }
 
-    public IEnumerable<(int, Entity)> GetEntitiesEnumerable()
+    public Span<(int, Entity)> GetEntitiesSpan()
     {
-        return entities;
+        return entities.GetDenseAsSpan();
     }
 
     internal Archetype? GetInsertCompTargetArchetype(int typeId)

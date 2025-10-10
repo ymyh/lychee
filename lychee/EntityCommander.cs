@@ -35,15 +35,15 @@ public sealed class EntityCommander(App app) : IDisposable
 
 #region Public Methods
 
-    public Entity NewEntity()
+    public int CreateEntity()
     {
-        var entity = EntityPool.NewEntity();
-        return entity;
+        var id = EntityPool.ReserveEntity();
+        return id;
     }
 
-    public bool RemoveEntity(Entity entity)
+    public void RemoveEntity(Entity entity)
     {
-        return EntityPool.RemoveEntity(entity);
+        EntityPool.MarkRemoveEntity(entity);
     }
 
     public void RemoveComponent<T>(Entity entity) where T : unmanaged

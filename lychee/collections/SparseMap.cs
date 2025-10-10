@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
@@ -160,6 +161,11 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int, T)>
 
         value = denseArray[sparseArray[key]].Item2;
         return true;
+    }
+
+    public Span<(int, T)> GetDenseAsSpan()
+    {
+        return CollectionsMarshal.AsSpan(denseArray);
     }
 
 #endregion

@@ -2,7 +2,7 @@
 
 public struct Entity(int id, int generation)
 {
-    public int ID = id;
+    public int ID { get; internal set; } = id;
 
     internal int Generation = generation;
 }

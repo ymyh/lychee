@@ -6,20 +6,19 @@ public sealed class App : IDisposable
 {
 #region Fields
 
-    public delegate void RunnerDelegate();
-
     public readonly TypeRegistry TypeRegistry = new();
 
     public readonly ResourcePool ResourcePool;
 
     public readonly World World;
-    public RunnerDelegate Runner { get; set; }
+
+    public Action Runner;
 
     private bool shouldExit;
 
 #endregion
 
-#region Constructors
+#region Constructors & Destructors
 
     public App()
     {
@@ -33,6 +32,11 @@ public sealed class App : IDisposable
                 World.Update();
             }
         };
+    }
+
+    ~App()
+    {
+        Dispose();
     }
 
 #endregion
@@ -61,11 +65,8 @@ public sealed class App : IDisposable
     public void Dispose()
     {
         World.Dispose();
+        GC.SuppressFinalize(this);
     }
-
-#endregion
-
-#region private methods
 
 #endregion
 }

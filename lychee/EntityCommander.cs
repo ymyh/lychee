@@ -117,9 +117,7 @@ public static class EntityCommandBufferExtensions
                 {
                     var typeId = self.TypeRegistry.RegisterComponent<T>();
                     var dstArchetype = self.SrcArchetype.GetInsertCompTargetArchetype(typeId) ??
-                                       self.ArchetypeManager.GetArchetype(
-                                           self.ArchetypeManager.GetOrCreateArchetype(
-                                               self.SrcArchetype.TypeIdList.Append(typeId)));
+                                       self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Append(typeId));
 
                     self.TransferInfo = new(dstArchetype, [dstArchetype.GetTypeIndex(typeId)],
                         dstArchetype.Table.GetFirstAvailableViewIdx());
@@ -169,17 +167,19 @@ public static class EntityCommandBufferExtensions
                         self.TypeRegistry.RegisterBundle<T>();
                     }
 
-                    Archetype dstArchetype = null!;
-                    var srcArchetype = self.SrcArchetype;
+                    var dstArchetype = self.SrcArchetype;
 
                     foreach (var (offset, typeId) in T.StructInfo!)
                     {
-                        dstArchetype = srcArchetype.GetInsertCompTargetArchetype(typeId) ??
-                                       self.ArchetypeManager.GetArchetype(
-                                           self.ArchetypeManager.GetOrCreateArchetype(
-                                               srcArchetype.TypeIdList.Append(typeId)));
+                        var nextDstArchetype = dstArchetype.GetInsertCompTargetArchetype(typeId);
 
-                        srcArchetype = dstArchetype;
+                        if (nextDstArchetype == null)
+                        {
+                            nextDstArchetype = self.ArchetypeManager.GetOrCreateArchetype(dstArchetype.TypeIdList.Append(typeId));
+                            dstArchetype.SetInsertCompTargetArchetype(typeId, nextDstArchetype);
+                        }
+
+                        dstArchetype = nextDstArchetype;
                     }
 
                     self.TransferInfo = new(dstArchetype,

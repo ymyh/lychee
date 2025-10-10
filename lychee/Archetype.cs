@@ -10,10 +10,6 @@ public sealed class ArchetypeManager : IDisposable
 {
     private readonly List<Archetype> archetypes = [];
 
-    private readonly List<Entity> entities = [];
-
-    private readonly List<EntityInfo> entitiesInfo = [];
-
     private readonly TypeRegistry typeRegistry;
 
     public delegate void ArchetypeCreatedHandler();
@@ -23,13 +19,13 @@ public sealed class ArchetypeManager : IDisposable
     /// </summary>
     public event ArchetypeCreatedHandler? ArchetypeCreated;
 
-    public ArchetypeManager(TypeRegistry typeRegistry, SystemSchedules systemSchedules)
+    public ArchetypeManager(TypeRegistry typeRegistry)
     {
         this.typeRegistry = typeRegistry;
         GetOrCreateArchetype([]);
     }
 
-    public int GetOrCreateArchetype(IEnumerable<int> typeIdList)
+    public Archetype GetOrCreateArchetype(IEnumerable<int> typeIdList)
     {
         var array = typeIdList.ToArray();
         int id;
@@ -41,7 +37,7 @@ public sealed class ArchetypeManager : IDisposable
             {
                 if (archetype.TypeIdList.SequenceEqual(array))
                 {
-                    return archetype.ID;
+                    return archetype;
                 }
             }
 
@@ -50,12 +46,12 @@ public sealed class ArchetypeManager : IDisposable
             archetypes.Add(new(id, array, typeInfoList));
 
             ArchetypeCreated?.Invoke();
-        }
 
-        return id;
+            return archetypes[id];
+        }
     }
 
-    public int GetOrCreateArchetype<T>()
+    public Archetype GetOrCreateArchetype<T>()
     {
         var typeList = TypeUtils.GetTupleTypes<T>();
         var typeIds = typeList.Select(x => typeRegistry.RegisterComponent(x)).ToArray();
@@ -63,7 +59,7 @@ public sealed class ArchetypeManager : IDisposable
         return GetOrCreateArchetype(typeIds);
     }
 
-    public int GetOrCreateArchetype2<T>() where T : IComponentBundle
+    public Archetype GetOrCreateArchetype2<T>() where T : IComponentBundle
     {
         var type = typeof(T);
         var fields = type.GetFields();
@@ -75,59 +71,47 @@ public sealed class ArchetypeManager : IDisposable
 
     public Archetype GetArchetype(int id)
     {
-        Debug.Assert(id >= 0 && id < archetypes.Count);
-        return archetypes[id];
+        lock (archetypes)
+        {
+            Debug.Assert(id >= 0 && id < archetypes.Count);
+            return archetypes[id];
+        }
     }
 
     public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
         int[] requires)
     {
-        return archetypes.Where(a =>
+        lock (archetypes)
         {
-            var ret = requires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
-            return allFilter.Select(type => typeRegistry.RegisterComponent(type))
-                .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
-        }).Where(a =>
-        {
-            var ret = anyFilter.Length == 0;
-
-            foreach (var type in anyFilter)
+            return archetypes.Where(a =>
             {
-                var typeId = typeRegistry.RegisterComponent(type);
-                ret |= a.TypeIdList.Contains(typeId);
-            }
-
-            return ret;
-        }).Where(a =>
-        {
-            var ret = true;
-
-            foreach (var type in noneFilter)
+                var ret = requires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+                return allFilter.Select(type => typeRegistry.RegisterComponent(type))
+                    .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+            }).Where(a =>
             {
-                var typeId = typeRegistry.RegisterComponent(type);
-                ret &= !a.TypeIdList.Contains(typeId);
-            }
+                var ret = anyFilter.Length == 0;
 
-            return ret;
-        }).ToArray();
-    }
+                foreach (var type in anyFilter)
+                {
+                    var typeId = typeRegistry.RegisterComponent(type);
+                    ret |= a.TypeIdList.Contains(typeId);
+                }
 
-    public void AddEntity(Entity entity)
-    {
-        entities.Add(entity);
-        entitiesInfo.Add(new(0, 0));
-    }
+                return ret;
+            }).Where(a =>
+            {
+                var ret = true;
 
-    public EntityInfo GetEntityInfo(Entity entity)
-    {
-        Debug.Assert(entity.ID >= 0 && entity.ID < entitiesInfo.Count);
-        return entitiesInfo[entity.ID];
-    }
+                foreach (var type in noneFilter)
+                {
+                    var typeId = typeRegistry.RegisterComponent(type);
+                    ret &= !a.TypeIdList.Contains(typeId);
+                }
 
-    public void SetEntityInfo(Entity entity, EntityInfo entityInfo)
-    {
-        Debug.Assert(entity.ID >= 0 && entity.ID < entitiesInfo.Count);
-        entitiesInfo[entity.ID] = entityInfo;
+                return ret;
+            }).ToArray();
+        }
     }
 
 #region IDisposable Member

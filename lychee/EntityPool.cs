@@ -4,6 +4,9 @@ using System.Runtime.InteropServices;
 
 namespace lychee;
 
+/// <summary>
+/// Holds all entities in the world
+/// </summary>
 public sealed class EntityPool
 {
     private int latestEntityId;
@@ -22,27 +25,29 @@ public sealed class EntityPool
     {
         if (reusableEntitiesId.TryPop(out var id))
         {
-            var info = entityInfoList[id];
+            lock (entities)
+            {
+                var info = entityInfoList[id];
 
-            // a new entity always belongs to default archetype, thus archetypeIdx also meaningless
-            info.ArchetypeId = 0;
-            info.ArchetypeIdx = 0;
+                // a new entity always belongs to default archetype, thus archetypeIdx also meaningless
+                info.ArchetypeId = 0;
+                info.ArchetypeIdx = 0;
 
-            entityInfoList[id] = info;
+                entityInfoList[id] = info;
 
-            return entities[id];
+                return entities[id];
+            }
         }
 
         id = Interlocked.Increment(ref latestEntityId);
 
-        // Maybe low performance
-        lock (reusableEntitiesId)
+        lock (entities)
         {
             entities.Add(new(id, 0));
             entityInfoList.Add(new());
-        }
 
-        return entities[^1];
+            return entities[^1];
+        }
     }
 
     /// <summary>
@@ -52,17 +57,20 @@ public sealed class EntityPool
     public bool RemoveEntity(Entity entity)
     {
         var id = entity.ID;
-        Debug.Assert(id >= 0 && id < entities.Count);
-
-        if (entity.Generation != entities[id].Generation)
+        lock (entities)
         {
-            return false;
+            Debug.Assert(id >= 0 && id < entities.Count);
+
+            if (entity.Generation != entities[id].Generation)
+            {
+                return false;
+            }
+
+            var span = CollectionsMarshal.AsSpan(entities);
+            span[id].Generation++;
+
+            reusableEntitiesId.Push(id);
         }
-
-        var span = CollectionsMarshal.AsSpan(entities);
-        Interlocked.Increment(ref span[id].Generation);
-
-        reusableEntitiesId.Push(id);
 
         return true;
     }
@@ -75,15 +83,38 @@ public sealed class EntityPool
     /// <returns></returns>
     public bool GetEntityInfo(Entity entity, out EntityInfo info)
     {
-        var e = entities[entity.ID];
-
-        if (e.Generation == entity.Generation)
+        lock (entities)
         {
-            info = entityInfoList[e.ID];
-            return true;
+            var e = entities[entity.ID];
+
+            if (e.Generation == entity.Generation)
+            {
+                info = entityInfoList[e.ID];
+                return true;
+            }
         }
 
         info = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Set entity info with given entity
+    /// </summary>
+    /// <param name="entity"></param>
+    /// <param name="info"></param>
+    /// <returns></returns>
+    public bool SetEntityInfo(Entity entity, EntityInfo info)
+    {
+        lock (entities)
+        {
+            if (entities[entity.ID].Generation == entity.Generation)
+            {
+                entityInfoList[entity.ID] = info;
+                return true;
+            }
+        }
+
         return false;
     }
 }

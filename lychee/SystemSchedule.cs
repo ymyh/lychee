@@ -113,6 +113,8 @@ public sealed class DefaultSchedule : ISchedule
 
 #endregion
 
+#region Private methods
+
     private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
@@ -176,10 +178,12 @@ public sealed class DefaultSchedule : ISchedule
         return intersected.Length == 0;
     }
 
-    public void Configure()
+    private void Configure()
     {
         executionGraph.ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
     }
+
+#endregion
 
 #region ISchedule Members
 

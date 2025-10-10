@@ -1,4 +1,4 @@
-﻿namespace lychee.utils;
+﻿namespace lychee.threading;
 
 public sealed class ReadWriteLock<T>(T data) : IDisposable
 {

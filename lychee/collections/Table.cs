@@ -1,4 +1,6 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace lychee.collections;
 
@@ -38,7 +40,7 @@ public sealed class Table : IDisposable
 
     private readonly int chunkSizeBytes;
 
-    private readonly List<TableView> chunkViews = [];
+    private readonly List<TableMemoryChunk> chunks = [];
 
     private int lastAvailableViewIndex;
 
@@ -70,35 +72,52 @@ public sealed class Table : IDisposable
 
     public int GetFirstAvailableViewIdx()
     {
-        if (!chunkViews[lastAvailableViewIndex].IsFull)
+        lock (this)
         {
-            return lastAvailableViewIndex;
-        }
-
-        for (var i = 0; i < chunkViews.Count; i++)
-        {
-            if (!chunkViews[i].IsFull)
+            if (chunks.Count == 0)
             {
-                lastAvailableViewIndex = i;
+                CreateNewChunk();
+                return 0;
+            }
+
+            if (!chunks[lastAvailableViewIndex].IsFull)
+            {
                 return lastAvailableViewIndex;
             }
+
+            for (var i = 0; i < chunks.Count; i++)
+            {
+                if (!chunks[i].IsFull)
+                {
+                    lastAvailableViewIndex = i;
+                    return lastAvailableViewIndex;
+                }
+            }
+
+            CreateNewChunk();
+            lastAvailableViewIndex = chunks.Count - 1;
+
+            return lastAvailableViewIndex;
         }
-
-        CreateNewChunk();
-        lastAvailableViewIndex = chunkViews.Count - 1;
-
-        return lastAvailableViewIndex;
     }
 
-    public bool ReserveOne(int viewIdx)
+    public (int chunkIdx, int idx) Reserve()
     {
-        return chunkViews[viewIdx].ReserveOne();
+        var idx = chunks[lastAvailableViewIndex].Reserve();
+
+        while (idx != -1)
+        {
+            GetFirstAvailableViewIdx();
+            idx = chunks[lastAvailableViewIndex].Reserve();
+        }
+
+        return (lastAvailableViewIndex, idx);
     }
 
     public unsafe void* GetPtr(int typeIdx, int chunkIdx, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*)chunkViews[chunkIdx].Data;
+        var ptr = (byte*)chunks[chunkIdx].Data;
 
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
@@ -107,19 +126,19 @@ public sealed class Table : IDisposable
     public unsafe void* GetLastPtr(int typeIdx, int chunkIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var view = chunkViews[chunkIdx];
-        var ptr = (byte*)view.Data;
+        var chunk = chunks[chunkIdx];
+        var ptr = (byte*)chunk.Data;
 
-        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * view.Size);
+        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * chunk.Size);
     }
 
     public (int, int) GetChunkAndIndex(int idx)
     {
         var chunkIdx = 0;
 
-        while (idx >= chunkViews[chunkIdx].Size)
+        while (idx >= chunks[chunkIdx].Size)
         {
-            idx -= chunkViews[chunkIdx].Size;
+            idx -= chunks[chunkIdx].Size;
             chunkIdx++;
         }
 
@@ -130,16 +149,16 @@ public sealed class Table : IDisposable
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
-        foreach (var view in chunkViews)
+        foreach (var chunk in chunks)
         {
             nint ptr;
 
             unsafe
             {
-                ptr = (nint)view.Data + typeInfo.Offset * chunkCapacity;
+                ptr = (nint)chunk.Data + typeInfo.Offset * chunkCapacity;
             }
 
-            yield return (ptr, view.Size);
+            yield return (ptr, chunk.Size);
         }
     }
 
@@ -149,10 +168,10 @@ public sealed class Table : IDisposable
 
     private void CreateNewChunk()
     {
-        var view = new TableView(chunkCapacity);
-        view.Chunk.Alloc(chunkSizeBytes);
+        var chunk = new TableMemoryChunk(chunkCapacity);
+        chunk.Chunk.Alloc(chunkSizeBytes);
 
-        chunkViews.Add(view);
+        chunks.Add(chunk);
     }
 
 #endregion
@@ -161,29 +180,30 @@ public sealed class Table : IDisposable
 
     public void Dispose()
     {
-        foreach (var view in chunkViews)
+        foreach (var chunk in chunks)
         {
-            view.Dispose();
+            chunk.Dispose();
         }
     }
 
 #endregion
 }
 
-public sealed class TableView(int capacity) : IDisposable
+public sealed class TableMemoryChunk(int capacity) : IDisposable
 {
-    public MemoryChunk Chunk = new();
+    internal MemoryChunk Chunk = new();
 
-    public int Size = 0;
+    internal int Size;
 
-    public readonly int Capacity = capacity;
+    internal readonly int Capacity = capacity;
 
-    private int reserve;
+    private volatile int reserve;
+
+    private ConcurrentStack<int> holeIndices = new();
 
     public bool IsFull => Size + reserve == Capacity;
 
     public unsafe void* Data => Chunk.Data;
-
 
 #region Public methods
 
@@ -191,15 +211,29 @@ public sealed class TableView(int capacity) : IDisposable
     /// Try to reserve one extra slot in chunk.
     /// </summary>
     /// <returns>Whether succeed</returns>
-    public bool ReserveOne()
+    public int Reserve()
     {
-        if (IsFull)
+        var newVal = Interlocked.Increment(ref reserve);
+
+        if (Size + newVal > Capacity)
         {
-            return false;
+            Interlocked.Decrement(ref reserve);
+            return -1;
         }
 
-        reserve++;
-        return true;
+        return newVal;
+    }
+
+    public void MarkRemove(int idx)
+    {
+        Debug.Assert(idx >= 0 && idx < Size);
+        holeIndices.Push(idx);
+    }
+
+    public void CommitReserved()
+    {
+        Size += reserve;
+        reserve = 0;
     }
 
 #endregion

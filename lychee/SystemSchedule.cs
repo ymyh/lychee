@@ -46,7 +46,7 @@ public sealed class SystemSchedules
     }
 }
 
-public sealed class DefaultSchedule : ISchedule
+public sealed class SimpleSchedule : ISchedule
 {
     private readonly App app;
 
@@ -64,7 +64,7 @@ public sealed class DefaultSchedule : ISchedule
 
 #region Constructor
 
-    public DefaultSchedule(App app, Func<bool> shouldExecute)
+    public SimpleSchedule(App app, Func<bool> shouldExecute)
     {
         this.app = app;
         this.shouldExecute = shouldExecute;

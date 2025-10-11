@@ -198,7 +198,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         removeTypeArchetypeMap.Add(typeId, archetype);
     }
 
-    internal void MoveDataTo(EntityInfo info, Archetype archetype)
+    internal (int chunkIdx, int idx) Reserve()
+    {
+        return Table.Reserve();
+    }
+
+    internal void MoveDataTo(EntityInfo info, Archetype archetype, int chunkIdx, int idx)
     {
         int[] commCompIndices;
 
@@ -215,7 +220,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             dstArchetypeCommCompIndices.Add(archetype.ID, commCompIndices);
         }
 
-        var (chunkIdx, idx) = Table.GetChunkAndIndex(info.ArchetypeIdx);
         foreach (var index in commCompIndices)
         {
             unsafe
@@ -228,11 +232,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         }
     }
 
-    internal void PutPartialData<T>(EntityInfo info, int typeIdx, in T data) where T : unmanaged
+    internal void PutPartialData<T>(int typeIdx, int chunkIdx, int idx, in T data) where T : unmanaged
     {
         unsafe
         {
-            var dstPtr = Table.GetLastPtr(typeIdx, info.ArchetypeIdx);
+            var dstPtr = Table.GetPtr(typeIdx, chunkIdx, idx);
             fixed (T* srcPtr = &data)
             {
                 NativeMemory.Copy(srcPtr, dstPtr, (nuint)Table.Layout.TypeInfoList[typeIdx].Size);

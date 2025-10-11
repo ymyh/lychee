@@ -1,8 +1,10 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
+/// <summary>
+/// Represents a native memory chunk.
+/// </summary>
 public struct MemoryChunk() : IDisposable
 {
     public unsafe void* Data { get; private set; } = null;
@@ -15,7 +17,11 @@ public struct MemoryChunk() : IDisposable
     {
         unsafe
         {
-            Debug.Assert(Data == null);
+            if (Data != null)
+            {
+                throw new InvalidOperationException("MemoryChunk already allocated");
+            }
+
             Data = NativeMemory.AlignedAlloc((nuint)sizeBytes, 64);
             Size = sizeBytes;
         }

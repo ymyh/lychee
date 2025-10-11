@@ -121,7 +121,7 @@ namespace lychee_sg
                             .OfType<IMethodSymbol>()
                             .Any(m => m.IsStatic && !m.IsGenericMethod))
                     {
-                        Report(context, node, $"{symbol.Name} must contains a public static method named Execute");
+                        Report(context, node, $"{symbol.Name} must contains a static method named Execute");
                     }
                 }
                 else

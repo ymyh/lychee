@@ -1,15 +1,27 @@
 ﻿namespace lychee;
 
-public struct Entity(int id, int generation)
+public struct Entity
 {
-    public int ID { get; internal set; } = id;
+    public int ID { get; internal set; }
 
-    internal int Generation = generation;
+    internal int Generation;
+
+    internal Entity(int id, int generation)
+    {
+        ID = id;
+        Generation = generation;
+    }
 }
 
-public struct EntityInfo(int archetypeId, int archetypeIdx)
+public struct EntityInfo
 {
-    internal int ArchetypeId = archetypeId;
+    internal int ArchetypeId;
 
-    internal int ArchetypeIdx = archetypeIdx;
+    internal int ArchetypeIdx;
+
+    internal EntityInfo(int archetypeId, int archetypeIdx)
+    {
+        ArchetypeId = archetypeId;
+        ArchetypeIdx = archetypeIdx;
+    }
 }

@@ -21,6 +21,7 @@ namespace lychee_sg
     {
         Component,
         Resource,
+        Entity,
         EntityCommander
     }
 
@@ -49,6 +50,7 @@ namespace lychee_sg
 
             context.RegisterSourceOutput(values, (spc, sysInfo) =>
             {
+                var hasEntityCommander = sysInfo.Params.Any(p => p.ParamKind == ParamKind.EntityCommander);
                 var componentTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Component).ToArray();
                 var resourceTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Resource).ToArray();
                 var sb = new StringBuilder($@"
@@ -66,18 +68,16 @@ sealed partial class {sysInfo.Name} : ISystem
 
         public static int[] TypeIdList;
 
-        public static Archetype[] Archetypes;
-
-        public static EntityCommander EntityCommander;
+        public static Archetype[] Archetypes;{(hasEntityCommander ? "\n\n        public static EntityCommander EntityCommander;" : "")}
     }}
-{MakeInitializeAGCode(componentTypes)}
+{MakeInitializeAGCode(componentTypes, hasEntityCommander)}
 
     public void ConfigureAG(App app, SystemDescriptor descriptor)
     {{
         SystemDataAG.Pool = app.ResourcePool;
         SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(descriptor.AllFilter, descriptor.AnyFilter, descriptor.NoneFilter, SystemDataAG.TypeIdList);
     }}
-{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes)}
+{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, hasEntityCommander)}
 }}
 
 ");
@@ -118,6 +118,10 @@ sealed partial class {sysInfo.Name} : ISystem
                             {
                                 paramKind = ParamKind.EntityCommander;
                             }
+                            else if (x.Type.ToDisplayString() == "lychee.Entity")
+                            {
+                                paramKind = ParamKind.Entity;
+                            }
 
                             if (x.GetAttributes().Any(a =>
                                 {
@@ -149,19 +153,25 @@ sealed partial class {sysInfo.Name} : ISystem
             return null;
         }
 
-        private static string MakeInitializeAGCode(ParamInfo[] componentTypes)
+        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, bool hasEntityCommander)
         {
             var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistry.RegisterComponent<{p.Type}>()"));
+
+            var declEntityCommander = "";
+
+            if (hasEntityCommander)
+            {
+                declEntityCommander = "\n        SystemDataAG.EntityCommander = new(app);";
+            }
 
             return $@"
     public void InitializeAG(App app)
     {{
-        SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.EntityCommander = new(app);
+        SystemDataAG.TypeIdList = [{registerTypes}];{declEntityCommander}
     }}";
         }
 
-        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams)
+        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams, bool hasEntityCommander)
         {
             string body;
 
@@ -185,14 +195,18 @@ sealed partial class {sysInfo.Name} : ISystem
                         }
 
                         break;
+
                     case ParamKind.Resource:
                         return $"{param.Type.Name.ToLower()}";
-                        break;
+
                     case ParamKind.EntityCommander:
-                        break;
+                        return "SystemDataAG.EntityCommander";
+
+                    case ParamKind.Entity:
+                        return "entitySpan[i].Item2";
                 }
 
-                return "SystemDataAG.EntityCommander";
+                return "";
             }));
 
             var declResourceCode = new StringBuilder();
@@ -235,7 +249,8 @@ sealed partial class {sysInfo.Name} : ISystem
                 body = $@"
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
-        {{
+        {{{(hasEntityCommander ? "\n            SystemDataAG.EntityCommander.ChangeSrcArchetype(archetype);\n" : "")}
+            var entitySpan = archetype.GetEntitiesSpan();
 {declIterCode}{iterateChunkWhileExpr}
         }}";
             }

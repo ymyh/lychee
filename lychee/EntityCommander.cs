@@ -5,11 +5,15 @@ using lychee.interfaces;
 
 namespace lychee;
 
-internal sealed class EntityTransferInfo(Archetype archetype, int[] typeIndices)
+internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, int typeId)[] bundleInfo)
 {
     public readonly Archetype Archetype = archetype;
 
-    public readonly int[] TypeIndices = typeIndices;
+    public readonly int[] TypeIndices = bundleInfo.Select(x => archetype.GetTypeIndex(x.typeId)).ToArray();
+
+    public readonly List<Entity> targetEntities = [];
+
+    public readonly (TypeInfo info, int typeId)[] BundleInfo = bundleInfo;
 }
 
 public sealed class EntityCommander(App app) : IDisposable
@@ -105,15 +109,9 @@ public static class EntityCommandBufferExtensions
                 if (self.TransferDstInfo == null)
                 {
                     var typeId = self.TypeRegistry.RegisterComponent<T>();
-                    var dstArchetype = self.SrcArchetype.GetInsertCompTargetArchetype(typeId);
+                    var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Append(typeId));
 
-                    if (dstArchetype == null)
-                    {
-                        dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Append(typeId));
-                        self.SrcArchetype.SetInsertCompTargetArchetype(typeId, dstArchetype);
-                    }
-
-                    self.TransferDstInfo = new(dstArchetype, [dstArchetype.GetTypeIndex(typeId)]);
+                    self.TransferDstInfo = new(dstArchetype, [new(new(), dstArchetype.GetTypeIndex(typeId))]);
                     map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
                 }
 
@@ -126,8 +124,8 @@ public static class EntityCommandBufferExtensions
             self.TransferDstInfo.Archetype.PutPartialData(self.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
             self.SrcArchetype.MoveDataTo(entityInfo, self.TransferDstInfo.Archetype, chunkIdx, idx);
 
+            self.TransferDstInfo.targetEntities.Add(entity);
             entityInfo.ArchetypeId = self.TransferDstInfo.Archetype.ID;
-            // TODO set ArchetypeIdx
             self.EntityPool.SetEntityInfo(entity, entityInfo);
 
             return true;
@@ -165,23 +163,9 @@ public static class EntityCommandBufferExtensions
                         self.TypeRegistry.RegisterBundle<T>();
                     }
 
-                    var dstArchetype = self.SrcArchetype;
+                    var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Concat(T.StructInfo!.Select(x => x.typeId)));
 
-                    foreach (var (offset, typeId) in T.StructInfo!)
-                    {
-                        var nextDstArchetype = dstArchetype.GetInsertCompTargetArchetype(typeId);
-
-                        if (nextDstArchetype == null)
-                        {
-                            nextDstArchetype = self.ArchetypeManager.GetOrCreateArchetype(dstArchetype.TypeIdList.Append(typeId));
-                            dstArchetype.SetInsertCompTargetArchetype(typeId, nextDstArchetype);
-                        }
-
-                        dstArchetype = nextDstArchetype;
-                    }
-
-                    self.TransferDstInfo = new(dstArchetype,
-                        T.StructInfo.Select(x => dstArchetype.GetTypeIndex(x.typeId)).ToArray());
+                    self.TransferDstInfo = new(dstArchetype, T.StructInfo);
                     map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
                 }
 
@@ -206,9 +190,9 @@ public static class EntityCommandBufferExtensions
             }
 
             self.SrcArchetype.MoveDataTo(entityInfo, self.TransferDstInfo.Archetype, chunkIdx, idx);
+            self.TransferDstInfo.targetEntities.Add(entity);
 
             entityInfo.ArchetypeId = self.TransferDstInfo.Archetype.ID;
-            // TODO set ArchetypeIdx
             self.EntityPool.SetEntityInfo(entity, entityInfo);
 
             return true;
@@ -270,6 +254,11 @@ public static class EntityCommandBufferExtensions
             }
 
             return true;
+        }
+
+        internal void CommitChanges()
+        {
+
         }
     }
 }

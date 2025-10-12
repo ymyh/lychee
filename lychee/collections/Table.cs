@@ -224,16 +224,21 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
         return newVal;
     }
 
+    public void CommitReserved()
+    {
+        Size += reserve;
+        reserve = 0;
+    }
+
     public void MarkRemove(int idx)
     {
         Debug.Assert(idx >= 0 && idx < Size);
         holeIndices.Push(idx);
     }
 
-    public void CommitReserved()
+    public void CommitRemove()
     {
-        Size += reserve;
-        reserve = 0;
+        holeIndices.Clear();
     }
 
 #endregion

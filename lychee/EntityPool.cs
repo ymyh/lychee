@@ -29,7 +29,6 @@ public sealed class EntityPool
 
             // a new entity always belongs to default archetype, thus archetypeIdx also meaningless
             info.ArchetypeId = 0;
-            info.ArchetypeIdx = 0;
 
             entityInfoList[id] = info;
 

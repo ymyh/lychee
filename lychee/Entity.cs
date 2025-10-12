@@ -1,6 +1,6 @@
 ﻿namespace lychee;
 
-public struct Entity
+public struct Entity : IEquatable<Entity>
 {
     public int ID { get; internal set; }
 
@@ -11,17 +11,29 @@ public struct Entity
         ID = id;
         Generation = generation;
     }
+
+    public bool Equals(Entity other)
+    {
+        return ID == other.ID && Generation == other.Generation;
+    }
+
+    public static bool operator==(Entity a, Entity b)
+    {
+        return a.Equals(b);
+    }
+
+    public static bool operator!=(Entity a, Entity b)
+    {
+        return !a.Equals(b);
+    }
 }
 
 public struct EntityInfo
 {
     internal int ArchetypeId;
 
-    internal int ArchetypeIdx;
-
-    internal EntityInfo(int archetypeId, int archetypeIdx)
+    internal EntityInfo(int archetypeId)
     {
         ArchetypeId = archetypeId;
-        ArchetypeIdx = archetypeIdx;
     }
 }

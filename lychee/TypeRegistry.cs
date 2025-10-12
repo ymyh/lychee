@@ -23,6 +23,8 @@ public sealed class TypeRegistry
 
     private readonly ConcurrentDictionary<string, int> typenameToIdDict = new();
 
+    private readonly ConcurrentDictionary<string, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
+
     private static readonly MethodInfo RegisterMethod =
         typeof(TypeRegistry).GetMethod("Register", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(int)])!;
 
@@ -78,15 +80,19 @@ public sealed class TypeRegistry
     public void RegisterBundle<T>() where T : unmanaged, IComponentBundle
     {
         var type = typeof(T);
+        var name = type.FullName ?? type.Name;
         var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
 
         if (fields.Length == 0)
         {
-            throw new ArgumentException("Bundle type must have at least one field", nameof(T));
+            throw new ArgumentException("Bundle type must have at least one public non-static field", nameof(T));
         }
 
         T.StructInfo = fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
             RegisterComponent(f.FieldType))).ToArray();
+
+        bundleToInfoDict.TryAdd(name, fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
+            RegisterComponent(f.FieldType))).ToArray());
     }
 
     public void RegisterBundle(Type type)
@@ -116,6 +122,11 @@ public sealed class TypeRegistry
     {
         using var rg = typeListLock.EnterReadLock();
         return rg.Data[typenameToIdDict[fullName]];
+    }
+
+    public (TypeInfo info, int typeId)[] GetBundleInfo(string name)
+    {
+        return bundleToInfoDict[name];
     }
 
     /// <summary>

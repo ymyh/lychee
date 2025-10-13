@@ -45,19 +45,24 @@ public sealed class EntityPool
 
     /// <summary>
     /// Reserve an entity and return its id.<br/>
-    /// Need to call <see cref="CommitCreateEntity"/> to make the entity available.
+    /// Need to call <see cref="CommitReservedEntity"/> to make the entity available.
     /// </summary>
     /// <returns>New entity id</returns>
-    public int ReserveEntity()
+    public Entity ReserveEntity()
     {
-        return reusableEntitiesId.TryPop(out var id) ? id : Interlocked.Increment(ref latestEntityId);
+        if (reusableEntitiesId.TryPop(out var id))
+        {
+            return entities[id];
+        }
+
+        return new(Interlocked.Increment(ref latestEntityId), 0);
     }
 
     /// <summary>
     /// Commit a reserved entity, make it available to be used.
     /// </summary>
     /// <param name="id"></param>
-    public void CommitCreateEntity(int id)
+    public void CommitReservedEntity(int id)
     {
         Debug.Assert(id > 0);
 
@@ -142,6 +147,12 @@ public sealed class EntityPool
     /// <returns></returns>
     public bool GetEntityInfo(Entity entity, out EntityInfo info)
     {
+        if (entity.Generation == 0)
+        {
+            info = new(0);
+            return true;
+        }
+
         var e = entities[entity.ID];
 
         if (e.Generation == entity.Generation)

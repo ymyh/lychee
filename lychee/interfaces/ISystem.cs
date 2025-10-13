@@ -21,5 +21,5 @@ public interface ISystem
     /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing.<br/>
     /// Execute the system from <see cref="ISchedule"/>.
     /// </summary>
-    public void ExecuteAG();
+    public EntityCommander ExecuteAG();
 }

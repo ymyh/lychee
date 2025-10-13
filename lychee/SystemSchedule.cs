@@ -58,6 +58,8 @@ public sealed class SimpleSchedule : ISchedule
 
     private readonly List<Task> tasks = [];
 
+    private readonly List<EntityCommander> entityCommanders = [];
+
     private bool isFrozen;
 
     private bool needConfigure;
@@ -75,6 +77,16 @@ public sealed class SimpleSchedule : ISchedule
 #endregion
 
 #region Public methods
+
+    public T AddSystem<[SystemConcept, SealedRequired] T>() where T : ISystem, new()
+    {
+        return AddSystem(new T(), new());
+    }
+
+    public T AddSystem<[SystemConcept, SealedRequired] T>(SystemDescriptor descriptor) where T : ISystem, new()
+    {
+        return AddSystem(new T(), descriptor);
+    }
 
     public T AddSystem<[SystemConcept, SealedRequired] T>(T system) where T : ISystem
     {
@@ -118,7 +130,7 @@ public sealed class SimpleSchedule : ISchedule
     private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
-        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static)!;
+        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
         var parameters = method.GetParameters();
 
         foreach (var param in parameters)
@@ -201,11 +213,14 @@ public sealed class SimpleSchedule : ISchedule
             {
                 foreach (var frozenDagNode in group)
                 {
-                    tasks.Add(Task.Run(() => { frozenDagNode.Data.System.ExecuteAG(); }));
+                    tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
                 }
 
                 Task.WaitAll(tasks);
                 tasks.Clear();
+
+                entityCommanders.ForEach(x => x.CommitChanges());
+                entityCommanders.Clear();
 
                 if (needConfigure)
                 {

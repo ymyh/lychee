@@ -11,7 +11,7 @@ internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, in
 
     public readonly int[] TypeIndices = bundleInfo.Select(x => archetype.GetTypeIndex(x.typeId)).ToArray();
 
-    public readonly List<Entity> targetEntities = [];
+    public readonly List<Entity> TargetEntities = [];
 
     public readonly (TypeInfo info, int typeId)[] BundleInfo = bundleInfo;
 }
@@ -30,20 +30,19 @@ public sealed class EntityCommander(App app) : IDisposable
 
     internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeRemovingTypeDict = new();
 
-    internal Archetype SrcArchetype = null!;
+    internal Archetype SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
 
     internal EntityTransferInfo? TransferDstInfo;
 
-    internal bool SrcArchetypeChanged;
+    internal bool SrcArchetypeChanged = true;
 
 #endregion
 
 #region Public Methods
 
-    public int CreateEntity()
+    public Entity CreateEntity()
     {
-        var id = EntityPool.ReserveEntity();
-        return id;
+        return EntityPool.ReserveEntity();
     }
 
     public void RemoveEntity(Entity entity)
@@ -60,6 +59,34 @@ public sealed class EntityCommander(App app) : IDisposable
 
         SrcArchetypeChanged = true;
         SrcArchetype = archetype;
+    }
+
+    public void CommitChanges()
+    {
+        EntityPool.CommitReservedEntity(0);
+
+        foreach (var (_, map) in SrcArchetypeAddingTypeDict)
+        {
+            foreach (var (_, info) in map)
+            {
+                foreach (var entity in info.TargetEntities)
+                {
+                    info.Archetype.AddEntity(entity);
+                    EntityPool.SetEntityInfo(entity, new(TransferDstInfo!.Archetype.ID));
+                }
+            }
+        }
+
+        foreach (var (_, map) in SrcArchetypeRemovingTypeDict)
+        {
+            foreach (var (_, info) in map)
+            {
+                foreach (var entity in info.TargetEntities)
+                {
+                    info.Archetype.RemoveEntity(entity);
+                }
+            }
+        }
     }
 
 #endregion
@@ -123,10 +150,7 @@ public static class EntityCommandBufferExtensions
             var (chunkIdx, idx) = self.TransferDstInfo.Archetype.Reserve();
             self.TransferDstInfo.Archetype.PutPartialData(self.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
             self.SrcArchetype.MoveDataTo(entityInfo, self.TransferDstInfo.Archetype, chunkIdx, idx);
-
-            self.TransferDstInfo.targetEntities.Add(entity);
-            entityInfo.ArchetypeId = self.TransferDstInfo.Archetype.ID;
-            self.EntityPool.SetEntityInfo(entity, entityInfo);
+            self.TransferDstInfo.TargetEntities.Add(entity);
 
             return true;
         }
@@ -158,14 +182,12 @@ public static class EntityCommandBufferExtensions
 
                 if (self.TransferDstInfo == null)
                 {
-                    if (T.StructInfo == null)
-                    {
-                        self.TypeRegistry.RegisterBundle<T>();
-                    }
+                    self.TypeRegistry.RegisterBundle<T>();
 
-                    var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Concat(T.StructInfo!.Select(x => x.typeId)));
+                    var bundleInfo = self.TypeRegistry.GetBundleInfo<T>();
+                    var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Concat(bundleInfo.Select(x => x.typeId)));
 
-                    self.TransferDstInfo = new(dstArchetype, T.StructInfo);
+                    self.TransferDstInfo = new(dstArchetype, bundleInfo);
                     map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
                 }
 
@@ -178,7 +200,7 @@ public static class EntityCommandBufferExtensions
             {
                 unsafe
                 {
-                    var info = T.StructInfo![i].info;
+                    var info = self.TransferDstInfo.BundleInfo[i].info;
                     var ptr = self.TransferDstInfo.Archetype.Table.GetPtr(self.TransferDstInfo.TypeIndices[i], chunkIdx, idx);
 
                     fixed (T* bundlePtr = &bundle)
@@ -190,10 +212,7 @@ public static class EntityCommandBufferExtensions
             }
 
             self.SrcArchetype.MoveDataTo(entityInfo, self.TransferDstInfo.Archetype, chunkIdx, idx);
-            self.TransferDstInfo.targetEntities.Add(entity);
-
-            entityInfo.ArchetypeId = self.TransferDstInfo.Archetype.ID;
-            self.EntityPool.SetEntityInfo(entity, entityInfo);
+            self.TransferDstInfo.TargetEntities.Add(entity);
 
             return true;
         }
@@ -254,11 +273,6 @@ public static class EntityCommandBufferExtensions
             }
 
             return true;
-        }
-
-        internal void CommitChanges()
-        {
-
         }
     }
 }

@@ -68,16 +68,17 @@ sealed partial class {sysInfo.Name} : ISystem
 
         public static int[] TypeIdList;
 
-        public static Archetype[] Archetypes;{(hasEntityCommander ? "\n\n        public static EntityCommander EntityCommander;" : "")}
+        public static Archetype[] Archetypes;
+
+        public static EntityCommander EntityCommander;
     }}
-{MakeInitializeAGCode(componentTypes, hasEntityCommander)}
+{MakeInitializeAGCode(componentTypes)}
 
     public void ConfigureAG(App app, SystemDescriptor descriptor)
     {{
-        SystemDataAG.Pool = app.ResourcePool;
         SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(descriptor.AllFilter, descriptor.AnyFilter, descriptor.NoneFilter, SystemDataAG.TypeIdList);
     }}
-{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, hasEntityCommander)}
+{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes)}
 }}
 
 ");
@@ -153,25 +154,20 @@ sealed partial class {sysInfo.Name} : ISystem
             return null;
         }
 
-        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, bool hasEntityCommander)
+        private static string MakeInitializeAGCode(ParamInfo[] componentTypes)
         {
             var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistry.RegisterComponent<{p.Type}>()"));
-
-            var declEntityCommander = "";
-
-            if (hasEntityCommander)
-            {
-                declEntityCommander = "\n        SystemDataAG.EntityCommander = new(app);";
-            }
 
             return $@"
     public void InitializeAG(App app)
     {{
-        SystemDataAG.TypeIdList = [{registerTypes}];{declEntityCommander}
+        SystemDataAG.Pool = app.ResourcePool;
+        SystemDataAG.TypeIdList = [{registerTypes}];
+        SystemDataAG.EntityCommander = new(app);
     }}";
         }
 
-        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams, bool hasEntityCommander)
+        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams)
         {
             string body;
 
@@ -249,20 +245,22 @@ sealed partial class {sysInfo.Name} : ISystem
                 body = $@"
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
-        {{{(hasEntityCommander ? "\n            SystemDataAG.EntityCommander.ChangeSrcArchetype(archetype);\n" : "")}
+        {{
+            SystemDataAG.EntityCommander.ChangeSrcArchetype(archetype);
             var entitySpan = archetype.GetEntitiesSpan();
 {declIterCode}{iterateChunkWhileExpr}
+        return SystemDataAG.EntityCommander;
         }}";
             }
             else
             {
                 body = $@"
-{declResourceCode}
-        Execute({execParams});";
+{declResourceCode}        Execute({execParams});
+        return SystemDataAG.EntityCommander;";
             }
 
             return $@"
-    public unsafe void ExecuteAG()
+    public unsafe EntityCommander ExecuteAG()
     {{{body}
     }}";
         }

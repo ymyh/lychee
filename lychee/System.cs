@@ -20,6 +20,8 @@ internal struct SystemInfo(ISystem system, SystemParameterInfo[] parameters, Sys
 
 public sealed class SystemDescriptor
 {
+    public ISystem? RightBehind;
+
     public Type[] AllFilter = [];
 
     public Type[] AnyFilter = [];

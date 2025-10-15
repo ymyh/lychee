@@ -5,11 +5,11 @@ using lychee.interfaces;
 
 namespace lychee;
 
-internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, int typeId)[] bundleInfo)
+internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, int typeIdx)[] bundleInfo)
 {
     public readonly Archetype Archetype = archetype;
 
-    public readonly int[] TypeIndices = bundleInfo.Select(x => archetype.GetTypeIndex(x.typeId)).ToArray();
+    public readonly int[] TypeIndices = bundleInfo.Select(x => x.typeIdx).ToArray();
 
     public readonly List<Entity> TargetEntities = [];
 
@@ -30,6 +30,8 @@ public sealed class EntityCommander(App app) : IDisposable
 
     internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeRemovingTypeDict = new();
 
+    internal readonly List<(Entity, Archetype)> RemovedEntities = [];
+
     internal Archetype SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
 
     internal EntityTransferInfo? TransferDstInfo;
@@ -47,32 +49,32 @@ public sealed class EntityCommander(App app) : IDisposable
 
     public void RemoveEntity(Entity entity)
     {
+        RemovedEntities.Add((entity, SrcArchetype));
         EntityPool.MarkRemoveEntity(entity);
     }
 
     public void ChangeSrcArchetype(Archetype archetype)
     {
-        if (TransferDstInfo != null)
-        {
-            Monitor.Exit(TransferDstInfo.Archetype);
-        }
-
         SrcArchetypeChanged = true;
         SrcArchetype = archetype;
     }
 
-    public void CommitChanges()
-    {
-        EntityPool.CommitReservedEntity(0);
+#endregion
 
+#region Internal methods
+
+    internal void CommitChanges()
+    {
         foreach (var (_, map) in SrcArchetypeAddingTypeDict)
         {
             foreach (var (_, info) in map)
             {
                 foreach (var entity in info.TargetEntities)
                 {
-                    info.Archetype.AddEntity(entity);
-                    EntityPool.SetEntityInfo(entity, new(TransferDstInfo!.Archetype.ID));
+                    EntityPool.CommitReservedEntity(entity.ID);
+                    EntityPool.SetEntityInfo(entity, new(info.Archetype.ID));
+
+                    info.Archetype.CommitReservedEntity(entity);
                 }
             }
         }
@@ -87,6 +89,13 @@ public sealed class EntityCommander(App app) : IDisposable
                 }
             }
         }
+
+        foreach (var (entity, archetype) in RemovedEntities)
+        {
+            archetype.RemoveEntity(entity);
+        }
+
+        RemovedEntities.Clear();
     }
 
 #endregion
@@ -95,9 +104,9 @@ public sealed class EntityCommander(App app) : IDisposable
 
     public void Dispose()
     {
-        foreach (var item in SrcArchetypeAddingTypeDict)
+        foreach (var (_, map) in SrcArchetypeAddingTypeDict)
         {
-            item.Value.Dispose();
+            map.Dispose();
         }
     }
 
@@ -141,8 +150,6 @@ public static class EntityCommandBufferExtensions
                     self.TransferDstInfo = new(dstArchetype, [new(new(), dstArchetype.GetTypeIndex(typeId))]);
                     map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
                 }
-
-                Monitor.Enter(self.TransferDstInfo.Archetype);
             }
 
             Debug.Assert(self.TransferDstInfo != null);
@@ -190,8 +197,6 @@ public static class EntityCommandBufferExtensions
                     self.TransferDstInfo = new(dstArchetype, bundleInfo);
                     map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
                 }
-
-                Monitor.Enter(self.TransferDstInfo.Archetype);
             }
 
             var (chunkIdx, idx) = self.TransferDstInfo!.Archetype.Reserve();

@@ -141,10 +141,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
 
-    private readonly SparseMap<Archetype> addTypeArchetypeMap = new();
-
-    private readonly SparseMap<Archetype> removeTypeArchetypeMap = new();
-
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
 #endregion
@@ -157,11 +153,16 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return Table.IterateOfTypeAmongChunk(typeIdx);
     }
 
+    public Span<(int, Entity)> GetEntitiesSpan()
+    {
+        return entities.GetDenseAsSpan();
+    }
+
 #endregion
 
 #region Internal Methods
 
-    internal void AddEntity(Entity entity)
+    internal void CommitReservedEntity(Entity entity)
     {
         entities.Add(entity.ID, entity);
     }
@@ -169,33 +170,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
     internal void RemoveEntity(Entity entity)
     {
         entities.Remove(entity.ID);
-    }
-
-    public Span<(int, Entity)> GetEntitiesSpan()
-    {
-        return entities.GetDenseAsSpan();
-    }
-
-    internal Archetype? GetInsertCompTargetArchetype(int typeId)
-    {
-        addTypeArchetypeMap.TryGetValue(typeId, out var archetype);
-        return archetype;
-    }
-
-    internal Archetype? GetRemoveCompDstArchetype(int typeId)
-    {
-        removeTypeArchetypeMap.TryGetValue(typeId, out var archetype);
-        return archetype;
-    }
-
-    internal void SetInsertCompTargetArchetype(int typeId, Archetype archetype)
-    {
-        addTypeArchetypeMap.Add(typeId, archetype);
-    }
-
-    internal void AddRemoveCompDstArchetype(int typeId, Archetype archetype)
-    {
-        removeTypeArchetypeMap.Add(typeId, archetype);
     }
 
     internal (int chunkIdx, int idx) Reserve()
@@ -269,8 +243,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     public void Dispose()
     {
-        addTypeArchetypeMap.Dispose();
-        removeTypeArchetypeMap.Dispose();
         dstArchetypeCommCompIndices.Dispose();
         typeIdxMap.Dispose();
 

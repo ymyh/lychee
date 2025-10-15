@@ -56,11 +56,23 @@ public sealed class TypeRegistry
         return (int)RegisterComponentMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
     }
 
-    public int Register(Type type, int alignment = 0)
+    /// <summary>
+    /// Register a type.
+    /// </summary>
+    /// <param name="type"></param>
+    /// <param name="alignment"></param>
+    /// <returns></returns>
+    internal int Register(Type type, int alignment = 0)
     {
         return (int)RegisterMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
     }
 
+    /// <summary>
+    /// Register a type
+    /// </summary>
+    /// <param name="alignment"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
     internal int Register<T>(int alignment = 0)
     {
         var type = typeof(T);

@@ -21,13 +21,14 @@ public sealed class TableLayout
                 offset += info.Alignment - (offset % info.Alignment);
             }
 
+            MaxAlignment = Math.Max(MaxAlignment, info.Alignment);
+
             info.Offset = offset;
             typeInfoList[i] = info;
 
             offset += info.Size;
         }
 
-        MaxAlignment = typeInfoList.Length == 0 ? 0 : typeInfoList.Max(x => x.Alignment);
         TypeInfoList = typeInfoList;
     }
 }
@@ -43,6 +44,8 @@ public sealed class Table : IDisposable
     private readonly List<TableMemoryChunk> chunks = [];
 
     private int lastAvailableViewIndex;
+
+    private volatile bool isInitialized;
 
 #region Constructors
 
@@ -70,42 +73,24 @@ public sealed class Table : IDisposable
 
 #region Public methods
 
-    public int GetFirstAvailableViewIdx()
-    {
-        lock (this)
-        {
-            if (chunks.Count == 0)
-            {
-                CreateNewChunk();
-                return 0;
-            }
-
-            if (!chunks[lastAvailableViewIndex].IsFull)
-            {
-                return lastAvailableViewIndex;
-            }
-
-            for (var i = 0; i < chunks.Count; i++)
-            {
-                if (!chunks[i].IsFull)
-                {
-                    lastAvailableViewIndex = i;
-                    return lastAvailableViewIndex;
-                }
-            }
-
-            CreateNewChunk();
-            lastAvailableViewIndex = chunks.Count - 1;
-
-            return lastAvailableViewIndex;
-        }
-    }
-
     public (int chunkIdx, int idx) Reserve()
     {
+        if (!isInitialized)
+        {
+            lock (this)
+            {
+                if (!isInitialized)
+                {
+                    CreateChunk();
+                }
+
+                isInitialized = true;
+            }
+        }
+
         var idx = chunks[lastAvailableViewIndex].Reserve();
 
-        while (idx != -1)
+        while (idx == -1)
         {
             GetFirstAvailableViewIdx();
             idx = chunks[lastAvailableViewIndex].Reserve();
@@ -166,12 +151,37 @@ public sealed class Table : IDisposable
 
 #region Private methods
 
-    private void CreateNewChunk()
+    private void CreateChunk()
     {
         var chunk = new TableMemoryChunk(chunkCapacity);
         chunk.Chunk.Alloc(chunkSizeBytes);
 
         chunks.Add(chunk);
+    }
+
+    private int GetFirstAvailableViewIdx()
+    {
+        lock (this)
+        {
+            if (!chunks[lastAvailableViewIndex].IsFull)
+            {
+                return lastAvailableViewIndex;
+            }
+
+            for (var i = 0; i < chunks.Count; i++)
+            {
+                if (!chunks[i].IsFull)
+                {
+                    lastAvailableViewIndex = i;
+                    return lastAvailableViewIndex;
+                }
+            }
+
+            CreateChunk();
+            lastAvailableViewIndex = chunks.Count - 1;
+
+            return lastAvailableViewIndex;
+        }
     }
 
 #endregion
@@ -221,7 +231,7 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
             return -1;
         }
 
-        return newVal;
+        return Size + newVal - 1;
     }
 
     public void CommitReserved()

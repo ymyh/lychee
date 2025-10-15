@@ -4,13 +4,13 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
-public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int, T)>
+public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)>
 {
 #region Private fields
 
     private readonly NativeList<int> sparseArray = [];
 
-    private readonly List<(int, T)> denseArray = [];
+    private readonly List<(int key, T value)> denseArray = [];
 
 #endregion
 
@@ -181,7 +181,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int, T)>
 
 #region IEnumerable members
 
-    public IEnumerator<(int, T)> GetEnumerator()
+    public IEnumerator<(int key, T value)> GetEnumerator()
     {
         foreach (var valueTuple in denseArray)
         {

@@ -106,6 +106,59 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         Add(in value);
     }
 
+    public void AddRange(IEnumerable<T> collection)
+    {
+        switch (collection)
+        {
+            case NativeList<T> nativeList:
+                EnsureCapacity(size + nativeList.Count);
+
+                unsafe
+                {
+                    var span = new Span<T>(data + size, nativeList.Count);
+                    size += nativeList.Count;
+
+                    nativeList.CopyTo(span);
+                }
+
+                break;
+            case T[] arr:
+                EnsureCapacity(size + arr.Length);
+
+                unsafe
+                {
+                    var span = new Span<T>(data + size, arr.Length);
+                    size += arr.Length;
+
+                    arr.CopyTo(span);
+                }
+
+                break;
+            case List<T> list:
+                EnsureCapacity(size + list.Count);
+
+                unsafe
+                {
+                    var span = new Span<T>(data + size, list.Count);
+                    size += list.Count;
+
+                    list.CopyTo(span);
+                }
+
+                break;
+
+            default:
+            {
+                foreach (var item in collection)
+                {
+                    Add(item);
+                }
+
+                break;
+            }
+        }
+    }
+
     public Span<T> AsSpan()
     {
         unsafe
@@ -127,6 +180,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     public void CopyTo(T[] array, int arrayIndex)
     {
         AsSpan().CopyTo(array.AsSpan(arrayIndex));
+    }
+
+    public void CopyTo(Span<T> span)
+    {
+        AsSpan().CopyTo(span);
     }
 
     public void Fill(in T item)
@@ -152,9 +210,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         }
     }
 
-    public delegate void ForEachDelegate(ref T item);
+    public delegate void ForEachRefDelegate(ref T item);
 
-    public void ForEach(ForEachDelegate del)
+    public void ForEach(ForEachRefDelegate del)
     {
         unsafe
         {
@@ -275,6 +333,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         size--;
     }
 
+    public void Resize(int newLength)
+    {
+        Resize(newLength, new());
+    }
+
     public void Resize(int newLength, in T item)
     {
         if (newLength < size)
@@ -355,6 +418,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         {
             if (data != null)
             {
+                if (typeof(T).GetInterface(typeof(IDisposable).FullName!) != null)
+                {
+                    ForEach((ref x) => { (x as IDisposable)!.Dispose(); });
+                }
+
                 NativeMemory.Free(data);
                 data = null;
                 size = 0;

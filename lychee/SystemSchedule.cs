@@ -162,11 +162,11 @@ public sealed class SimpleSchedule : ISchedule
 
         return parameters.Select(p =>
         {
-            var targetAttrs = p.CustomAttributes.Where(a => a.AttributeType == typeof(Resource));
+            var targetAttr = p.CustomAttributes.FirstOrDefault(a => a.AttributeType == typeof(Resource));
 
-            if (targetAttrs.Count() == 1)
+            if (targetAttr != null)
             {
-                return new(p.ParameterType, !(bool)targetAttrs.First().ConstructorArguments[0].Value!);
+                return new(p.ParameterType, !(bool)targetAttr.ConstructorArguments[0].Value!);
             }
 
             return new SystemParameterInfo(p.ParameterType, p.IsIn);

@@ -1,19 +1,19 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using lychee.collections;
 
 namespace lychee;
 
 /// <summary>
 /// Holds all entities and its info.
 /// </summary>
-public sealed class EntityPool
+public sealed class EntityPool : IDisposable
 {
-    private int latestEntityId;
+    private int latestEntityId = -1;
 
-    private readonly List<Entity> entities = [];
+    private readonly NativeList<Entity> entities = [];
 
-    private readonly List<EntityInfo> entityInfoList = [];
+    private readonly NativeList<EntityInfo> entityInfoList = [];
 
     private readonly ConcurrentStack<int> reusableEntitiesId = new();
 
@@ -64,7 +64,7 @@ public sealed class EntityPool
     /// <param name="id"></param>
     public void CommitReservedEntity(int id)
     {
-        Debug.Assert(id > 0);
+        Debug.Assert(id >= 0);
 
         if (id < entities.Count)
         {
@@ -78,11 +78,8 @@ public sealed class EntityPool
             }
             else
             {
-                entities.AddRange(Enumerable.Repeat(new Entity(0, 0), id - entities.Count));
-                var entity = entities[id];
-                entity.ID = id;
-
-                entities[id] = entity;
+                entities.Resize(id + 1);
+                entities.AsSpan()[id].ID = id;
             }
         }
     }
@@ -101,7 +98,7 @@ public sealed class EntityPool
             return false;
         }
 
-        var span = CollectionsMarshal.AsSpan(entities);
+        var span = entities.AsSpan();
         span[id].Generation++;
 
         reusableEntitiesId.Push(id);
@@ -175,10 +172,29 @@ public sealed class EntityPool
     {
         if (entities[entity.ID].Generation == entity.Generation)
         {
-            entityInfoList[entity.ID] = info;
+            if (entity.ID < entityInfoList.Count)
+            {
+                entityInfoList[entity.ID] = info;
+            }
+            else
+            {
+                entityInfoList.Resize(entity.ID + 1);
+                entityInfoList[entity.ID] = info;
+            }
+
             return true;
         }
 
         return false;
     }
+
+#region IDisposable member
+
+    public void Dispose()
+    {
+        entities.Dispose();
+        entityInfoList.Dispose();
+    }
+
+#endregion
 }

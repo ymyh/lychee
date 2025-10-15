@@ -2,6 +2,9 @@
 
 namespace lychee;
 
+/// <summary>
+/// The ECS application.
+/// </summary>
 public sealed class App : IDisposable
 {
 #region Fields
@@ -12,9 +15,16 @@ public sealed class App : IDisposable
 
     public readonly World World;
 
-    public Action Runner;
+    /// <summary>
+    /// Controls how the application should run. <br/>
+    /// The default runner will update the world until <see cref="ShouldExit"/> is set to true.
+    /// </summary>
+    public Action Runner { get; set; }
 
-    private bool shouldExit;
+    /// <summary>
+    /// Indicates whether the application should exit.
+    /// </summary>
+    public bool ShouldExit { get; set; }
 
 #endregion
 
@@ -27,7 +37,7 @@ public sealed class App : IDisposable
 
         Runner = () =>
         {
-            while (!shouldExit)
+            while (!ShouldExit)
             {
                 World.Update();
             }
@@ -41,12 +51,7 @@ public sealed class App : IDisposable
 
 #endregion
 
-#region public methods
-
-    public void Exit()
-    {
-        shouldExit = true;
-    }
+#region Public methods
 
     public void InstallPlugin(IPlugin plugin)
     {

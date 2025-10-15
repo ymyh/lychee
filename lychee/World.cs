@@ -19,6 +19,9 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
 
 #region Public methods
 
+    /// <summary>
+    /// Trigger all system schedules to execute once.
+    /// </summary>
     public void Update()
     {
         SystemSchedules.Execute();
@@ -31,6 +34,8 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
     public void Dispose()
     {
         ArchetypeManager.Dispose();
+        EntityPool.Dispose();
+
         GC.SuppressFinalize(this);
     }
 

@@ -249,8 +249,8 @@ sealed partial class {sysInfo.Name} : ISystem
             SystemDataAG.EntityCommander.ChangeSrcArchetype(archetype);
             var entitySpan = archetype.GetEntitiesSpan();
 {declIterCode}{iterateChunkWhileExpr}
-        return SystemDataAG.EntityCommander;
-        }}";
+        }}
+        return SystemDataAG.EntityCommander;";
             }
             else
             {

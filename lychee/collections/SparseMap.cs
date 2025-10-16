@@ -112,6 +112,16 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
         denseArray.ForEach(x => { action(x.key, ref x.value); });
     }
 
+    public int GetIndex(int key)
+    {
+        if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
+        {
+            return -1;
+        }
+
+        return sparseArray[key];
+    }
+
     /// <summary>
     /// Remove element by key
     /// </summary>

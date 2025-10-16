@@ -48,7 +48,7 @@ public sealed class EntityPool : IDisposable
     /// Need to call <see cref="CommitReservedEntity"/> to make the entity available.
     /// </summary>
     /// <returns>New entity id</returns>
-    public UnCommitedEntity ReserveEntity()
+    public UnCommittedEntity ReserveEntity()
     {
         if (reusableEntitiesId.TryPop(out var id))
         {

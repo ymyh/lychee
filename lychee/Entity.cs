@@ -28,13 +28,15 @@ public struct Entity : IEquatable<Entity>
     }
 }
 
-public struct UnCommitedEntity
+public struct UnCommittedEntity
 {
     internal int ID;
 
     internal int ArchetypeId;
 
-    internal UnCommitedEntity(int id, int archetypeId)
+    internal (int, int) index = (0, 0);
+
+    internal UnCommittedEntity(int id, int archetypeId)
     {
         ID = id;
         ArchetypeId = archetypeId;

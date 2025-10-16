@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
@@ -148,6 +149,8 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
+    private readonly ConcurrentStack<int> holeIndices = new();
+
 #endregion
 
 #region Public Methods
@@ -163,9 +166,19 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return entities.GetDenseAsSpan();
     }
 
+    public int GetEntityIndex(Entity entity)
+    {
+        return entities.GetIndex(entity.ID);
+    }
+
 #endregion
 
 #region Internal Methods
+
+    internal (int chunkIdx, int idx) Reserve()
+    {
+        return Table.Reserve();
+    }
 
     internal void CommitReservedEntity(Entity entity)
     {
@@ -178,12 +191,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         entities.Remove(entity.ID);
     }
 
-    internal (int chunkIdx, int idx) Reserve()
+    internal void RemoveUnCommittedEntity(ref UnCommittedEntity entity)
     {
-        return Table.Reserve();
+        // TODO
     }
 
-    internal void MoveDataTo(EntityInfo info, Archetype archetype, int chunkIdx, int idx)
+    internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)
     {
         int[] commCompIndices;
 
@@ -204,15 +217,21 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         {
             unsafe
             {
-                var src = Table.GetPtr(index, chunkIdx, idx);
-                var dst = archetype.Table.GetLastPtr(index, chunkIdx);
+                var src = Table.GetPtr(index, srcChunkIdx, srcIdx);
+                var dst = archetype.Table.GetPtr(index, dstChunkIdx, dstIdx);
 
                 NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
             }
         }
     }
 
-    internal void PutPartialData<T>(int typeIdx, int chunkIdx, int idx, in T data) where T : unmanaged
+    internal void MoveDataTo(Archetype archetype, Entity entity, int dstChunkIdx, int dstIdx)
+    {
+        var (srcChunkIdx, srcIdx) = Table.GetChunkAndIndex(GetEntityIndex(entity));
+        MoveDataTo(archetype, srcChunkIdx, srcIdx, dstChunkIdx, dstIdx);
+    }
+
+    internal void PutComponentData<T>(int typeIdx, int chunkIdx, int idx, in T data) where T : unmanaged
     {
         unsafe
         {

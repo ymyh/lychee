@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace lychee.collections;
 
@@ -115,29 +114,6 @@ public sealed class Table : IDisposable
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe void* GetLastPtr(int typeIdx, int chunkIdx)
-    {
-        var typeInfo = Layout.TypeInfoList[typeIdx];
-        var chunk = chunks[chunkIdx];
-        var ptr = (byte*)chunk.Data;
-
-        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * chunk.Size);
-    }
-
-    public (int, int) GetChunkAndIndex(int idx)
-    {
-        var chunkIdx = 0;
-
-        while (idx >= chunks[chunkIdx].Size)
-        {
-            idx -= chunks[chunkIdx].Size;
-            chunkIdx++;
-        }
-
-        return (chunkIdx, idx);
-    }
-
     public IEnumerable<(nint ptr, int size)> IterateOfTypeAmongChunk(int typeIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
@@ -153,6 +129,23 @@ public sealed class Table : IDisposable
 
             yield return (ptr, chunk.Size);
         }
+    }
+
+#endregion
+
+#region Internal methods
+
+    internal (int, int) GetChunkAndIndex(int idx)
+    {
+        var chunkIdx = 0;
+
+        while (idx >= chunks[chunkIdx].Size)
+        {
+            idx -= chunks[chunkIdx].Size;
+            chunkIdx++;
+        }
+
+        return (chunkIdx, idx);
     }
 
 #endregion

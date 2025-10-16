@@ -48,11 +48,11 @@ public sealed class EntityPool : IDisposable
     /// Need to call <see cref="CommitReservedEntity"/> to make the entity available.
     /// </summary>
     /// <returns>New entity id</returns>
-    public Entity ReserveEntity()
+    public UnCommitedEntity ReserveEntity()
     {
         if (reusableEntitiesId.TryPop(out var id))
         {
-            return entities[id];
+            return new(id, 0);
         }
 
         return new(Interlocked.Increment(ref latestEntityId), 0);
@@ -68,7 +68,8 @@ public sealed class EntityPool : IDisposable
 
         if (id < entities.Count)
         {
-            entities[id] = new(id, entities[id].Generation + 1);
+            // Set generation to 0 when reuse entity
+            entities[id] = new(id, 0);
         }
         else
         {
@@ -144,12 +145,6 @@ public sealed class EntityPool : IDisposable
     /// <returns></returns>
     public bool GetEntityInfo(Entity entity, out EntityInfo info)
     {
-        if (entity.Generation == 0)
-        {
-            info = new(0);
-            return true;
-        }
-
         var e = entities[entity.ID];
 
         if (e.Generation == entity.Generation)

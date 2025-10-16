@@ -97,28 +97,47 @@ public sealed class SimpleSchedule : ISchedule
     {
         system.InitializeAG(app);
 
-        var systemParamInfo = AnalyzeSystem(system, descriptor);
-        var node = executionGraph.AddNode(new(new(system, systemParamInfo, descriptor)));
+        var systemParamInfo = ExtractSystemParamInfo(system, descriptor);
+        var node = new DAGNode<SystemInfo>(new(system, systemParamInfo, descriptor));
+        DAGNode<SystemInfo> addAfterNode = null!;
 
         isFrozen = false;
 
-        if (executionGraph.Count == 1)
+        if (executionGraph.Count == 0)
         {
+            executionGraph.AddNode(node);
             return system;
         }
 
         var list = executionGraph.AsList();
+        var currentGroup = -1;
+
         foreach (var n in list)
         {
-            if (!CanParallelWithSystem(n.Data, node.Data))
+            addAfterNode = n;
+
+            if (descriptor.AddAfter != null)
             {
-                executionGraph.AddEdge(n, node);
+                if (n.Data.System == descriptor.AddAfter)
+                {
+                    currentGroup = n.Group;
+                    descriptor.AddAfter = null;
+                }
+
+                continue;
             }
-            else if (n.Parents.Count > 0)
+
+            if (CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
             {
-                executionGraph.AddEdge(n.Parents[0], node);
+                if (n.Parents.Count > 0)
+                {
+                    addAfterNode = n.Parents[0];
+                }
             }
         }
+
+        executionGraph.AddNode(node);
+        executionGraph.AddEdge(addAfterNode, node);
 
         return system;
     }
@@ -127,7 +146,7 @@ public sealed class SimpleSchedule : ISchedule
 
 #region Private methods
 
-    private SystemParameterInfo[] AnalyzeSystem(ISystem system, SystemDescriptor descriptor)
+    private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
         var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -135,9 +154,13 @@ public sealed class SimpleSchedule : ISchedule
 
         foreach (var param in parameters)
         {
-            if (param.ParameterType.IsByRef)
+            if (param.ParameterType.IsByRef && param.ParameterType.GetElementType()!.GetInterface(typeof(IComponent).FullName!) != null)
             {
                 app.TypeRegistry.RegisterComponent(param.ParameterType.GetElementType()!);
+            }
+            else if (param.ParameterType.GetInterface(typeof(IComponent).FullName!) != null)
+            {
+                app.TypeRegistry.RegisterComponent(param.ParameterType);
             }
             else
             {
@@ -160,22 +183,31 @@ public sealed class SimpleSchedule : ISchedule
             app.TypeRegistry.RegisterComponent(type);
         }
 
+        // Check this here because we need to make sure all types in descriptor are valid
+        if (descriptor.NoneFilter.Length > 0)
+        {
+            if (parameters.Select(p => p.ParameterType).Intersect(descriptor.NoneFilter).Any())
+            {
+                throw new ArgumentException($"System {system} has component parameter that also in NoneFilter");
+            }
+        }
+
         return parameters.Select(p =>
         {
             var targetAttr = p.CustomAttributes.FirstOrDefault(a => a.AttributeType == typeof(Resource));
 
             if (targetAttr != null)
             {
-                return new(p.ParameterType, !(bool)targetAttr.ConstructorArguments[0].Value!);
+                return new SystemParameterInfo(p.ParameterType, !(bool)targetAttr.ConstructorArguments[0].Value!);
             }
 
-            return new SystemParameterInfo(p.ParameterType, p.IsIn);
+            return new(p.ParameterType, p.IsIn);
         }).ToArray();
     }
 
-    private static bool CanParallelWithSystem(SystemInfo info, SystemInfo tryAddAfterInfo)
+    private static bool CanRunParallel(SystemInfo sysA, SystemInfo sysB)
     {
-        var intersected = info.Parameters.Intersect(tryAddAfterInfo.Parameters,
+        var intersected = sysA.Parameters.Intersect(sysB.Parameters,
             EqualityComparer<SystemParameterInfo>.Create((a, b) =>
             {
                 var same = a.Type == b.Type;
@@ -185,7 +217,7 @@ public sealed class SimpleSchedule : ISchedule
                 }
 
                 return same;
-            })).ToArray();
+            }, info => HashCode.Combine(info.Type.GetHashCode(), info.ReadOnly))).ToArray();
 
         return intersected.Length == 0;
     }

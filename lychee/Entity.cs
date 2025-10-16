@@ -17,14 +17,27 @@ public struct Entity : IEquatable<Entity>
         return ID == other.ID && Generation == other.Generation;
     }
 
-    public static bool operator==(Entity a, Entity b)
+    public static bool operator ==(Entity a, Entity b)
     {
         return a.Equals(b);
     }
 
-    public static bool operator!=(Entity a, Entity b)
+    public static bool operator !=(Entity a, Entity b)
     {
         return !a.Equals(b);
+    }
+}
+
+public struct UnCommitedEntity
+{
+    internal int ID;
+
+    internal int ArchetypeId;
+
+    internal UnCommitedEntity(int id, int archetypeId)
+    {
+        ID = id;
+        ArchetypeId = archetypeId;
     }
 }
 

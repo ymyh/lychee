@@ -80,6 +80,11 @@ public sealed class ArchetypeManager : IDisposable
     public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
         int[] requires)
     {
+        if (requires.Length == 0)
+        {
+            return [];
+        }
+
         lock (archetypes)
         {
             return archetypes.Where(a =>
@@ -164,6 +169,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal void CommitReservedEntity(Entity entity)
     {
+        Table.CommitReserved();
         entities.Add(entity.ID, entity);
     }
 

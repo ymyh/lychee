@@ -29,6 +29,12 @@ public static class TypeUtils
     public static List<Type> GetTupleTypes<T>()
     {
         var type = typeof(T);
+
+        if (!IsValueTuple(type))
+        {
+            throw new ArgumentException($"Generic Argument {type.Name} is not a ValueTuple");
+        }
+
         var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
         List<Type> list = [];
 
@@ -43,16 +49,21 @@ public static class TypeUtils
                 continue;
             }
 
-            if (field.Name != $"Item{i}")
-            {
-                throw new ArgumentException($"Generic Argument {type.Name} is not a ValueTuple");
-            }
-
             list.Add(field.FieldType);
             i += 1;
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Check if a type is a value tuple.
+    /// </summary>
+    /// <param name="t"></param>
+    /// <returns></returns>
+    public static bool IsValueTuple<T>()
+    {
+        return IsValueTuple(typeof(T));
     }
 
     /// <summary>

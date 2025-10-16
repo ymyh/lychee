@@ -1,7 +1,8 @@
 ﻿namespace lychee.interfaces;
 
 /// <summary>
-/// Interface for system, usually auto implemented by <see cref="lychee.attributes.AutoImplSystem"/>.
+/// <b> Warning: Don't implement this interface manually unless you know what are you doing. </b> <br/>
+/// Interface for system, auto implemented by <see cref="lychee.attributes.AutoImplSystem"/>.
 /// </summary>
 public interface ISystem
 {
@@ -13,7 +14,7 @@ public interface ISystem
 
     /// <summary>
     /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing.<br/>
-    /// Auto configure the system, called when archetype changed.
+    /// Configure the system, called when archetype changed.
     /// </summary>
     public void ConfigureAG(App app, SystemDescriptor descriptor);
 

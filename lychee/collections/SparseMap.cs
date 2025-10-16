@@ -100,6 +100,18 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
         return false;
     }
 
+    public void ForEach(Action<int, T> action)
+    {
+        denseArray.ForEach(x => { action(x.key, x.value); });
+    }
+
+    public delegate void ForEachRefDelegate<T>(int key, ref T value);
+
+    public void ForEachRef(ForEachRefDelegate<T> action)
+    {
+        denseArray.ForEach(x => { action(x.key, ref x.value); });
+    }
+
     /// <summary>
     /// Remove element by key
     /// </summary>

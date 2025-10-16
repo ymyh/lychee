@@ -28,7 +28,11 @@ public sealed class EntityCommander(App app) : IDisposable
 
     internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeAddingTypeDict = new();
 
+    internal readonly SparseMap<Dictionary<nint, EntityTransferInfo>> SrcArchetypeAddingTypeDict2 = new();
+
     internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeRemovingTypeDict = new();
+
+    internal readonly SparseMap<Dictionary<nint, EntityTransferInfo>> SrcArchetypeRemovingTypeDict2 = new();
 
     internal readonly List<(Entity, Archetype)> RemovedEntities = [];
 
@@ -42,7 +46,7 @@ public sealed class EntityCommander(App app) : IDisposable
 
 #region Public Methods
 
-    public Entity CreateEntity()
+    public UnCommitedEntity CreateEntity()
     {
         return EntityPool.ReserveEntity();
     }
@@ -51,6 +55,11 @@ public sealed class EntityCommander(App app) : IDisposable
     {
         RemovedEntities.Add((entity, SrcArchetype));
         EntityPool.MarkRemoveEntity(entity);
+    }
+
+    public void RemoveEntity(UnCommitedEntity entity)
+    {
+        RemoveEntity(new Entity(entity.ID, 0));
     }
 
     public void ChangeSrcArchetype(Archetype archetype)
@@ -117,6 +126,12 @@ public static class EntityCommandBufferExtensions
 {
     extension(EntityCommander self)
     {
+        public void AddComponent<T>(int entityId, in T component) where T : unmanaged, IComponent
+        {
+            var entity = new Entity(entityId, 0);
+            self.AddComponent(entity, in component);
+        }
+
         public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
         {
             if (!self.EntityPool.GetEntityInfo(entity, out var entityInfo))
@@ -132,14 +147,17 @@ public static class EntityCommandBufferExtensions
                     ptr = (nint)(delegate* <EntityCommander, Entity, in T, bool>)&AddComponent<T>;
                 }
 
-                if (self.SrcArchetypeAddingTypeDict.TryGetValue(ptr, out var map))
+                if (self.SrcArchetypeAddingTypeDict2.TryGetValue(self.SrcArchetype.ID, out var dict))
                 {
-                    map.TryGetValue(self.SrcArchetype.ID, out self.TransferDstInfo);
+                    if (dict.TryGetValue(ptr, out var info))
+                    {
+                        self.TransferDstInfo = info;
+                    }
                 }
                 else
                 {
-                    map = new();
-                    self.SrcArchetypeAddingTypeDict.Add(ptr, map);
+                    dict = new();
+                    self.SrcArchetypeAddingTypeDict2.Add(self.SrcArchetype.ID, dict);
                 }
 
                 if (self.TransferDstInfo == null)
@@ -148,8 +166,10 @@ public static class EntityCommandBufferExtensions
                     var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Append(typeId));
 
                     self.TransferDstInfo = new(dstArchetype, [new(new(), dstArchetype.GetTypeIndex(typeId))]);
-                    map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
+                    dict.Add(ptr, self.TransferDstInfo);
                 }
+
+                self.SrcArchetypeChanged = false;
             }
 
             Debug.Assert(self.TransferDstInfo != null);
@@ -197,6 +217,8 @@ public static class EntityCommandBufferExtensions
                     self.TransferDstInfo = new(dstArchetype, bundleInfo);
                     map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
                 }
+
+                self.SrcArchetypeChanged = false;
             }
 
             var (chunkIdx, idx) = self.TransferDstInfo!.Archetype.Reserve();

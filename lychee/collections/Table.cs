@@ -99,6 +99,14 @@ public sealed class Table : IDisposable
         return (lastAvailableViewIndex, idx);
     }
 
+    public void CommitReserved()
+    {
+        foreach (var chunk in chunks)
+        {
+            chunk.CommitReserved();
+        }
+    }
+
     public unsafe void* GetPtr(int typeIdx, int chunkIdx, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];

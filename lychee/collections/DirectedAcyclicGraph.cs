@@ -131,10 +131,16 @@ public sealed class DirectedAcyclicGraph<T>
 
     public void ForEach(Action<DAGNode<T>> action)
     {
-        foreach (var node in Nodes)
+        ForEachInner(Nodes, action);
+        return;
+
+        static void ForEachInner(List<DAGNode<T>> nodes, Action<DAGNode<T>> action)
         {
-            action(node);
-            node.Children.ForEach(action);
+            foreach (var node in nodes)
+            {
+                action(node);
+                ForEachInner(node.Children, action);
+            }
         }
     }
 }
@@ -153,7 +159,7 @@ public static class DirectedAcyclicGraphExtensions
     {
         public FrozenDAGNode<T>[][] AsExecutionGroup()
         {
-            return nodes.GroupBy(x => new {x.Group}).Select(x => x.ToArray()).ToArray();
+            return nodes.GroupBy(x => new { x.Group }).Select(x => x.ToArray()).ToArray();
         }
     }
 }

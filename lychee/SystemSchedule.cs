@@ -251,7 +251,7 @@ public sealed class SimpleSchedule : ISchedule
                 Task.WaitAll(tasks);
                 tasks.Clear();
 
-                entityCommanders.ForEach(x => x.CommitChanges());
+                entityCommanders.ForEach(x => x.Commit());
                 entityCommanders.Clear();
 
                 if (needConfigure)

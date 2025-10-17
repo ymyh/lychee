@@ -149,7 +149,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
-    private readonly ConcurrentStack<int> holeIndices = new();
+    private readonly ConcurrentStack<(int, int)> holesInTable = new();
+
+    private bool dirty;
 
 #endregion
 
@@ -175,25 +177,29 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
 #region Internal Methods
 
-    internal (int chunkIdx, int idx) Reserve()
+    internal void Commit(Entity entity)
     {
-        return Table.Reserve();
+        if (dirty)
+        {
+            Table.CommitReserved();
+            entities.Add(entity.ID, entity);
+
+            while (holesInTable.TryPop(out var hole))
+            {
+            }
+
+            dirty = false;
+        }
     }
 
-    internal void CommitReservedEntity(Entity entity)
+    internal int GetTypeIndex(int typeId)
     {
-        Table.CommitReserved();
-        entities.Add(entity.ID, entity);
+        return typeIdxMap[typeId];
     }
 
-    internal void RemoveEntity(Entity entity)
+    internal void MarkRemove(int chunkIdx, int idx)
     {
-        entities.Remove(entity.ID);
-    }
-
-    internal void RemoveUnCommittedEntity(ref UnCommittedEntity entity)
-    {
-        // TODO
+        holesInTable.Push((chunkIdx, idx));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)
@@ -223,12 +229,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
                 NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
             }
         }
-    }
 
-    internal void MoveDataTo(Archetype archetype, Entity entity, int dstChunkIdx, int dstIdx)
-    {
-        var (srcChunkIdx, srcIdx) = Table.GetChunkAndIndex(GetEntityIndex(entity));
-        MoveDataTo(archetype, srcChunkIdx, srcIdx, dstChunkIdx, dstIdx);
+        dirty = true;
+        holesInTable.Push((srcChunkIdx, srcIdx));
     }
 
     internal void PutComponentData<T>(int typeIdx, int chunkIdx, int idx, in T data) where T : unmanaged
@@ -243,9 +246,15 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         }
     }
 
-    internal int GetTypeIndex(int typeId)
+    internal (int chunkIdx, int idx) Reserve()
     {
-        return typeIdxMap[typeId];
+        dirty = true;
+        return Table.Reserve();
+    }
+
+    internal void RemoveEntity(Entity entity)
+    {
+        entities.Remove(entity.ID);
     }
 
 #endregion
@@ -268,6 +277,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     public void Dispose()
     {
+        entities.Dispose();
         dstArchetypeCommCompIndices.Dispose();
         typeIdxMap.Dispose();
 

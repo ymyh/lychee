@@ -48,7 +48,7 @@ public sealed class EntityPool : IDisposable
     /// Need to call <see cref="CommitReservedEntity"/> to make the entity available.
     /// </summary>
     /// <returns>New entity id</returns>
-    public UnCommittedEntity ReserveEntity()
+    public Entity ReserveEntity()
     {
         if (reusableEntitiesId.TryPop(out var id))
         {
@@ -62,7 +62,8 @@ public sealed class EntityPool : IDisposable
     /// Commit a reserved entity, make it available to be used.
     /// </summary>
     /// <param name="id"></param>
-    public void CommitReservedEntity(int id)
+    /// <param name="archetypeId"></param>
+    public Entity CommitReservedEntity(int id, int archetypeId)
     {
         Debug.Assert(id >= 0);
 
@@ -70,6 +71,7 @@ public sealed class EntityPool : IDisposable
         {
             // Set generation to 0 when reuse entity
             entities[id] = new(id, 0);
+            entityInfoList[id] = new(archetypeId);
         }
         else
         {
@@ -81,8 +83,23 @@ public sealed class EntityPool : IDisposable
             {
                 entities.Resize(id + 1);
                 entities.AsSpan()[id].ID = id;
+
+                entityInfoList.Resize(id + 1);
+                entityInfoList[id] = new(archetypeId);
             }
         }
+
+        return entities[id];
+    }
+
+    public bool CheckEntityValid(Entity entity)
+    {
+        if (entity.ID >= entities.Count)
+        {
+            return entity.Generation == 0;
+        }
+
+        return entity.Generation == 0 || entities[entity.ID].Generation == entity.Generation;
     }
 
     /// <summary>
@@ -145,41 +162,13 @@ public sealed class EntityPool : IDisposable
     /// <returns></returns>
     public bool GetEntityInfo(Entity entity, out EntityInfo info)
     {
-        var e = entities[entity.ID];
-
-        if (e.Generation == entity.Generation)
+        if (entity.ID < entityInfoList.Count)
         {
-            info = entityInfoList[e.ID];
+            info = entityInfoList[entity.ID];
             return true;
         }
 
         info = default;
-        return false;
-    }
-
-    /// <summary>
-    /// Set entity info with given entity
-    /// </summary>
-    /// <param name="entity"></param>
-    /// <param name="info"></param>
-    /// <returns></returns>
-    public bool SetEntityInfo(Entity entity, EntityInfo info)
-    {
-        if (entities[entity.ID].Generation == entity.Generation)
-        {
-            if (entity.ID < entityInfoList.Count)
-            {
-                entityInfoList[entity.ID] = info;
-            }
-            else
-            {
-                entityInfoList.Resize(entity.ID + 1);
-                entityInfoList[entity.ID] = info;
-            }
-
-            return true;
-        }
-
         return false;
     }
 

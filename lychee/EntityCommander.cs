@@ -5,11 +5,20 @@ using lychee.interfaces;
 
 namespace lychee;
 
-internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, int typeIdx)[] bundleInfo)
+internal struct ModifiedEntityInfo(Archetype archetype, int chunkIdx, int idx)
+{
+    public Archetype Archetype = archetype;
+
+    public int ChunkIdx = chunkIdx;
+
+    public int Idx = idx;
+}
+
+internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, int typeId)[] bundleInfo)
 {
     public readonly Archetype Archetype = archetype;
 
-    public readonly int[] TypeIndices = bundleInfo.Select(x => x.typeIdx).ToArray();
+    public readonly int[] TypeIndices = bundleInfo.Select(x => archetype.GetTypeIndex(x.typeId)).ToArray();
 
     public readonly List<Entity> TargetEntities = [];
 
@@ -26,34 +35,31 @@ public sealed class EntityCommander : IDisposable
 
     internal readonly TypeRegistry TypeRegistry;
 
-    internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeAddingTypeDict = new();
+    internal readonly SparseMap<Dictionary<nint, EntityTransferInfo>> ArchetypeAddingTypeMap = new();
 
-    internal readonly SparseMap<Dictionary<nint, EntityTransferInfo>> SrcArchetypeAddingTypeDict2 = new();
+    internal readonly SparseMap<Dictionary<nint, EntityTransferInfo>> ArchetypeRemovingTypeMap = new();
 
-    internal readonly Dictionary<nint, SparseMap<EntityTransferInfo>> SrcArchetypeRemovingTypeDict = new();
+    internal readonly SparseMap<ModifiedEntityInfo> ModifiedEntityInfoMap = new();
 
-    internal readonly SparseMap<Dictionary<nint, EntityTransferInfo>> SrcArchetypeRemovingTypeDict2 = new();
+    internal EntityTransferInfo? TransferDstInfo;
 
-    internal readonly List<(Entity, Archetype)> RemovedEntities = [];
+    private static Archetype zeroArchetype = null!;
 
-    internal Archetype SrcArchetype
+    /// <summary>
+    /// <b> WARNING: Do not set this property manually. </b>
+    /// </summary>
+    public Archetype SrcArchetype
     {
-        get
-        {
-            SrcArchetypeChanged = false;
-            return field;
-        }
+        get;
 
         set
         {
-            SrcArchetypeChanged = field != value;
+            srcArchetypeChanged = field != value;
             field = value;
         }
     }
 
-    internal EntityTransferInfo? TransferDstInfo;
-
-    internal bool SrcArchetypeChanged = true;
+    private bool srcArchetypeChanged = true;
 
 #endregion
 
@@ -65,107 +71,190 @@ public sealed class EntityCommander : IDisposable
         ArchetypeManager = app.World.ArchetypeManager;
         TypeRegistry = app.TypeRegistry;
         SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
+
+        zeroArchetype = app.World.ArchetypeManager.GetArchetype(0);
     }
 
 #endregion
 
 #region Public Methods
 
-    public UnCommittedEntity CreateEntity()
+    public Entity CreateEntity()
     {
         return EntityPool.ReserveEntity();
     }
 
     public void RemoveEntity(Entity entity)
     {
-        RemovedEntities.Add((entity, SrcArchetype));
         EntityPool.MarkRemoveEntity(entity);
-    }
 
-    public void RemoveEntity(UnCommittedEntity entity)
-    {
-        RemoveEntity(new Entity(entity.ID, 0));
+        if (EntityPool.GetEntityInfo(entity, out var entityInfo))
+        {
+            if (entityInfo.ArchetypeId == SrcArchetype.ID)
+            {
+                SrcArchetype.MarkRemove(0, 0);
+            }
+        }
+        else if (ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            info.Archetype.MarkRemove(info.ChunkIdx, info.Idx);
+        }
     }
 
     public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
+    {
+        if (!EntityPool.CheckEntityValid(entity))
+        {
+            return false;
+        }
+
+        var srcChunkIdx = 0;
+        var srcIdx = 0;
+
+        if (ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            SrcArchetype = info.Archetype;
+            srcChunkIdx = info.ChunkIdx;
+            srcIdx = info.Idx;
+        }
+        else
+        {
+            if (EntityPool.GetEntityInfo(entity, out var entityInfo))
+            {
+                SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
+                (srcChunkIdx, srcIdx) = SrcArchetype.Table.GetChunkAndIndex(SrcArchetype.GetEntityIndex(entity));
+            }
+            else
+            {
+                SrcArchetype = zeroArchetype;
+                srcArchetypeChanged = true;
+            }
+        }
+
+        if (srcArchetypeChanged)
+        {
+            this.ChangeTransferInfo<T>();
+            srcArchetypeChanged = false;
+        }
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
+
+        TransferDstInfo.TargetEntities.Add(entity);
+        ModifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+
+        return true;
+    }
+
+    public bool AddComponents<T>(Entity entity, in T bundle) where T : unmanaged, IComponentBundle
+    {
+        if (!EntityPool.CheckEntityValid(entity))
+        {
+            return false;
+        }
+
+        var srcChunkIdx = 0;
+        var srcIdx = 0;
+
+        if (ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            SrcArchetype = info.Archetype;
+            srcChunkIdx = info.ChunkIdx;
+            srcIdx = info.Idx;
+        }
+        else
+        {
+            if (EntityPool.GetEntityInfo(entity, out var entityInfo))
+            {
+                SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
+                (srcChunkIdx, srcIdx) = SrcArchetype.Table.GetChunkAndIndex(SrcArchetype.GetEntityIndex(entity));
+            }
+            else
+            {
+                SrcArchetype = zeroArchetype;
+                srcArchetypeChanged = true;
+            }
+        }
+
+        if (srcArchetypeChanged)
+        {
+            this.ChangeTransferInfoBundle<T>();
+            srcArchetypeChanged = false;
+        }
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo!.Archetype.Reserve();
+
+        for (var i = 0; i < TransferDstInfo!.TypeIndices.Length; i++)
+        {
+            unsafe
+            {
+                var bundleInfo = TransferDstInfo.BundleInfo[i].info;
+                var ptr = TransferDstInfo.Archetype.Table.GetPtr(TransferDstInfo.TypeIndices[i], chunkIdx, idx);
+
+                fixed (T* bundlePtr = &bundle)
+                {
+                    var componentPtr = (byte*)bundlePtr + bundleInfo.Offset;
+                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.Size);
+                }
+            }
+        }
+
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
+        TransferDstInfo.TargetEntities.Add(entity);
+        ModifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+
+        return true;
+    }
+
+    public bool RemoveComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
         if (!EntityPool.GetEntityInfo(entity, out var entityInfo))
         {
             return false;
         }
 
-        if (SrcArchetypeChanged)
+        if (srcArchetypeChanged)
         {
-            this.ChangeTransferInfo<T>(SrcArchetype);
+            this.ChangeTransferInfo<T>();
         }
-
-        Debug.Assert(TransferDstInfo != null);
-
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, entity, chunkIdx, idx);
-        TransferDstInfo.TargetEntities.Add(entity);
 
         return true;
     }
 
-    public void AddComponent<T>(ref UnCommittedEntity entity, in T component) where T : unmanaged, IComponent
+    public bool RemoveComponents<T>(Entity entity) where T : unmanaged, IComponentBundle
     {
-        SrcArchetype = ArchetypeManager.GetArchetype(entity.ArchetypeId);
-
-        if (SrcArchetypeChanged)
+        if (!EntityPool.GetEntityInfo(entity, out var entityInfo))
         {
-            this.ChangeTransferInfo<T>(SrcArchetype);
+            return false;
         }
 
-        Debug.Assert(TransferDstInfo != null);
+        if (srcArchetypeChanged)
+        {
+            this.ChangeTransferInfoBundle<T>();
+        }
 
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-
-        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, entity.index.Item1, entity.index.Item2, chunkIdx, idx);
-        SrcArchetype.RemoveUnCommittedEntity(ref entity);
-
-        entity.index = (chunkIdx, idx);
+        return true;
     }
 
 #endregion
 
 #region Internal methods
 
-    internal void CommitChanges()
+    internal void Commit()
     {
-        foreach (var (_, map) in SrcArchetypeAddingTypeDict)
+        foreach (var (id, info) in ModifiedEntityInfoMap)
         {
-            foreach (var (_, info) in map)
-            {
-                foreach (var entity in info.TargetEntities)
-                {
-                    EntityPool.CommitReservedEntity(entity.ID);
-                    EntityPool.SetEntityInfo(entity, new(info.Archetype.ID));
-
-                    info.Archetype.CommitReservedEntity(entity);
-                }
-            }
+            var entity = EntityPool.CommitReservedEntity(id, info.Archetype.ID);
+            info.Archetype.Commit(entity);
         }
 
-        foreach (var (_, map) in SrcArchetypeRemovingTypeDict)
-        {
-            foreach (var (_, info) in map)
-            {
-                foreach (var entity in info.TargetEntities)
-                {
-                    info.Archetype.RemoveEntity(entity);
-                }
-            }
-        }
-
-        foreach (var (entity, archetype) in RemovedEntities)
-        {
-            archetype.RemoveEntity(entity);
-        }
-
-        RemovedEntities.Clear();
+        ModifiedEntityInfoMap.Clear();
     }
 
 #endregion
@@ -174,10 +263,9 @@ public sealed class EntityCommander : IDisposable
 
     public void Dispose()
     {
-        foreach (var (_, map) in SrcArchetypeAddingTypeDict)
-        {
-            map.Dispose();
-        }
+        ArchetypeAddingTypeMap.Dispose();
+        ArchetypeRemovingTypeMap.Dispose();
+        ModifiedEntityInfoMap.Dispose();
     }
 
 #endregion
@@ -187,25 +275,23 @@ public static class EntityCommandBufferExtensions
 {
     extension(EntityCommander self)
     {
-        internal void ChangeTransferInfo<T>(Archetype archetype) where T : unmanaged, IComponent
+        internal void ChangeTransferInfo<T>() where T : unmanaged, IComponent
         {
             nint ptr;
             unsafe
             {
-                ptr = (nint)(delegate* <EntityCommander, Archetype, void>)&ChangeTransferInfo<T>;
+                ptr = (nint)(delegate* <EntityCommander, void>)&ChangeTransferInfo<T>;
             }
 
-            if (self.SrcArchetypeAddingTypeDict2.TryGetValue(self.SrcArchetype.ID, out var dict))
+            if (self.ArchetypeAddingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))
             {
-                if (dict.TryGetValue(ptr, out var info))
-                {
-                    self.TransferDstInfo = info;
-                }
+                self.TransferDstInfo = dict.GetValueOrDefault(ptr);
             }
             else
             {
+                self.TransferDstInfo = null;
                 dict = new();
-                self.SrcArchetypeAddingTypeDict2.Add(self.SrcArchetype.ID, dict);
+                self.ArchetypeAddingTypeMap.Add(self.SrcArchetype.ID, dict);
             }
 
             if (self.TransferDstInfo == null)
@@ -218,124 +304,34 @@ public static class EntityCommandBufferExtensions
             }
         }
 
-        public bool AddComponents<T>(Entity entity, in T bundle) where T : unmanaged, IComponentBundle
+        internal void ChangeTransferInfoBundle<T>() where T : unmanaged, IComponentBundle
         {
-            if (!self.EntityPool.GetEntityInfo(entity, out var entityInfo))
+            nint ptr;
+            unsafe
             {
-                return false;
+                ptr = (nint)(delegate* <EntityCommander, void>)&ChangeTransferInfoBundle<T>;
             }
 
-            if (self.SrcArchetypeChanged)
+            if (self.ArchetypeAddingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))
             {
-                nint ptr;
-                unsafe
-                {
-                    ptr = (nint)(delegate* <EntityCommander, Entity, in T, bool>)&AddComponents<T>;
-                }
-
-                if (self.SrcArchetypeAddingTypeDict.TryGetValue(ptr, out var map))
-                {
-                    map.TryGetValue(self.SrcArchetype.ID, out self.TransferDstInfo);
-                }
-                else
-                {
-                    map = new();
-                    self.SrcArchetypeAddingTypeDict.Add(ptr, map);
-                }
-
-                if (self.TransferDstInfo == null)
-                {
-                    self.TypeRegistry.RegisterBundle<T>();
-
-                    var bundleInfo = self.TypeRegistry.GetBundleInfo<T>();
-                    var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Concat(bundleInfo.Select(x => x.typeId)));
-
-                    self.TransferDstInfo = new(dstArchetype, bundleInfo);
-                    map.Add(self.SrcArchetype.ID, self.TransferDstInfo);
-                }
-
-                self.SrcArchetypeChanged = false;
+                self.TransferDstInfo = dict.GetValueOrDefault(ptr);
+            }
+            else
+            {
+                self.TransferDstInfo = null;
+                dict = new();
+                self.ArchetypeAddingTypeMap.Add(self.SrcArchetype.ID, dict);
             }
 
-            var (chunkIdx, idx) = self.TransferDstInfo!.Archetype.Reserve();
-
-            for (var i = 0; i < self.TransferDstInfo!.TypeIndices.Length; i++)
+            if (self.TransferDstInfo == null)
             {
-                unsafe
-                {
-                    var info = self.TransferDstInfo.BundleInfo[i].info;
-                    var ptr = self.TransferDstInfo.Archetype.Table.GetPtr(self.TransferDstInfo.TypeIndices[i], chunkIdx, idx);
+                self.TypeRegistry.RegisterBundle<T>();
+                var bundleInfo = self.TypeRegistry.GetBundleInfo<T>();
+                var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Concat(bundleInfo.Select(x => x.typeId)));
 
-                    fixed (T* bundlePtr = &bundle)
-                    {
-                        var componentPtr = (byte*)bundlePtr + info.Offset;
-                        NativeMemory.Copy(componentPtr, ptr, (nuint)info.Size);
-                    }
-                }
+                self.TransferDstInfo = new(dstArchetype, bundleInfo);
+                dict.Add(ptr, self.TransferDstInfo);
             }
-
-            // self.SrcArchetype.MoveDataTo(entityInfo, self.TransferDstInfo.Archetype, chunkIdx, idx);
-            self.TransferDstInfo.TargetEntities.Add(entity);
-
-            return true;
-        }
-
-        public bool RemoveComponent<T>(Entity entity) where T : unmanaged, IComponent
-        {
-            if (!self.EntityPool.GetEntityInfo(entity, out var entityInfo))
-            {
-                return false;
-            }
-
-            if (self.SrcArchetypeChanged)
-            {
-                nint ptr;
-                unsafe
-                {
-                    ptr = (nint)(delegate* <EntityCommander, Entity, bool>)&RemoveComponent<T>;
-                }
-
-                if (self.SrcArchetypeRemovingTypeDict.TryGetValue(ptr, out var map))
-                {
-                    map.TryGetValue(self.SrcArchetype.ID, out self.TransferDstInfo);
-                }
-                else
-                {
-                    map = new();
-                    self.SrcArchetypeRemovingTypeDict.Add(ptr, map);
-                }
-            }
-
-            return true;
-        }
-
-        public bool RemoveComponents<T>(Entity entity) where T : unmanaged, IComponentBundle
-        {
-            if (!self.EntityPool.GetEntityInfo(entity, out var entityInfo))
-            {
-                return false;
-            }
-
-            if (self.SrcArchetypeChanged)
-            {
-                nint ptr;
-                unsafe
-                {
-                    ptr = (nint)(delegate* <EntityCommander, Entity, bool>)&RemoveComponents<T>;
-                }
-
-                if (self.SrcArchetypeRemovingTypeDict.TryGetValue(ptr, out var map))
-                {
-                    map.TryGetValue(self.SrcArchetype.ID, out self.TransferDstInfo);
-                }
-                else
-                {
-                    map = new();
-                    self.SrcArchetypeRemovingTypeDict.Add(ptr, map);
-                }
-            }
-
-            return true;
         }
     }
 }

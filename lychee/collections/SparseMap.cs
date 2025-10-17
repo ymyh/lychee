@@ -53,7 +53,8 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 #region Public Methods
 
     /// <summary>
-    /// Add an element to the sparse map, take the return value of AsInt() as the key.
+    /// Add an element to the sparse map. Unlike <see cref="Dictionary{TKey,TValue}"/>,
+    /// this method will not throw an exception if the key already exists.
     /// </summary>
     /// <param name="id">The id of the value</param>
     /// <param name="value">The value to add</param>

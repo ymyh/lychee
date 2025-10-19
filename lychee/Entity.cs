@@ -32,7 +32,11 @@ public struct EntityInfo
 {
     internal int ArchetypeId;
 
-    internal EntityInfo(int archetypeId)
+    internal int ChunkIdx;
+
+    internal int Idx;
+
+    internal EntityInfo(int archetypeId, int chunkIdx, int idx)
     {
         ArchetypeId = archetypeId;
     }

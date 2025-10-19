@@ -84,26 +84,39 @@ public sealed class EntityCommander : IDisposable
         return EntityPool.ReserveEntity();
     }
 
-    public void RemoveEntity(Entity entity)
+    public bool RemoveEntity(Entity entity)
     {
-        EntityPool.MarkRemoveEntity(entity);
-
-        if (EntityPool.GetEntityInfo(entity, out var entityInfo))
+        if (entity.Generation != 0)
         {
+            if (!EntityPool.CheckEntityValid(entity))
+            {
+                return false;
+            }
+
+            EntityPool.MarkRemoveEntity(entity);
+            EntityPool.GetEntityInfo(entity, out var entityInfo);
+
             if (entityInfo.ArchetypeId == SrcArchetype.ID)
             {
-                SrcArchetype.MarkRemove(0, 0);
+                SrcArchetype.MarkRemove(entityInfo.ChunkIdx, entityInfo.Idx);
+            }
+            else
+            {
+                ArchetypeManager.GetArchetype(entityInfo.ArchetypeId).MarkRemove(entityInfo.ChunkIdx, entityInfo.Idx);
             }
         }
-        else if (ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        else
         {
+            ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info);
             info.Archetype.MarkRemove(info.ChunkIdx, info.Idx);
         }
+
+        return true;
     }
 
     public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
     {
-        if (!EntityPool.CheckEntityValid(entity))
+        if (entity.Generation != 0 && !EntityPool.CheckEntityValid(entity))
         {
             return false;
         }
@@ -152,7 +165,7 @@ public sealed class EntityCommander : IDisposable
 
     public bool AddComponents<T>(Entity entity, in T bundle) where T : unmanaged, IComponentBundle
     {
-        if (!EntityPool.CheckEntityValid(entity))
+        if (entity.Generation != 0 && !EntityPool.CheckEntityValid(entity))
         {
             return false;
         }
@@ -214,15 +227,48 @@ public sealed class EntityCommander : IDisposable
 
     public bool RemoveComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
-        if (!EntityPool.GetEntityInfo(entity, out var entityInfo))
+        if (entity.Generation != 0 && !EntityPool.CheckEntityValid(entity))
         {
             return false;
+        }
+
+        var srcChunkIdx = 0;
+        var srcIdx = 0;
+
+        if (ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            SrcArchetype = info.Archetype;
+            srcChunkIdx = info.ChunkIdx;
+            srcIdx = info.Idx;
+        }
+        else
+        {
+            if (EntityPool.GetEntityInfo(entity, out var entityInfo))
+            {
+                SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
+                (srcChunkIdx, srcIdx) = SrcArchetype.Table.GetChunkAndIndex(SrcArchetype.GetEntityIndex(entity));
+            }
+            else
+            {
+                SrcArchetype = zeroArchetype;
+                srcArchetypeChanged = true;
+            }
         }
 
         if (srcArchetypeChanged)
         {
             this.ChangeTransferInfo<T>();
+            srcArchetypeChanged = false;
         }
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
+
+        TransferDstInfo.TargetEntities.Add(entity);
+        ModifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
 
         return true;
     }
@@ -250,10 +296,11 @@ public sealed class EntityCommander : IDisposable
     {
         foreach (var (id, info) in ModifiedEntityInfoMap)
         {
-            var entity = EntityPool.CommitReservedEntity(id, info.Archetype.ID);
-            info.Archetype.Commit(entity);
+            var entity = EntityPool.CommitReservedEntity(id, info.Archetype.ID, info.ChunkIdx, info.Idx);
+            info.Archetype.CommitReservedEntity(entity);
         }
 
+        ArchetypeManager.Commit();
         ModifiedEntityInfoMap.Clear();
     }
 
@@ -299,7 +346,7 @@ public static class EntityCommandBufferExtensions
                 var typeId = self.TypeRegistry.RegisterComponent<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Append(typeId));
 
-                self.TransferDstInfo = new(dstArchetype, [new(new(), dstArchetype.GetTypeIndex(typeId))]);
+                self.TransferDstInfo = new(dstArchetype, [new(new(), typeId)]);
                 dict.Add(ptr, self.TransferDstInfo);
             }
         }

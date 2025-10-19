@@ -63,7 +63,8 @@ public sealed class EntityPool : IDisposable
     /// </summary>
     /// <param name="id"></param>
     /// <param name="archetypeId"></param>
-    public Entity CommitReservedEntity(int id, int archetypeId)
+    /// <param name="chunkIdx"></param>
+    public Entity CommitReservedEntity(int id, int archetypeId, int chunkIdx, int idx)
     {
         Debug.Assert(id >= 0);
 
@@ -71,7 +72,7 @@ public sealed class EntityPool : IDisposable
         {
             // Set generation to 0 when reuse entity
             entities[id] = new(id, 0);
-            entityInfoList[id] = new(archetypeId);
+            entityInfoList[id] = new(archetypeId, chunkIdx, idx);
         }
         else
         {
@@ -85,7 +86,7 @@ public sealed class EntityPool : IDisposable
                 entities.AsSpan()[id].ID = id;
 
                 entityInfoList.Resize(id + 1);
-                entityInfoList[id] = new(archetypeId);
+                entityInfoList[id] = new(archetypeId, chunkIdx, idx);
             }
         }
 
@@ -94,12 +95,7 @@ public sealed class EntityPool : IDisposable
 
     public bool CheckEntityValid(Entity entity)
     {
-        if (entity.ID >= entities.Count)
-        {
-            return entity.Generation == 0;
-        }
-
-        return entity.Generation == 0 || entities[entity.ID].Generation == entity.Generation;
+        return entities[entity.ID].Generation == entity.Generation;
     }
 
     /// <summary>

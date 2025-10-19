@@ -36,11 +36,11 @@ public sealed class Table : IDisposable
 {
     public readonly TableLayout Layout;
 
+    internal readonly List<TableMemoryChunk> Chunks = [];
+
     private readonly int chunkCapacity;
 
     private readonly int chunkSizeBytes;
-
-    private readonly List<TableMemoryChunk> chunks = [];
 
     private int lastAvailableViewIndex;
 
@@ -87,12 +87,12 @@ public sealed class Table : IDisposable
             }
         }
 
-        var idx = chunks[lastAvailableViewIndex].Reserve();
+        var idx = Chunks[lastAvailableViewIndex].Reserve();
 
         while (idx == -1)
         {
             GetFirstAvailableViewIdx();
-            idx = chunks[lastAvailableViewIndex].Reserve();
+            idx = Chunks[lastAvailableViewIndex].Reserve();
         }
 
         return (lastAvailableViewIndex, idx);
@@ -100,7 +100,7 @@ public sealed class Table : IDisposable
 
     public void CommitReserved()
     {
-        foreach (var chunk in chunks)
+        foreach (var chunk in Chunks)
         {
             chunk.CommitReserved();
         }
@@ -109,7 +109,7 @@ public sealed class Table : IDisposable
     public unsafe void* GetPtr(int typeIdx, int chunkIdx, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
-        var ptr = (byte*)chunks[chunkIdx].Data;
+        var ptr = (byte*)Chunks[chunkIdx].Data;
 
         return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
@@ -118,7 +118,7 @@ public sealed class Table : IDisposable
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
-        foreach (var chunk in chunks)
+        foreach (var chunk in Chunks)
         {
             nint ptr;
 
@@ -139,9 +139,9 @@ public sealed class Table : IDisposable
     {
         var chunkIdx = 0;
 
-        while (idx >= chunks[chunkIdx].Size)
+        while (idx >= Chunks[chunkIdx].Size)
         {
-            idx -= chunks[chunkIdx].Size;
+            idx -= Chunks[chunkIdx].Size;
             chunkIdx++;
         }
 
@@ -157,21 +157,21 @@ public sealed class Table : IDisposable
         var chunk = new TableMemoryChunk(chunkCapacity);
         chunk.Chunk.Alloc(chunkSizeBytes);
 
-        chunks.Add(chunk);
+        Chunks.Add(chunk);
     }
 
     private int GetFirstAvailableViewIdx()
     {
         lock (this)
         {
-            if (!chunks[lastAvailableViewIndex].IsFull)
+            if (!Chunks[lastAvailableViewIndex].IsFull)
             {
                 return lastAvailableViewIndex;
             }
 
-            for (var i = 0; i < chunks.Count; i++)
+            for (var i = 0; i < Chunks.Count; i++)
             {
-                if (!chunks[i].IsFull)
+                if (!Chunks[i].IsFull)
                 {
                     lastAvailableViewIndex = i;
                     return lastAvailableViewIndex;
@@ -179,7 +179,7 @@ public sealed class Table : IDisposable
             }
 
             CreateChunk();
-            lastAvailableViewIndex = chunks.Count - 1;
+            lastAvailableViewIndex = Chunks.Count - 1;
 
             return lastAvailableViewIndex;
         }
@@ -191,7 +191,7 @@ public sealed class Table : IDisposable
 
     public void Dispose()
     {
-        foreach (var chunk in chunks)
+        foreach (var chunk in Chunks)
         {
             chunk.Dispose();
         }
@@ -208,11 +208,11 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     internal readonly int Capacity = capacity;
 
-    private volatile int reserve;
+    internal volatile int Reservation;
 
     private ConcurrentStack<int> holeIndices = new();
 
-    public bool IsFull => Size + reserve == Capacity;
+    public bool IsFull => Size + Reservation == Capacity;
 
     public unsafe void* Data => Chunk.Data;
 
@@ -224,11 +224,11 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
     /// <returns>Whether succeed</returns>
     public int Reserve()
     {
-        var newVal = Interlocked.Increment(ref reserve);
+        var newVal = Interlocked.Increment(ref Reservation);
 
         if (Size + newVal > Capacity)
         {
-            Interlocked.Decrement(ref reserve);
+            Interlocked.Decrement(ref Reservation);
             return -1;
         }
 
@@ -237,8 +237,8 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     public void CommitReserved()
     {
-        Size += reserve;
-        reserve = 0;
+        Size += Reservation;
+        Reservation = 0;
     }
 
     public void MarkRemove(int idx)

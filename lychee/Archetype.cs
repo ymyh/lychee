@@ -26,6 +26,8 @@ public sealed class ArchetypeManager : IDisposable
         GetOrCreateArchetype([]);
     }
 
+#region Public methods
+
     public Archetype GetOrCreateArchetype(IEnumerable<int> typeIdList)
     {
         var array = typeIdList.ToArray();
@@ -119,6 +121,20 @@ public sealed class ArchetypeManager : IDisposable
         }
     }
 
+#endregion
+
+#region Internal methods
+
+    internal void Commit()
+    {
+        foreach (var archetype in archetypes)
+        {
+            archetype.Commit();
+        }
+    }
+
+#endregion
+
 #region IDisposable Member
 
     public void Dispose()
@@ -132,8 +148,7 @@ public sealed class ArchetypeManager : IDisposable
 #endregion
 }
 
-public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
-    : IDisposable
+public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList) : IDisposable
 {
 #region Fields
 
@@ -177,19 +192,32 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
 #region Internal Methods
 
-    internal void Commit(Entity entity)
+    internal void Commit()
     {
         if (dirty)
         {
-            Table.CommitReserved();
-            entities.Add(entity.ID, entity);
-
             while (holesInTable.TryPop(out var hole))
             {
+                var chunk = Table.Chunks[hole.Item1];
+                var from = chunk.Size - 1;
+                if (from > hole.Item2)
+                {
+                    FillHole(hole.Item1, from, hole.Item2);
+                }
+                else
+                {
+                    chunk.Reservation--;
+                }
             }
+            Table.CommitReserved();
 
             dirty = false;
         }
+    }
+
+    internal void CommitReservedEntity(Entity entity)
+    {
+        entities.Add(entity.ID, entity);
     }
 
     internal int GetTypeIndex(int typeId)
@@ -260,6 +288,24 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 #endregion
 
 #region Private methods
+
+    private void FillHole(int chunkIdx, int from, int to)
+    {
+        Debug.Assert(from != to);
+
+        for (var i = 0; i < Table.Layout.TypeInfoList.Length; i++)
+        {
+            unsafe
+            {
+                var srcPtr = Table.GetPtr(i, chunkIdx, from);
+                var dstPtr = Table.GetPtr(i, chunkIdx, to);
+
+                NativeMemory.Copy(srcPtr, dstPtr, (nuint)Table.Layout.TypeInfoList[i].Size);
+            }
+        }
+
+        Table.Chunks[chunkIdx].Size--;
+    }
 
     private void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)
     {

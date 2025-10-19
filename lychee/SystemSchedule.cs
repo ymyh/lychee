@@ -48,7 +48,21 @@ public sealed class SystemSchedules
 
 public sealed class SimpleSchedule : ISchedule
 {
-    private readonly App app;
+    /// <summary>
+    /// Indicates when the schedule should commit the changes.
+    /// </summary>
+    public enum CommitPoint
+    {
+        /// <summary>
+        /// Commits the changes at every synchronization point.
+        /// </summary>
+        Synchronization,
+
+        /// <summary>
+        /// Commits the changes at the end of the schedule execution.
+        /// </summary>
+        ScheduleEnd
+    }
 
     private readonly Func<bool> shouldExecute;
 
@@ -56,9 +70,13 @@ public sealed class SimpleSchedule : ISchedule
 
     private FrozenDAGNode<SystemInfo>[][] frozenDAGNodes = [];
 
+    private readonly App app;
+
     private readonly List<Task> tasks = [];
 
     private readonly List<EntityCommander> entityCommanders = [];
+
+    private readonly CommitPoint commitPoint;
 
     private bool isFrozen;
 
@@ -66,10 +84,11 @@ public sealed class SimpleSchedule : ISchedule
 
 #region Constructor
 
-    public SimpleSchedule(App app, Func<bool> shouldExecute)
+    public SimpleSchedule(App app, Func<bool> shouldExecute, CommitPoint commitPoint = CommitPoint.Synchronization)
     {
         this.app = app;
         this.shouldExecute = shouldExecute;
+        this.commitPoint = commitPoint;
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
     }
@@ -205,6 +224,17 @@ public sealed class SimpleSchedule : ISchedule
         }).ToArray();
     }
 
+    private void Configure()
+    {
+        executionGraph.ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
+    }
+
+    private void Commit()
+    {
+        entityCommanders.ForEach(x => x.Commit());
+        entityCommanders.Clear();
+    }
+
     private static bool CanRunParallel(SystemInfo sysA, SystemInfo sysB)
     {
         var intersected = sysA.Parameters.Intersect(sysB.Parameters,
@@ -220,11 +250,6 @@ public sealed class SimpleSchedule : ISchedule
             }, info => HashCode.Combine(info.Type.GetHashCode(), info.ReadOnly))).ToArray();
 
         return intersected.Length == 0;
-    }
-
-    private void Configure()
-    {
-        executionGraph.ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
     }
 
 #endregion
@@ -251,14 +276,21 @@ public sealed class SimpleSchedule : ISchedule
                 Task.WaitAll(tasks);
                 tasks.Clear();
 
-                entityCommanders.ForEach(x => x.Commit());
-                entityCommanders.Clear();
+                if (commitPoint == CommitPoint.Synchronization)
+                {
+                    Commit();
+                }
 
                 if (needConfigure)
                 {
                     Configure();
                     needConfigure = false;
                 }
+            }
+
+            if (commitPoint == CommitPoint.ScheduleEnd)
+            {
+                Commit();
             }
         }
     }

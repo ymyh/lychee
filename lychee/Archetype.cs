@@ -194,28 +194,31 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal void Commit()
     {
-        if (dirty && Table.Chunks.Count > 0)
+        if (!dirty || Table.Chunks.Count == 0)
         {
-            while (holesInTable.TryPop(out var hole))
-            {
-                var chunk = Table.Chunks[hole.chunkIdx];
-                var from = chunk.Size - 1;
-                if (from > hole.idx)
-                {
-                    FillHole(hole.chunkIdx, from, hole.idx);
-                }
-                else
-                {
-                    chunk.Reservation--;
-                }
+            return;
+        }
 
-                entities.Remove(hole.entityId);
+        while (holesInTable.TryPop(out var hole))
+        {
+            var chunk = Table.Chunks[hole.chunkIdx];
+            var from = chunk.Size + chunk.Reservation - 1;
+
+            if (from > hole.idx)
+            {
+                FillHole(hole.chunkIdx, from, hole.idx);
             }
 
-            Table.CommitReserved();
+            if (chunk.Reservation > 0)
+            {
+                chunk.Reservation--;
+            }
 
-            dirty = false;
+            entities.Remove(hole.entityId);
         }
+
+        Table.CommitReserved();
+        dirty = false;
     }
 
     internal void CommitReservedEntity(Entity entity)
@@ -306,7 +309,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             }
         }
 
-        Table.Chunks[chunkIdx].Size--;
+        if (from < Table.Chunks[chunkIdx].Size)
+        {
+            Table.Chunks[chunkIdx].Size--;
+        }
     }
 
     private void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)

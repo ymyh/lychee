@@ -17,6 +17,9 @@ public struct TypeInfo(int size, int alignment)
     [FieldOffset(4)] public int Offset;
 }
 
+/// <summary>
+/// A registry for types.
+/// </summary>
 public sealed class TypeRegistry
 {
     private readonly ReadWriteLock<List<(Type, TypeInfo)>> typeListLock = new([]);
@@ -89,7 +92,13 @@ public sealed class TypeRegistry
         unsafe
         {
             var size = typeof(T).IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
-            if (alignment == 0)
+
+            if (size == 1 && !TypeUtils.ContainsField(type))
+            {
+                size = 0;
+            }
+
+            if (size != 0 && alignment == 0)
             {
                 alignment = TypeUtils.GetOrGuessAlignment(type, size);
             }

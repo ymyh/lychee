@@ -2,6 +2,7 @@
 using lychee.attributes;
 using lychee.collections;
 using lychee.interfaces;
+using lychee.utils;
 
 namespace lychee;
 
@@ -51,7 +52,7 @@ public sealed class SimpleSchedule : ISchedule
     /// <summary>
     /// Indicates when the schedule should commit the changes.
     /// </summary>
-    public enum CommitPoint
+    public enum CommitPointEnum
     {
         /// <summary>
         /// Commits the changes at every synchronization point.
@@ -76,7 +77,7 @@ public sealed class SimpleSchedule : ISchedule
 
     private readonly List<EntityCommander> entityCommanders = [];
 
-    private readonly CommitPoint commitPoint;
+    public CommitPointEnum CommitPoint { get; set; }
 
     private bool isFrozen;
 
@@ -84,11 +85,11 @@ public sealed class SimpleSchedule : ISchedule
 
 #region Constructor
 
-    public SimpleSchedule(App app, Func<bool> shouldExecute, CommitPoint commitPoint = CommitPoint.Synchronization)
+    public SimpleSchedule(App app, Func<bool> shouldExecute, CommitPointEnum commitPointEnum = CommitPointEnum.Synchronization)
     {
         this.app = app;
         this.shouldExecute = shouldExecute;
-        this.commitPoint = commitPoint;
+        CommitPoint = commitPointEnum;
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
     }
@@ -173,17 +174,25 @@ public sealed class SimpleSchedule : ISchedule
 
         foreach (var param in parameters)
         {
-            if (param.ParameterType.IsByRef && param.ParameterType.GetElementType()!.GetInterface(typeof(IComponent).FullName!) != null)
+            var type = param.ParameterType;
+
+            if (param.ParameterType.IsByRef)
             {
-                app.TypeRegistry.RegisterComponent(param.ParameterType.GetElementType()!);
+                type = param.ParameterType.GetElementType()!;
             }
-            else if (param.ParameterType.GetInterface(typeof(IComponent).FullName!) != null)
+
+            if (type.GetInterface(typeof(IComponent).FullName!) != null)
             {
-                app.TypeRegistry.RegisterComponent(param.ParameterType);
+                app.TypeRegistry.RegisterComponent(type);
+
+                if (!TypeUtils.ContainsField(type))
+                {
+                    throw new ArgumentException($"Type {param} as a component parameter is not supported, because it doesn't contains any field");
+                }
             }
             else
             {
-                app.TypeRegistry.Register(param.ParameterType);
+                app.TypeRegistry.Register(type);
             }
         }
 
@@ -217,7 +226,7 @@ public sealed class SimpleSchedule : ISchedule
 
             if (targetAttr != null)
             {
-                return new SystemParameterInfo(p.ParameterType, !(bool)targetAttr.ConstructorArguments[0].Value!);
+                return new SystemParameterInfo(p.ParameterType, (bool)targetAttr.ConstructorArguments[0].Value!);
             }
 
             return new(p.ParameterType, p.IsIn);
@@ -235,9 +244,9 @@ public sealed class SimpleSchedule : ISchedule
         entityCommanders.Clear();
     }
 
-    private static bool CanRunParallel(SystemInfo sysA, SystemInfo sysB)
+    private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
     {
-        var intersected = sysA.Parameters.Intersect(sysB.Parameters,
+        var intersected = systemA.Parameters.Intersect(systemB.Parameters,
             EqualityComparer<SystemParameterInfo>.Create((a, b) =>
             {
                 var same = a.Type == b.Type;
@@ -276,7 +285,7 @@ public sealed class SimpleSchedule : ISchedule
                 Task.WaitAll(tasks);
                 tasks.Clear();
 
-                if (commitPoint == CommitPoint.Synchronization)
+                if (CommitPoint == CommitPointEnum.Synchronization)
                 {
                     Commit();
                 }
@@ -288,7 +297,7 @@ public sealed class SimpleSchedule : ISchedule
                 }
             }
 
-            if (commitPoint == CommitPoint.ScheduleEnd)
+            if (CommitPoint == CommitPointEnum.ScheduleEnd)
             {
                 Commit();
             }

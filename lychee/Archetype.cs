@@ -164,7 +164,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
-    private readonly ConcurrentStack<(int, int)> holesInTable = new();
+    private readonly ConcurrentStack<(int entityId, int chunkIdx, int idx)> holesInTable = new();
 
     private bool dirty;
 
@@ -194,21 +194,24 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal void Commit()
     {
-        if (dirty)
+        if (dirty && Table.Chunks.Count > 0)
         {
             while (holesInTable.TryPop(out var hole))
             {
-                var chunk = Table.Chunks[hole.Item1];
+                var chunk = Table.Chunks[hole.chunkIdx];
                 var from = chunk.Size - 1;
-                if (from > hole.Item2)
+                if (from > hole.idx)
                 {
-                    FillHole(hole.Item1, from, hole.Item2);
+                    FillHole(hole.chunkIdx, from, hole.idx);
                 }
                 else
                 {
                     chunk.Reservation--;
                 }
+
+                entities.Remove(hole.entityId);
             }
+
             Table.CommitReserved();
 
             dirty = false;
@@ -225,9 +228,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return typeIdxMap[typeId];
     }
 
-    internal void MarkRemove(int chunkIdx, int idx)
+    internal void MarkRemove(int entityId, int chunkIdx, int idx)
     {
-        holesInTable.Push((chunkIdx, idx));
+        holesInTable.Push((entityId, chunkIdx, idx));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)
@@ -259,7 +262,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         }
 
         dirty = true;
-        holesInTable.Push((srcChunkIdx, srcIdx));
     }
 
     internal void PutComponentData<T>(int typeIdx, int chunkIdx, int idx, in T data) where T : unmanaged

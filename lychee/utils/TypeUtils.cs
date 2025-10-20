@@ -5,8 +5,11 @@ namespace lychee.utils;
 
 public static class TypeUtils
 {
-    private static readonly MethodInfo? GetTupleTypesMethod =
-        typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static);
+    private static readonly MethodInfo GetTupleTypesMethod =
+        typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static)!;
+
+    private static readonly MethodInfo TestUnmanagedMethod =
+        typeof(TypeUtils).GetMethod("TestUnmanaged", BindingFlags.Static, [])!;
 
     private static readonly Type[] TupleTypes =
     [
@@ -54,6 +57,16 @@ public static class TypeUtils
         }
 
         return list;
+    }
+
+    public static bool ContainsField<T>()
+    {
+        return ContainsField(typeof(T));
+    }
+
+    public static bool ContainsField(Type type)
+    {
+        return type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Length > 0;
     }
 
     /// <summary>
@@ -116,24 +129,18 @@ public static class TypeUtils
     /// <returns></returns>
     public static bool IsUnmanaged(Type type)
     {
-        if (type.IsPrimitive || type.IsPointer || type.IsEnum)
+        try
         {
+            TestUnmanagedMethod.MakeGenericMethod(type).Invoke(null, null);
             return true;
         }
-
-        if (!type.IsValueType)
+        catch (ArgumentException)
         {
             return false;
         }
+    }
 
-        foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
-        {
-            if (!IsUnmanaged(field.FieldType))
-            {
-                return false;
-            }
-        }
-
-        return true;
+    private static void TestUnmanaged<T>() where T : unmanaged
+    {
     }
 }

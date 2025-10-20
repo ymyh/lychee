@@ -29,6 +29,8 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 
             return denseArray[sparseArray[key]].Item2;
         }
+
+        set => Add(key, value);
     }
 
 #endregion
@@ -54,27 +56,27 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 
     /// <summary>
     /// Add an element to the sparse map. Unlike <see cref="Dictionary{TKey,TValue}"/>,
-    /// this method will not throw an exception if the key already exists.
+    /// you can add same key multiple times.
     /// </summary>
-    /// <param name="id">The id of the value</param>
+    /// <param name="key">The id of the value</param>
     /// <param name="value">The value to add</param>
-    public void Add(int id, T value)
+    public void Add(int key, T value)
     {
-        if (id >= sparseArray.Count)
+        if (key >= sparseArray.Count)
         {
-            sparseArray.Resize(id + 1, -1);
+            sparseArray.Resize(key + 1, -1);
         }
 
-        if (sparseArray[id] != -1)
+        if (sparseArray[key] != -1)
         {
-            var existingIndex = sparseArray[id];
-            denseArray[existingIndex] = (id, value);
+            var existingIndex = sparseArray[key];
+            denseArray[existingIndex] = (key, value);
 
             return;
         }
 
-        denseArray.Add((id, value));
-        sparseArray[id] = denseArray.Count - 1;
+        denseArray.Add((key, value));
+        sparseArray[key] = denseArray.Count - 1;
     }
 
     /// <summary>

@@ -15,6 +15,12 @@ public sealed class TableLayout
         for (var i = 0; i < typeInfoList.Length; i++)
         {
             var info = typeInfoList[i];
+
+            if (info.Alignment == 0)
+            {
+                continue;
+            }
+
             if (offset % info.Alignment != 0)
             {
                 offset += info.Alignment - (offset % info.Alignment);
@@ -51,20 +57,24 @@ public sealed class Table : IDisposable
     public Table(TableLayout layout, int chunkSizeBytesHint = 16384)
     {
         Layout = layout;
-        chunkSizeBytes = chunkSizeBytesHint;
 
-        var typeInfoList = layout.TypeInfoList;
-        if (typeInfoList.Length > 0)
+        if (layout.MaxAlignment != 0)
         {
-            var offset = typeInfoList[^1].Offset + typeInfoList[^1].Size;
-            var lastByteOffset = offset + offset % layout.MaxAlignment;
+            chunkSizeBytes = chunkSizeBytesHint;
 
-            while (lastByteOffset > chunkSizeBytes)
+            var typeInfoList = layout.TypeInfoList;
+            if (typeInfoList.Length > 0)
             {
-                chunkSizeBytes *= 2;
-            }
+                var offset = typeInfoList[^1].Offset + typeInfoList[^1].Size;
+                var lastByteOffset = offset + offset % layout.MaxAlignment;
 
-            chunkCapacity = chunkSizeBytes / lastByteOffset;
+                while (lastByteOffset > chunkSizeBytes)
+                {
+                    chunkSizeBytes *= 2;
+                }
+
+                chunkCapacity = chunkSizeBytes / lastByteOffset;
+            }
         }
     }
 
@@ -154,10 +164,13 @@ public sealed class Table : IDisposable
 
     private void CreateChunk()
     {
-        var chunk = new TableMemoryChunk(chunkCapacity);
-        chunk.Chunk.Alloc(chunkSizeBytes);
+        if (chunkSizeBytes > 0)
+        {
+            var chunk = new TableMemoryChunk(chunkCapacity);
+            chunk.Chunk.Alloc(chunkSizeBytes);
 
-        Chunks.Add(chunk);
+            Chunks.Add(chunk);
+        }
     }
 
     private int GetFirstAvailableViewIdx()

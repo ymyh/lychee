@@ -95,7 +95,7 @@ public sealed class EntityCommander : IDisposable
                 return false;
             }
 
-            EntityPool.MarkRemoveEntity(entity);
+            // EntityPool.MarkRemoveEntity(entity);
             EntityPool.GetEntityInfo(entity, out var entityInfo);
 
             if (entityInfo.ArchetypeId != SrcArchetype.ID)
@@ -110,6 +110,9 @@ public sealed class EntityCommander : IDisposable
             ModifiedEntityInfoMap.TryGetValue(entity.ID, out var info);
             info.Archetype.MarkRemove(entity.ID, info.ChunkIdx, info.Idx);
         }
+
+        ModifiedEntityInfoMap.Remove(entity.ID);
+        EntityPool.MarkRemoveEntity(entity);
 
         return true;
     }
@@ -153,7 +156,7 @@ public sealed class EntityCommander : IDisposable
 
         if (srcArchetypeChanged)
         {
-            this.ChangeTransferInfoBundle<T>(ArchetypeRemovingTypeMap);
+            this.ChangeTransferInfoBundle<T>(ArchetypeAddingTypeMap);
             srcArchetypeChanged = false;
         }
 

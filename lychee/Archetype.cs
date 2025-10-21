@@ -204,17 +204,16 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             var chunk = Table.Chunks[hole.chunkIdx];
             var from = chunk.Size + chunk.Reservation - 1;
 
-            if (from > hole.idx)
-            {
-                FillHole(hole.chunkIdx, from, hole.idx);
-            }
+            FillHole(hole.chunkIdx, from, hole.idx);
 
             if (chunk.Reservation > 0)
             {
                 chunk.Reservation--;
             }
-
-            entities.Remove(hole.entityId);
+            else
+            {
+                entities.Remove(hole.entityId);
+            }
         }
 
         Table.CommitReserved();

@@ -81,7 +81,7 @@ public sealed class SimpleSchedule : ISchedule
 
     private bool isFrozen;
 
-    private bool needConfigure;
+    private bool needConfigure = true;
 
 #region Constructor
 
@@ -92,6 +92,8 @@ public sealed class SimpleSchedule : ISchedule
         CommitPoint = commitPointEnum;
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
+
+        executionGraph.AddNode(new());
     }
 
 #endregion
@@ -123,12 +125,6 @@ public sealed class SimpleSchedule : ISchedule
 
         isFrozen = false;
 
-        if (executionGraph.Count == 0)
-        {
-            executionGraph.AddNode(node);
-            return system;
-        }
-
         var list = executionGraph.AsList();
         var currentGroup = -1;
 
@@ -147,7 +143,7 @@ public sealed class SimpleSchedule : ISchedule
                 continue;
             }
 
-            if (CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
+            if (n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
             {
                 if (n.Parents.Count > 0)
                 {
@@ -235,7 +231,13 @@ public sealed class SimpleSchedule : ISchedule
 
     private void Configure()
     {
-        executionGraph.ForEach(x => x.Data.System.ConfigureAG(app, x.Data.Descriptor));
+        executionGraph.ForEach(x =>
+        {
+            if (x != executionGraph.Root)
+            {
+                x.Data.System.ConfigureAG(app, x.Data.Descriptor);
+            }
+        });
     }
 
     private void Commit()
@@ -271,8 +273,14 @@ public sealed class SimpleSchedule : ISchedule
         {
             if (!isFrozen)
             {
-                frozenDAGNodes = executionGraph.AsList().Freeze().AsExecutionGroup();
+                frozenDAGNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
                 isFrozen = true;
+            }
+
+            if (needConfigure)
+            {
+                Configure();
+                needConfigure = false;
             }
 
             foreach (var group in frozenDAGNodes)

@@ -41,6 +41,8 @@ public sealed class DirectedAcyclicGraph<T>
 {
     public List<DAGNode<T>> Nodes { get; } = [];
 
+    public DAGNode<T> Root => Nodes[0];
+
     public int Count => Nodes.Count;
 
     /// <summary>

@@ -204,7 +204,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             var chunk = Table.Chunks[hole.chunkIdx];
             var from = chunk.Size + chunk.Reservation - 1;
 
-            FillHole(hole.chunkIdx, from, hole.idx);
+            if (from > hole.idx)
+            {
+                FillHole(hole.chunkIdx, from, hole.idx);
+            }
 
             if (chunk.Reservation > 0)
             {
@@ -295,8 +298,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private void FillHole(int chunkIdx, int from, int to)
     {
-        Debug.Assert(from != to);
-
         for (var i = 0; i < Table.Layout.TypeInfoList.Length; i++)
         {
             unsafe

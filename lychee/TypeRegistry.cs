@@ -24,9 +24,9 @@ public sealed class TypeRegistry
 {
     private readonly ReadWriteLock<List<(Type, TypeInfo)>> typeListLock = new([]);
 
-    private readonly ConcurrentDictionary<string, int> typenameToIdDict = new();
+    private readonly ConcurrentDictionary<Type, int> typeToIdDict = new();
 
-    private readonly ConcurrentDictionary<string, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
+    private readonly ConcurrentDictionary<Type, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
 
     private static readonly MethodInfo RegisterMethod =
         typeof(TypeRegistry).GetMethod("Register", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(int)])!;
@@ -83,12 +83,12 @@ public sealed class TypeRegistry
         using var wg = typeListLock.EnterWriteLock();
         var typeList = wg.Data;
 
-        if (typenameToIdDict.TryGetValue(type.FullName!, out var value))
+        if (typeToIdDict.TryGetValue(type, out var value))
         {
             return value;
         }
 
-        typenameToIdDict.TryAdd(type.FullName!, typeList.Count);
+        typeToIdDict.TryAdd(type, typeList.Count);
         unsafe
         {
             var size = typeof(T).IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
@@ -118,7 +118,7 @@ public sealed class TypeRegistry
     {
         var type = typeof(T);
 
-        if (bundleToInfoDict.ContainsKey(type.FullName!))
+        if (bundleToInfoDict.ContainsKey(type))
         {
             return;
         }
@@ -130,8 +130,33 @@ public sealed class TypeRegistry
             throw new ArgumentException("Bundle type must have at least one public non-static field", nameof(T));
         }
 
-        bundleToInfoDict.TryAdd(type.FullName!, fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
+        bundleToInfoDict.TryAdd(type, fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
             RegisterComponent(f.FieldType))).ToArray());
+    }
+
+    /// <summary>
+    /// Register tuple as a special bundle type.
+    /// Unlike <see cref="RegisterBundle{T}"/>, tuple type cannot use like a normal bundle type.
+    /// The only usage is to remove components <see cref="EntityCommander.RemoveComponents{T}"/>
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
+    public void RegisterTuple<T>() where T : unmanaged
+    {
+        if (!TypeUtils.IsValueTuple<T>())
+        {
+            throw new ArgumentException("Type parameter T must be a value tuple", nameof(T));
+        }
+
+        var type = typeof(T);
+
+        if (bundleToInfoDict.ContainsKey(type))
+        {
+            return;
+        }
+
+        TypeUtils.GetTupleTypes<T>().ForEach(t => RegisterComponent(t));
+        bundleToInfoDict.TryAdd(type, TypeUtils.GetTupleTypes<T>().Select(t => (new TypeInfo(), RegisterComponent(t))).ToArray());
     }
 
     /// <summary>
@@ -159,13 +184,13 @@ public sealed class TypeRegistry
     /// <summary>
     /// Gets Type with given name
     /// </summary>
-    /// <param name="fullName"></param>
+    /// <param name="type"></param>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
     /// <returns></returns>
-    public (Type, TypeInfo) GetTypeInfo(string fullName)
+    public (Type, TypeInfo) GetTypeInfo(Type type)
     {
         using var rg = typeListLock.EnterReadLock();
-        return rg.Data[typenameToIdDict[fullName]];
+        return rg.Data[typeToIdDict[type]];
     }
 
     /// <summary>
@@ -175,17 +200,17 @@ public sealed class TypeRegistry
     /// <returns></returns>
     public (TypeInfo info, int typeId)[] GetBundleInfo<T>() where T : unmanaged, IComponentBundle
     {
-        return bundleToInfoDict[typeof(T).FullName!];
+        return bundleToInfoDict[typeof(T)];
     }
 
     /// <summary>
-    /// Gets bundle type info with given full type name.
+    /// Gets bundle type info with given type.
     /// </summary>
-    /// <param name="fullname"></param>
+    /// <param name="type"></param>
     /// <returns></returns>
-    public (TypeInfo info, int typeId)[] GetBundleInfo(string fullname)
+    public (TypeInfo info, int typeId)[] GetBundleInfo(Type type)
     {
-        return bundleToInfoDict[fullname];
+        return bundleToInfoDict[type];
     }
 
     /// <summary>
@@ -200,23 +225,13 @@ public sealed class TypeRegistry
     }
 
     /// <summary>
-    /// Gets id by type.
+    /// Gets id by full type
     /// </summary>
     /// <param name="type"></param>
     /// <returns></returns>
     public int? GetTypeId(Type type)
     {
-        return GetTypeId(type.FullName!);
-    }
-
-    /// <summary>
-    /// Gets id by full type name
-    /// </summary>
-    /// <param name="fullName"></param>
-    /// <returns></returns>
-    public int? GetTypeId(string fullName)
-    {
-        if (typenameToIdDict.TryGetValue(fullName, out var id))
+        if (typeToIdDict.TryGetValue(type, out var id))
         {
             return id;
         }

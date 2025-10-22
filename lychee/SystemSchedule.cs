@@ -21,7 +21,7 @@ public sealed class SystemSchedules
         schedules.Add(schedule);
     }
 
-    public void AddSchedule(ISchedule schedule, ISchedule addAfterSchedule)
+    public void AddSchedule(ISchedule schedule, ISchedule addAfter)
     {
         var index = schedules.IndexOf(schedule);
         if (index != -1)
@@ -29,10 +29,10 @@ public sealed class SystemSchedules
             throw new ArgumentException($"Schedule {schedule} already exists");
         }
 
-        index = schedules.IndexOf(addAfterSchedule);
+        index = schedules.IndexOf(addAfter);
         if (index == -1)
         {
-            throw new ArgumentException($"Schedule {addAfterSchedule} not found");
+            throw new ArgumentException($"Schedule {addAfter} not found");
         }
 
         schedules.Insert(index + 1, schedule);
@@ -269,12 +269,36 @@ public sealed class SimpleSchedule : ISchedule
 
     public void Execute()
     {
-        if (shouldExecute())
+        if (!shouldExecute())
         {
-            if (!isFrozen)
+            return;
+        }
+
+        if (!isFrozen)
+        {
+            frozenDAGNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
+            isFrozen = true;
+        }
+
+        if (needConfigure)
+        {
+            Configure();
+            needConfigure = false;
+        }
+
+        foreach (var group in frozenDAGNodes)
+        {
+            foreach (var frozenDagNode in group)
             {
-                frozenDAGNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
-                isFrozen = true;
+                tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
+            }
+
+            Task.WaitAll(tasks);
+            tasks.Clear();
+
+            if (CommitPoint == CommitPointEnum.Synchronization)
+            {
+                Commit();
             }
 
             if (needConfigure)
@@ -282,33 +306,11 @@ public sealed class SimpleSchedule : ISchedule
                 Configure();
                 needConfigure = false;
             }
+        }
 
-            foreach (var group in frozenDAGNodes)
-            {
-                foreach (var frozenDagNode in group)
-                {
-                    tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
-                }
-
-                Task.WaitAll(tasks);
-                tasks.Clear();
-
-                if (CommitPoint == CommitPointEnum.Synchronization)
-                {
-                    Commit();
-                }
-
-                if (needConfigure)
-                {
-                    Configure();
-                    needConfigure = false;
-                }
-            }
-
-            if (CommitPoint == CommitPointEnum.ScheduleEnd)
-            {
-                Commit();
-            }
+        if (CommitPoint == CommitPointEnum.ScheduleEnd)
+        {
+            Commit();
         }
     }
 

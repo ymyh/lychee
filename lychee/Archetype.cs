@@ -13,6 +13,8 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly TypeRegistry typeRegistry;
 
+    internal static Archetype EmptyArchetype = null!;
+
     public delegate void ArchetypeCreatedHandler();
 
     /// <summary>
@@ -24,6 +26,8 @@ public sealed class ArchetypeManager : IDisposable
     {
         this.typeRegistry = typeRegistry;
         GetOrCreateArchetype([]);
+
+        EmptyArchetype = archetypes[0];
     }
 
 #region Public methods

@@ -93,7 +93,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     /// </summary>
     /// <param name="key">The key of the value</param>
     /// <returns>Returns true if the value is found, otherwise false</returns>
-    public bool Contains(int key)
+    public bool ContainsKey(int key)
     {
         if ((uint)key < (uint)sparseArray.Count && sparseArray[key] != -1)
         {

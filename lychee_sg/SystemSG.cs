@@ -246,7 +246,6 @@ sealed partial class {sysInfo.Name} : ISystem
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
         {{
-            SystemDataAG.EntityCommander.SrcArchetype = archetype;
             var entitySpan = archetype.GetEntitiesSpan();
 {declIterCode}{iterateChunkWhileExpr}
         }}

@@ -117,11 +117,11 @@ namespace lychee_sg
 
                 if (maybeMet)
                 {
-                    if (!symbol.GetMembers("Execute")
-                            .OfType<IMethodSymbol>()
-                            .Any(m => m.IsStatic && !m.IsGenericMethod))
+                    if (symbol.GetMembers("Execute")
+                        .OfType<IMethodSymbol>()
+                        .All(m => m.IsGenericMethod))
                     {
-                        Report(context, node, $"{symbol.Name} must contains a static method named Execute");
+                        Report(context, node, $"{symbol.Name} must contains a method named Execute");
                     }
                 }
                 else

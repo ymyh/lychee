@@ -135,28 +135,13 @@ public sealed class TypeRegistry
     }
 
     /// <summary>
-    /// Register tuple as a special bundle type.
-    /// Unlike <see cref="RegisterBundle{T}"/>, tuple type cannot use like a normal bundle type.
-    /// The only usage is to remove components <see cref="EntityCommander.RemoveComponents{T}"/>
+    /// Get type indices through a given tuple.
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
-    public void RegisterTuple<T>() where T : unmanaged
+    public int[] GetTypeIds<T>() where T : unmanaged
     {
-        if (!TypeUtils.IsValueTuple<T>())
-        {
-            throw new ArgumentException("Type parameter T must be a value tuple", nameof(T));
-        }
-
-        var type = typeof(T);
-
-        if (bundleToInfoDict.ContainsKey(type))
-        {
-            return;
-        }
-
-        TypeUtils.GetTupleTypes<T>().ForEach(t => RegisterComponent(t));
-        bundleToInfoDict.TryAdd(type, TypeUtils.GetTupleTypes<T>().Select(t => (new TypeInfo(), RegisterComponent(t))).ToArray());
+        return !TypeUtils.IsValueTuple<T>() ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T)) : TypeUtils.GetTupleTypes<T>().Select(t => RegisterComponent(t)).ToArray();
     }
 
     /// <summary>

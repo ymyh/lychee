@@ -165,7 +165,7 @@ public sealed class SimpleSchedule : ISchedule
     private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, SystemDescriptor descriptor)
     {
         var sysType = system.GetType();
-        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
         var parameters = method.GetParameters();
 
         foreach (var param in parameters)

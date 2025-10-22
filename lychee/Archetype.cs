@@ -220,6 +220,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             else
             {
                 entities.Remove(hole.entityId);
+                chunk.Size--;
             }
         }
 
@@ -311,11 +312,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
                 NativeMemory.Copy(srcPtr, dstPtr, (nuint)Table.Layout.TypeInfoList[i].Size);
             }
-        }
-
-        if (from < Table.Chunks[chunkIdx].Size)
-        {
-            Table.Chunks[chunkIdx].Size--;
         }
     }
 

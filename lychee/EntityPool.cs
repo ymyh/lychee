@@ -64,6 +64,7 @@ public sealed class EntityPool : IDisposable
     /// <param name="id"></param>
     /// <param name="archetypeId"></param>
     /// <param name="chunkIdx"></param>
+    /// <param name="idx"></param>
     public Entity CommitReservedEntity(int id, int archetypeId, int chunkIdx, int idx)
     {
         Debug.Assert(id >= 0);
@@ -79,6 +80,7 @@ public sealed class EntityPool : IDisposable
             if (id == entities.Count)
             {
                 entities.Add(new(id, 0));
+                entityInfoList.Add(new (archetypeId, chunkIdx, idx));
             }
             else
             {

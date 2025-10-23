@@ -139,7 +139,7 @@ public sealed class TypeRegistry
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
-    public int[] GetTypeIds<T>() where T : unmanaged
+    public int[] GetComponentTypeIds<T>() where T : unmanaged
     {
         return !TypeUtils.IsValueTuple<T>() ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T)) : TypeUtils.GetTupleTypes<T>().Select(t => RegisterComponent(t)).ToArray();
     }

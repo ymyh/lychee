@@ -454,7 +454,7 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                var typeIds = self.TypeRegistry.GetTypeIds<T>();
+                var typeIds = self.TypeRegistry.GetComponentTypeIds<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Except(typeIds));
 
                 self.TransferDstInfo = new(dstArchetype, []);

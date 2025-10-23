@@ -15,6 +15,8 @@ namespace lychee_sg
         public string Namespace;
 
         public ParamInfo[] Params;
+
+        public bool HasAfterExecute;
     }
 
     internal enum ParamKind
@@ -22,7 +24,8 @@ namespace lychee_sg
         Component,
         Resource,
         Entity,
-        EntityCommander
+        EntityCommander,
+        Commander
     }
 
     internal struct ParamInfo
@@ -78,7 +81,7 @@ sealed partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(descriptor.AllFilter, descriptor.AnyFilter, descriptor.NoneFilter, SystemDataAG.TypeIdList);
     }}
-{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes)}
+{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo.HasAfterExecute)}
 }}
 
 ");
@@ -102,6 +105,8 @@ sealed partial class {sysInfo.Name} : ISystem
         private static SystemInfo GetTargetMethodInfo(ref GeneratorSyntaxContext context)
         {
             var classDecl = (ClassDeclarationSyntax)context.Node;
+            var hasAfterExecute = false;
+            ParamInfo[] paramList = null;
 
             foreach (var memberDecl in classDecl.Members)
             {
@@ -110,8 +115,7 @@ sealed partial class {sysInfo.Name} : ISystem
                     if (memberDecl.Kind() == SyntaxKind.MethodDeclaration && methodDecl.Identifier.Text == "Execute")
                     {
                         var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
-
-                        var paramList = symbol.Parameters.Select(x =>
+                        paramList = symbol.Parameters.Select(x =>
                         {
                             var paramKind = ParamKind.Component;
 
@@ -122,6 +126,10 @@ sealed partial class {sysInfo.Name} : ISystem
                             else if (x.Type.ToDisplayString() == "lychee.Entity")
                             {
                                 paramKind = ParamKind.Entity;
+                            }
+                            else if (x.Type.ToDisplayString() == "lychee.Commander")
+                            {
+                                paramKind = ParamKind.Commander;
                             }
 
                             if (x.GetAttributes().Any(a =>
@@ -140,18 +148,23 @@ sealed partial class {sysInfo.Name} : ISystem
                                 ParamKind = paramKind,
                             };
                         }).ToArray();
+                    }
 
-                        return new SystemInfo
-                        {
-                            Name = classDecl.Identifier.Text,
-                            Namespace = Utils.GetNamespace(classDecl),
-                            Params = paramList,
-                        };
+                    if (memberDecl.Kind() == SyntaxKind.MethodDeclaration && methodDecl.Identifier.Text == "AfterExecute")
+                    {
+                        var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
+                        hasAfterExecute = symbol.Parameters.Length == 0;
                     }
                 }
             }
 
-            return null;
+            return new SystemInfo
+            {
+                Name = classDecl.Identifier.Text,
+                Namespace = Utils.GetNamespace(classDecl),
+                Params = paramList,
+                HasAfterExecute = hasAfterExecute,
+            };
         }
 
         private static string MakeInitializeAGCode(ParamInfo[] componentTypes)
@@ -167,7 +180,7 @@ sealed partial class {sysInfo.Name} : ISystem
     }}";
         }
 
-        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams)
+        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams, bool hasAfterExecute)
         {
             string body;
 
@@ -249,12 +262,16 @@ sealed partial class {sysInfo.Name} : ISystem
             var entitySpan = archetype.GetEntitiesSpan();
 {declIterCode}{iterateChunkWhileExpr}
         }}
+        {(hasAfterExecute ? "AfterExecute();" : "")}
+
         return SystemDataAG.EntityCommander;";
             }
             else
             {
                 body = $@"
 {declResourceCode}        Execute({execParams});
+        {(hasAfterExecute ? "AfterExecute();" : "")}
+
         return SystemDataAG.EntityCommander;";
             }
 

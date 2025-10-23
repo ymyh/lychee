@@ -28,25 +28,25 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         set => EnsureCapacity(value);
     }
 
-    public T this[int id]
+    public T this[int index]
     {
         get
         {
-            Debug.Assert((uint)id < (uint)size);
+            Debug.Assert((uint)index < (uint)size);
 
             unsafe
             {
-                return data[id];
+                return data[index];
             }
         }
 
         set
         {
-            Debug.Assert((uint)id < (uint)size);
+            Debug.Assert((uint)index < (uint)size);
 
             unsafe
             {
-                data[id] = value;
+                data[index] = value;
             }
         }
     }

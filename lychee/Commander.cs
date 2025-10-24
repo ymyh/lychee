@@ -1,10 +1,27 @@
-﻿namespace lychee;
+﻿using System.Diagnostics;
+using lychee.collections;
 
-public sealed class Commander(World world)
+namespace lychee;
+
+public sealed class Commander(App app)
 {
+    private Dictionary<Type, object> eventQueues = new();
+
     public void SendEvent<T>(T ev)
     {
-        var queue = world.EventCenter.GetOrCreateQueue<T>();
-        queue.Enqueue(ev);
+        if (eventQueues.TryGetValue(typeof(T), out var obj))
+        {
+            Debug.Assert(obj is DoubleBufferQueue<T>);
+
+            var queue = (DoubleBufferQueue<T>)obj;
+            queue.Enqueue(ev);
+        }
+        else
+        {
+            var queue = app.ResourcePool.GetResource<DoubleBufferQueue<T>>();
+            queue.Enqueue(ev);
+
+            eventQueues.Add(typeof(T), queue);
+        }
     }
 }

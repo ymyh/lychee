@@ -10,8 +10,6 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
 
     public readonly ArchetypeManager ArchetypeManager = new(typeRegistry);
 
-    internal readonly EventCenter EventCenter = new(typeRegistry);
-
 #endregion
 
     ~World()

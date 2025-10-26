@@ -1,5 +1,4 @@
-﻿using lychee.collections;
-using lychee.interfaces;
+﻿using lychee.interfaces;
 
 namespace lychee;
 
@@ -56,7 +55,7 @@ public sealed class App : IDisposable
 
     public void AddEvent<T>()
     {
-        ResourcePool.AddResource<DoubleBufferQueue<T>>(new());
+        ResourcePool.AddResource<Event<T>>(new());
     }
 
     public void InstallPlugin(IPlugin plugin)

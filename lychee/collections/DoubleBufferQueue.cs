@@ -22,11 +22,11 @@ public sealed class DoubleBufferQueue<T>
     }
 
     /// <summary>
-    /// Switch front and back buffer. <br/>
+    /// Exchange front and back buffer. <br/>
     /// Never call this method in parallel.
     /// </summary>
     [SuppressMessage("ReSharper", "InconsistentlySynchronizedField")]
-    public void Switch()
+    public void Exchange()
     {
         (front, back) = (back, front);
     }

@@ -25,7 +25,6 @@ namespace lychee_sg
         Resource,
         Entity,
         EntityCommander,
-        Commander
     }
 
     internal struct ParamInfo
@@ -126,10 +125,6 @@ sealed partial class {sysInfo.Name} : ISystem
                             else if (x.Type.ToDisplayString() == "lychee.Entity")
                             {
                                 paramKind = ParamKind.Entity;
-                            }
-                            else if (x.Type.ToDisplayString() == "lychee.Commander")
-                            {
-                                paramKind = ParamKind.Commander;
                             }
 
                             if (x.GetAttributes().Any(a =>

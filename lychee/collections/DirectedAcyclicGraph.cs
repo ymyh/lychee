@@ -1,12 +1,12 @@
-﻿using System.Data;
+﻿namespace lychee.collections;
 
-namespace lychee.collections;
+public sealed class InvalidGraphException(string reason) : Exception(reason);
 
 /// <summary>
 /// Represents a node in DAG
 /// </summary>
 /// <param name="data"></param>
-/// <typeparam name="T"></typeparam>
+/// <typeparam name="T">The type of elements in the node.</typeparam>
 public sealed class DAGNode<T>(T data)
 {
     public DAGNode() : this(default!)
@@ -26,7 +26,7 @@ public sealed class DAGNode<T>(T data)
 /// Frozen DAG node, for better performance
 /// </summary>
 /// <param name="node">The node to freeze</param>
-/// <typeparam name="T"></typeparam>
+/// <typeparam name="T">The type of elements in the node.</typeparam>
 public struct FrozenDAGNode<T>(DAGNode<T> node)
 {
     public T Data = node.Data;
@@ -37,6 +37,10 @@ public struct FrozenDAGNode<T>(DAGNode<T> node)
     public readonly int Group = node.Group;
 }
 
+/// <summary>
+/// Represents a DAG which technically can have one entry and more than one exit.
+/// </summary>
+/// <typeparam name="T">The type of elements in the graph.</typeparam>
 public sealed class DirectedAcyclicGraph<T>
 {
     public List<DAGNode<T>> Nodes { get; } = [];
@@ -90,12 +94,17 @@ public sealed class DirectedAcyclicGraph<T>
     }
 
     /// <summary>
-    /// Perform topological sorting to make the graph as a list. If you want a more efficient structure, see <see cref="DirectedAcyclicGraphExtensions.Freeze{T}"/>
+    /// Perform topological sorting to make the graph as a list. If you want a more efficient structure, see <see cref="DirectedAcyclicGraphExtensions.Freeze&lt;T&gt;"/>
     /// </summary>
-    /// <returns></returns>
-    /// <exception cref="ConstraintException">If graph contains a cycle</exception>
+    /// <returns>A sorted list of nodes.</returns>
+    /// <exception cref="InvalidGraphException">If graph contains a cycle or more than one root node.</exception>
     public List<DAGNode<T>> AsList()
     {
+        if (Nodes.Count(n => n.Parents.Count == 0) > 1)
+        {
+            throw new InvalidGraphException("Graph contains more than one root node");
+        }
+
         var inDegree = Nodes.ToDictionary(node => node, node => node.Parents.Count);
         var queue = new Queue<DAGNode<T>>(Nodes.Where(n => inDegree[n] == 0));
         var result = new List<DAGNode<T>>(Nodes.Count);
@@ -125,12 +134,16 @@ public sealed class DirectedAcyclicGraph<T>
 
         if (result.Count != Nodes.Count)
         {
-            throw new ConstraintException("Graph contains a cycle!");
+            throw new InvalidGraphException("Graph contains a cycle!");
         }
 
         return result;
     }
 
+    /// <summary>
+    /// Perform a depth-first search to traverse the graph.
+    /// </summary>
+    /// <param name="action">The action call on each node.</param>
     public void ForEach(Action<DAGNode<T>> action)
     {
         ForEachInner(Nodes, action);

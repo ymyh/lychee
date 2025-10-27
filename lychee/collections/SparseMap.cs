@@ -4,6 +4,12 @@ using System.Runtime.InteropServices;
 
 namespace lychee.collections;
 
+/// <summary>
+/// Represents a collection of keys and values, which key type is <see cref="int"/>. <br/>
+/// SparseMap has better performance than <see cref="Dictionary&lt;TKey,TValue&gt;"/> but may use more memory,
+/// depends on the greatest key in the map.
+/// </summary>
+/// <typeparam name="T">The type of the values in the dictionary.</typeparam>
 public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)>
 {
 #region Private fields
@@ -16,6 +22,9 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 
 #region Public properties
 
+    /// <summary>
+    /// Gets the number of elements contained in the <see cref="SparseMap&lt;T&gt;"/>
+    /// </summary>
     public int Count => denseArray.Count;
 
     public T this[int key]
@@ -55,7 +64,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 #region Public Methods
 
     /// <summary>
-    /// Add an element to the sparse map. Unlike <see cref="Dictionary{TKey,TValue}"/>,
+    /// Add an element to the sparse map. Unlike <see cref="Dictionary&lt;TKey,TValue&gt;"/>,
     /// you can add same key multiple times.
     /// </summary>
     /// <param name="key">The id of the value</param>
@@ -103,6 +112,10 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
         return false;
     }
 
+    /// <summary>
+    /// Performs the specified action on each element of the sparse map.
+    /// </summary>
+    /// <param name="action">The action to call</param>
     public void ForEach(Action<int, T> action)
     {
         denseArray.ForEach(x => { action(x.key, x.value); });
@@ -110,11 +123,20 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 
     public delegate void ForEachRefDelegate<T>(int key, ref T value);
 
+    /// <summary>
+    /// Like <see cref="ForEach"/>, except the action parameter is pass by ref.
+    /// </summary>
+    /// <param name="action"></param>
     public void ForEachRef(ForEachRefDelegate<T> action)
     {
         denseArray.ForEach(x => { action(x.key, ref x.value); });
     }
 
+    /// <summary>
+    /// Get element index in dense array by key.
+    /// </summary>
+    /// <param name="key"></param>
+    /// <returns></returns>
     public int GetIndex(int key)
     {
         if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)

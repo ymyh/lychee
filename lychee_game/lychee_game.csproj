@@ -5,8 +5,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <LangVersion>14</LangVersion>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\lychee\lychee.csproj"/>
+        <ProjectReference Include="..\lychee_sg\lychee_sg.csproj" OutputItemType="Analyzer"/>
+    </ItemGroup>
 
 </Project>

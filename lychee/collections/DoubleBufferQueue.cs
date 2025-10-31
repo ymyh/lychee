@@ -4,8 +4,8 @@ using System.Runtime.InteropServices;
 namespace lychee.collections;
 
 /// <summary>
-/// Represents a double buffer queue. <br/>
-/// Write into the back buffer and read from the front buffer.
+/// Write into the back queue and read from the front queue.
+/// Writing or reading from the queue is thread-safe, but exchanging two queue in single thread is not thread-safe.
 /// </summary>
 /// <typeparam name="T">The type of elements in the queue.</typeparam>
 public sealed class DoubleBufferQueue<T>

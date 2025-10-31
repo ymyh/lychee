@@ -38,7 +38,6 @@ public sealed class ThreadPool : IDisposable
                     try
                     {
                         var act = await sendTaskChannel.Reader.ReadAsync();
-                        Console.WriteLine("Thread{0} receive task", num);
                         act();
                         taskCompleteChannel.Writer.TryWrite(0);
                     }

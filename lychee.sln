@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee_dev", "lychee_dev\ly
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee_sg", "lychee_sg\lychee_sg.csproj", "{B67951B5-50FC-4C3B-B963-75572F846827}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee_game", "lychee_game\lychee_game.csproj", "{6F8BF5E4-76CB-4413-889F-5048634EE6B3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{B67951B5-50FC-4C3B-B963-75572F846827}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B67951B5-50FC-4C3B-B963-75572F846827}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B67951B5-50FC-4C3B-B963-75572F846827}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

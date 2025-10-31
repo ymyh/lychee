@@ -23,6 +23,7 @@ namespace lychee_sg
     {
         Component,
         Resource,
+        ResourceRef,
         Entity,
         EntityCommander,
     }
@@ -34,6 +35,8 @@ namespace lychee_sg
         public RefKind RefKind;
 
         public ParamKind ParamKind;
+
+        public string ParamName;
     }
 
     [Generator]
@@ -52,11 +55,11 @@ namespace lychee_sg
 
             context.RegisterSourceOutput(values, (spc, sysInfo) =>
             {
-                var hasEntityCommander = sysInfo.Params.Any(p => p.ParamKind == ParamKind.EntityCommander);
                 var componentTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Component).ToArray();
-                var resourceTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Resource).ToArray();
+                var resourceTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Resource || p.ParamKind == ParamKind.ResourceRef).ToArray();
                 var sb = new StringBuilder($@"
 using System;
+using System.Runtime.InteropServices;
 using lychee;
 using lychee.interfaces;
 
@@ -74,7 +77,13 @@ sealed partial class {sysInfo.Name} : ISystem
 
         public static EntityCommander EntityCommander;
     }}
-{MakeInitializeAGCode(componentTypes)}
+
+    private static class ResourceDataAG
+    {{
+{MakeResourceDataAGCode(resourceTypes)}
+    }}
+
+{MakeInitializeAGCode(componentTypes, resourceTypes)}
 
     public void ConfigureAG(App app, SystemDescriptor descriptor)
     {{
@@ -133,7 +142,7 @@ sealed partial class {sysInfo.Name} : ISystem
                                     return name == "lychee.attributes.Resource";
                                 }))
                             {
-                                paramKind = ParamKind.Resource;
+                                paramKind = x.Type.IsValueType ? ParamKind.ResourceRef : ParamKind.Resource;
                             }
 
                             return new ParamInfo
@@ -141,6 +150,7 @@ sealed partial class {sysInfo.Name} : ISystem
                                 Type = x.Type,
                                 RefKind = x.RefKind,
                                 ParamKind = paramKind,
+                                ParamName = x.Name,
                             };
                         }).ToArray();
                     }
@@ -162,9 +172,23 @@ sealed partial class {sysInfo.Name} : ISystem
             };
         }
 
-        private static string MakeInitializeAGCode(ParamInfo[] componentTypes)
+        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, ParamInfo[] resourceTypes)
         {
-            var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistry.RegisterComponent<{p.Type}>()"));
+            var resourceDecl = new StringBuilder();
+
+            foreach (var resourceType in resourceTypes)
+            {
+                if (resourceType.ParamKind == ParamKind.Resource)
+                {
+                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.ResourcePool.GetResource<{resourceType.Type}>();");
+                }
+                else
+                {
+                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.ResourcePool.GetResourcePtr<{resourceType.Type}>();");
+                }
+            }
+
+            var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistrar.RegisterComponent<{p.Type}>()"));
 
             return $@"
     public void InitializeAG(App app)
@@ -172,7 +196,39 @@ sealed partial class {sysInfo.Name} : ISystem
         SystemDataAG.Pool = app.ResourcePool;
         SystemDataAG.TypeIdList = [{registerTypes}];
         SystemDataAG.EntityCommander = new(app);
+
+{resourceDecl}
     }}";
+        }
+
+        private static string MakeResourceDataAGCode(ParamInfo[] resourceParams)
+        {
+            var declResourceCode = new StringBuilder();
+
+            if (resourceParams.Length > 0)
+            {
+                for (var i = 0; i < resourceParams.Length; i++)
+                {
+                    var resourceParam = resourceParams[i];
+                    var paramName = resourceParam.ParamName;
+
+                    if (resourceParam.ParamKind == ParamKind.Resource)
+                    {
+                        declResourceCode.AppendLine($"        public static {resourceParam.Type} {paramName};");
+                    }
+                    else
+                    {
+                        declResourceCode.AppendLine($"        public static byte[] {paramName};");
+                    }
+
+                    if (i != resourceParams.Length - 1)
+                    {
+                        declResourceCode.AppendLine();
+                    }
+                }
+            }
+
+            return declResourceCode.ToString();
         }
 
         private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams, bool hasAfterExecute)
@@ -181,10 +237,12 @@ sealed partial class {sysInfo.Name} : ISystem
 
             var execParams = string.Join(", ", allParams.Select((param, idx) =>
             {
+                var paramName = param.ParamName;
+
                 switch (param.ParamKind)
                 {
                     case ParamKind.Component:
-                        var derefCode = $"(({param.Type}*){param.Type.Name.ToLower()})[i]";
+                        var derefCode = $"(({param.Type}*){paramName})[i]";
                         switch (param.RefKind)
                         {
                             case RefKind.In:
@@ -201,7 +259,23 @@ sealed partial class {sysInfo.Name} : ISystem
                         break;
 
                     case ParamKind.Resource:
-                        return $"{param.Type.Name.ToLower()}";
+                        return $"ResourceDataAG.{paramName}";
+
+                    case ParamKind.ResourceRef:
+                        switch (param.RefKind)
+                        {
+                            case RefKind.In:
+                            case RefKind.RefReadOnlyParameter:
+                                return "in " + paramName;
+                            case RefKind.Out:
+                                return "out " + paramName;
+                            case RefKind.Ref:
+                                return $"ref {paramName}";
+                            case RefKind.None:
+                                return paramName;
+                        }
+
+                        break;
 
                     case ParamKind.EntityCommander:
                         return "SystemDataAG.EntityCommander";
@@ -219,7 +293,12 @@ sealed partial class {sysInfo.Name} : ISystem
             {
                 foreach (var resourceParam in resourceParams)
                 {
-                    declResourceCode.AppendLine($"        var {resourceParam.Type.Name.ToLower()} = SystemDataAG.Pool.GetResource<{resourceParam.Type}>();");
+                    var paramName = resourceParam.ParamName;
+
+                    if (resourceParam.ParamKind == ParamKind.ResourceRef)
+                    {
+                        declResourceCode.AppendLine($"        ref var {paramName} = ref MemoryMarshal.AsRef<{resourceParam.Type}>(new Span<byte>(ResourceDataAG.{paramName}));");
+                    }
                 }
             }
 

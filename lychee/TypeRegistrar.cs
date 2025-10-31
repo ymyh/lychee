@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using lychee.interfaces;
@@ -18,30 +19,30 @@ public struct TypeInfo(int size, int alignment)
 }
 
 /// <summary>
-/// A registry for types.
+/// A registrar for types.
 /// </summary>
-public sealed class TypeRegistry
+public sealed class TypeRegistrar
 {
-    private readonly ReadWriteLock<List<(Type, TypeInfo)>> typeListLock = new([]);
+    private readonly ReadWriteLock<List<TypeInfo>> typeListLock = new([]);
 
     private readonly ConcurrentDictionary<Type, int> typeToIdDict = new();
 
     private readonly ConcurrentDictionary<Type, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
 
     private static readonly MethodInfo RegisterMethod =
-        typeof(TypeRegistry).GetMethod("Register", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(int)])!;
+        typeof(TypeRegistrar).GetMethod("Register", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(int)])!;
 
     private static readonly MethodInfo RegisterComponentMethod =
-        typeof(TypeRegistry).GetMethod("RegisterComponent", BindingFlags.Public | BindingFlags.Instance, [typeof(int)])!;
+        typeof(TypeRegistrar).GetMethod("RegisterComponent", BindingFlags.Public | BindingFlags.Instance, [typeof(int)])!;
 
     private static readonly MethodInfo RegisterBundleMethod =
-        typeof(TypeRegistry).GetMethod("RegisterBundle", BindingFlags.Public | BindingFlags.Instance, [])!;
+        typeof(TypeRegistrar).GetMethod("RegisterBundle", BindingFlags.Public | BindingFlags.Instance, [])!;
 
     /// <summary>
     /// Register a component type.
     /// </summary>
-    /// <param name="alignment"></param>
-    /// <typeparam name="T"></typeparam>
+    /// <param name="alignment">The alignment of type, default is 0, which implies auto deduction.</param>
+    /// <typeparam name="T">The type to register.</typeparam>
     /// <returns>Type id</returns>
     public int RegisterComponent<T>(int alignment = 0) where T : unmanaged, IComponent
     {
@@ -51,8 +52,8 @@ public sealed class TypeRegistry
     /// <summary>
     /// Register a component type.
     /// </summary>
-    /// <param name="type"></param>
-    /// <param name="alignment"></param>
+    /// <param name="type">The type to register.</param>
+    /// <param name="alignment">The alignment of type, default is 0, which implies auto deduction.</param>
     /// <returns>Type id</returns>
     public int RegisterComponent(Type type, int alignment = 0)
     {
@@ -62,8 +63,8 @@ public sealed class TypeRegistry
     /// <summary>
     /// Register a type.
     /// </summary>
-    /// <param name="type"></param>
-    /// <param name="alignment"></param>
+    /// <param name="type">The type to register.</param>
+    /// <param name="alignment">The alignment of type, default is 0, which implies auto deduction.</param>
     /// <returns></returns>
     internal int Register(Type type, int alignment = 0)
     {
@@ -73,11 +74,13 @@ public sealed class TypeRegistry
     /// <summary>
     /// Register a type
     /// </summary>
-    /// <param name="alignment"></param>
-    /// <typeparam name="T"></typeparam>
+    /// <param name="alignment">The alignment of type, default is 0, which implies auto deduction.</param>
+    /// <typeparam name="T">The type to register.</typeparam>
     /// <returns></returns>
     internal int Register<T>(int alignment = 0)
     {
+        Debug.Assert(alignment >= 0);
+
         var type = typeof(T);
 
         using var wg = typeListLock.EnterWriteLock();
@@ -103,16 +106,16 @@ public sealed class TypeRegistry
                 alignment = TypeUtils.GetOrGuessAlignment(type, size);
             }
 
-            typeList.Add((type, new(size, alignment)));
+            typeList.Add((new(size, alignment)));
         }
 
         return typeList.Count - 1;
     }
 
     /// <summary>
-    /// Register a bundle type.
+    /// Register a type bundle.
     /// </summary>
-    /// <typeparam name="T"></typeparam>
+    /// <typeparam name="T">The bundle to register.</typeparam>
     /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
     public void RegisterBundle<T>() where T : unmanaged, IComponentBundle
     {
@@ -135,17 +138,7 @@ public sealed class TypeRegistry
     }
 
     /// <summary>
-    /// Get type indices through a given tuple.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
-    public int[] GetComponentTypeIds<T>() where T : unmanaged
-    {
-        return !TypeUtils.IsValueTuple<T>() ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T)) : TypeUtils.GetTupleTypes<T>().Select(t => RegisterComponent(t)).ToArray();
-    }
-
-    /// <summary>
-    /// Register a bundle type.
+    /// Register a type bundle.
     /// </summary>
     /// <param name="type"></param>
     /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
@@ -155,24 +148,35 @@ public sealed class TypeRegistry
     }
 
     /// <summary>
+    /// Register all types of the given tuple.
+    /// </summary>
+    /// <typeparam name="T">A tuple of component types.</typeparam>
+    /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
+    /// <returns>All id of component types in the tuple.</returns>
+    public int[] GetComponentTypeIds<T>() where T : unmanaged
+    {
+        return !TypeUtils.IsValueTuple<T>() ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T)) : TypeUtils.GetTupleTypes<T>().Select(t => RegisterComponent(t)).ToArray();
+    }
+
+    /// <summary>
     /// Gets Type with given id
     /// </summary>
     /// <param name="id">Type id registered before using Register()</param>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
     /// <returns></returns>
-    public (Type, TypeInfo) GetTypeInfo(int id)
+    public TypeInfo GetTypeInfo(int id)
     {
         using var rg = typeListLock.EnterReadLock();
         return rg.Data[id];
     }
 
     /// <summary>
-    /// Gets Type with given name
+    /// Gets type info with given type
     /// </summary>
     /// <param name="type"></param>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
     /// <returns></returns>
-    public (Type, TypeInfo) GetTypeInfo(Type type)
+    public TypeInfo GetTypeInfo(Type type)
     {
         using var rg = typeListLock.EnterReadLock();
         return rg.Data[typeToIdDict[type]];

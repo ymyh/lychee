@@ -1,30 +1,113 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace lychee;
 
-public sealed class ResourcePool(TypeRegistry typeRegistry)
+/// <summary>
+/// Holds all resources. Each type can only add once, or update the existing one.
+/// </summary>
+/// <param name="typeRegistrar">The TypeRegistrar from App.</param>
+public sealed class ResourcePool(TypeRegistrar typeRegistrar)
 {
     private readonly Dictionary<Type, object> dataMap = new();
 
-    public void AddResource<T>(T resource) where T : class
+    /// <summary>
+    /// Add a new resource to the pool.
+    /// </summary>
+    /// <param name="resource">The resource to add.</param>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <exception cref="ArgumentException">Resource already exists.</exception>
+    public void AddResource<T>(T resource)
     {
         Debug.Assert(resource != null);
-        typeRegistry.Register<T>();
+        typeRegistrar.Register<T>();
 
-        if (!dataMap.TryAdd(typeof(T), resource))
+        var type = typeof(T);
+
+        if (type.IsValueType)
         {
-            throw new ArgumentException("Resource already exists");
+            unsafe
+            {
+                var arr = GC.AllocateArray<byte>(sizeof(T), true);
+                Marshal.Copy((nint)(&resource), arr, 0, arr.Length);
+
+                if (!dataMap.TryAdd(type, arr))
+                {
+                    throw new ArgumentException($"Resource {typeof(T).Name} already exists");
+                }
+            }
+        }
+        else
+        {
+            if (!dataMap.TryAdd(type, resource))
+            {
+                throw new ArgumentException($"Resource {typeof(T).Name} already exists");
+            }
         }
     }
 
-    public T GetResource<T>() where T : class
+    /// <summary>
+    /// Get the resource from the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <returns>The resource.</returns>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public T GetResource<T>()
     {
-        Debug.Assert(dataMap.ContainsKey(typeof(T)));
-
-        return (T)dataMap[typeof(T)];
+        try
+        {
+            return (T)dataMap[typeof(T)];
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
+        }
     }
 
-    public void ReplaceResource<T>(T resource) where T : class
+    /// <summary>
+    /// Get the resource from the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <returns>The resource.</returns>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public ref T GetResourceRef<T>() where T : unmanaged
+    {
+        try
+        {
+            var arr = (byte[])dataMap[typeof(T)];
+            return ref MemoryMarshal.AsRef<T>(new Span<byte>(arr));
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
+        }
+    }
+
+    /// <summary>
+    /// Get the resource from the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <returns>The resource.</returns>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public byte[] GetResourcePtr<T>() where T : unmanaged
+    {
+        try
+        {
+            return (byte[])dataMap[typeof(T)];
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
+        }
+    }
+
+    /// <summary>
+    /// Update the resource in the pool.
+    /// </summary>
+    /// <param name="resource">The resource to update.</param>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public void UpdateResource<T>(T resource) where T : class
     {
         Debug.Assert(resource != null);
 
@@ -34,7 +117,22 @@ public sealed class ResourcePool(TypeRegistry typeRegistry)
         }
         else
         {
-            throw new ArgumentException("Resource not found");
+            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
         }
+    }
+
+    /// <summary>
+    /// Remove the resource from the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public void RemoveResource<T>() where T : class
+    {
+        if (!dataMap.ContainsKey(typeof(T)))
+        {
+            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
+        }
+
+        dataMap.Remove(typeof(T));
     }
 }

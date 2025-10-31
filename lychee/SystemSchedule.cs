@@ -10,6 +10,8 @@ public sealed class SystemSchedules
 {
     private readonly List<ISchedule> schedules = [];
 
+    private bool needClear;
+
     public void AddSchedule(ISchedule schedule)
     {
         var index = schedules.IndexOf(schedule);
@@ -38,13 +40,31 @@ public sealed class SystemSchedules
         schedules.Insert(index + 1, schedule);
     }
 
+    public void ClearSchedules()
+    {
+        needClear = true;
+    }
+
     public void Execute()
     {
         foreach (var schedule in schedules)
         {
             schedule.Execute();
         }
+
+        if (needClear)
+        {
+            schedules.Clear();
+            needClear = false;
+        }
     }
+}
+
+public enum ExecuteStrategy
+{
+    NoExec,
+    Exec,
+    ExecAgain,
 }
 
 public sealed class SimpleSchedule : ISchedule
@@ -65,7 +85,7 @@ public sealed class SimpleSchedule : ISchedule
         ScheduleEnd
     }
 
-    private readonly Func<bool> shouldExecute;
+    private readonly Func<ExecuteStrategy> shouldExecute;
 
     private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
@@ -85,7 +105,7 @@ public sealed class SimpleSchedule : ISchedule
 
 #region Constructor
 
-    public SimpleSchedule(App app, Func<bool> shouldExecute, CommitPointEnum commitPointEnum = CommitPointEnum.Synchronization)
+    public SimpleSchedule(App app, Func<ExecuteStrategy> shouldExecute, CommitPointEnum commitPointEnum = CommitPointEnum.Synchronization)
     {
         this.app = app;
         this.shouldExecute = shouldExecute;
@@ -179,7 +199,7 @@ public sealed class SimpleSchedule : ISchedule
 
             if (type.GetInterface(typeof(IComponent).FullName!) != null)
             {
-                app.TypeRegistry.RegisterComponent(type);
+                app.TypeRegistrar.RegisterComponent(type);
 
                 if (!TypeUtils.ContainsField(type))
                 {
@@ -188,23 +208,23 @@ public sealed class SimpleSchedule : ISchedule
             }
             else
             {
-                app.TypeRegistry.Register(type);
+                app.TypeRegistrar.Register(type);
             }
         }
 
         foreach (var type in descriptor.AllFilter)
         {
-            app.TypeRegistry.RegisterComponent(type);
+            app.TypeRegistrar.RegisterComponent(type);
         }
 
         foreach (var type in descriptor.AnyFilter)
         {
-            app.TypeRegistry.RegisterComponent(type);
+            app.TypeRegistrar.RegisterComponent(type);
         }
 
         foreach (var type in descriptor.NoneFilter)
         {
-            app.TypeRegistry.RegisterComponent(type);
+            app.TypeRegistrar.RegisterComponent(type);
         }
 
         // Check this here because we need to make sure all types in descriptor are valid
@@ -222,7 +242,7 @@ public sealed class SimpleSchedule : ISchedule
 
             if (targetAttr != null)
             {
-                return new SystemParameterInfo(p.ParameterType, (bool)targetAttr.ConstructorArguments[0].Value!);
+                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, (bool)targetAttr.ConstructorArguments[0].Value!);
             }
 
             return new(p.ParameterType, p.IsIn);
@@ -269,11 +289,6 @@ public sealed class SimpleSchedule : ISchedule
 
     public void Execute()
     {
-        if (!shouldExecute())
-        {
-            return;
-        }
-
         if (!isFrozen)
         {
             frozenDAGNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
@@ -286,32 +301,47 @@ public sealed class SimpleSchedule : ISchedule
             needConfigure = false;
         }
 
-        foreach (var group in frozenDAGNodes)
+        ExecuteStrategy strategy;
+
+        do
         {
-            foreach (var frozenDagNode in group)
+            strategy = shouldExecute();
+            if (strategy == ExecuteStrategy.NoExec)
             {
-                tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
+                return;
             }
 
-            Task.WaitAll(tasks);
-            tasks.Clear();
+            foreach (var group in frozenDAGNodes)
+            {
+                foreach (var frozenDagNode in group)
+                {
+                    // tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
+                    // entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
+                    // var act = () => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); };
+                    app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
+                }
 
-            if (CommitPoint == CommitPointEnum.Synchronization)
+                app.ThreadPool.SpinWait();
+                // Task.WaitAll(tasks);
+                // tasks.Clear();
+
+                if (CommitPoint == CommitPointEnum.Synchronization)
+                {
+                    Commit();
+                }
+
+                if (needConfigure)
+                {
+                    Configure();
+                    needConfigure = false;
+                }
+            }
+
+            if (CommitPoint == CommitPointEnum.ScheduleEnd)
             {
                 Commit();
             }
-
-            if (needConfigure)
-            {
-                Configure();
-                needConfigure = false;
-            }
-        }
-
-        if (CommitPoint == CommitPointEnum.ScheduleEnd)
-        {
-            Commit();
-        }
+        } while (strategy == ExecuteStrategy.ExecAgain);
     }
 
 #endregion

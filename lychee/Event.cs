@@ -1,13 +1,25 @@
 ﻿using lychee.collections;
+using lychee.interfaces;
 
 namespace lychee;
 
-public sealed class Event<T>
+public sealed class Event<T> : IEvent
 {
     private readonly DoubleBufferQueue<T> queue = new();
 
     public void SendEvent(T ev)
     {
         queue.Enqueue(ev);
+    }
+
+    public IEnumerable<T> GetEnumerable()
+    {
+        return queue.GetEnumerable();
+    }
+
+    public void PrepareForNextUpdate()
+    {
+        queue.Exchange();
+        queue.ClearBack();
     }
 }

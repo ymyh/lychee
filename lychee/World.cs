@@ -1,14 +1,18 @@
-﻿namespace lychee;
+﻿using lychee.interfaces;
 
-public sealed class World(TypeRegistry typeRegistry) : IDisposable
+namespace lychee;
+
+public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
 {
 #region Fields
 
-    public readonly SystemSchedules SystemSchedules = new();
+    internal readonly SystemSchedules SystemSchedules = new();
 
     public readonly EntityPool EntityPool = new();
 
-    public readonly ArchetypeManager ArchetypeManager = new(typeRegistry);
+    public readonly ArchetypeManager ArchetypeManager = new(typeRegistrar);
+
+    private readonly List<IEvent> events = [];
 
 #endregion
 
@@ -16,6 +20,15 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
     {
         Dispose();
     }
+
+#region Internal methods
+
+    internal void AddEvent(IEvent ev)
+    {
+        events.Add(ev);
+    }
+
+#endregion
 
 #region Public methods
 
@@ -25,6 +38,11 @@ public sealed class World(TypeRegistry typeRegistry) : IDisposable
     public void Update()
     {
         SystemSchedules.Execute();
+
+        foreach (var ev in events)
+        {
+            ev.PrepareForNextUpdate();
+        }
     }
 
 #endregion

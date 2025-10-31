@@ -33,7 +33,7 @@ public sealed class EntityCommander(App app) : IDisposable
 
     internal readonly ArchetypeManager ArchetypeManager = app.World.ArchetypeManager;
 
-    internal readonly TypeRegistry TypeRegistry = app.TypeRegistry;
+    internal readonly TypeRegistrar TypeRegistrar = app.TypeRegistrar;
 
     internal readonly TransferInfoMap ArchetypeAddingTypeMap = new();
 
@@ -336,7 +336,7 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                var typeId = self.TypeRegistry.RegisterComponent<T>();
+                var typeId = self.TypeRegistrar.RegisterComponent<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Append(typeId));
 
                 self.TransferDstInfo = new(dstArchetype, [new(new(), typeId)]);
@@ -365,8 +365,8 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                self.TypeRegistry.RegisterBundle<T>();
-                var bundleInfo = self.TypeRegistry.GetBundleInfo<T>();
+                self.TypeRegistrar.RegisterBundle<T>();
+                var bundleInfo = self.TypeRegistrar.GetBundleInfo<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Concat(bundleInfo.Select(x => x.typeId)));
 
                 self.TransferDstInfo = new(dstArchetype, bundleInfo);
@@ -395,7 +395,7 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                var typeId = self.TypeRegistry.RegisterComponent<T>();
+                var typeId = self.TypeRegistrar.RegisterComponent<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Where(x => x != typeId));
 
                 self.TransferDstInfo = new(dstArchetype, []);
@@ -424,8 +424,8 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                self.TypeRegistry.RegisterBundle<T>();
-                var bundleInfo = self.TypeRegistry.GetBundleInfo<T>();
+                self.TypeRegistrar.RegisterBundle<T>();
+                var bundleInfo = self.TypeRegistrar.GetBundleInfo<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Except(bundleInfo.Select(x => x.typeId)));
 
                 self.TransferDstInfo = new(dstArchetype, []);
@@ -454,7 +454,7 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                var typeIds = self.TypeRegistry.GetComponentTypeIds<T>();
+                var typeIds = self.TypeRegistrar.GetComponentTypeIds<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Except(typeIds));
 
                 self.TransferDstInfo = new(dstArchetype, []);

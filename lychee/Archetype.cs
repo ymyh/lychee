@@ -11,7 +11,7 @@ public sealed class ArchetypeManager : IDisposable
 {
     private readonly List<Archetype> archetypes = [];
 
-    private readonly TypeRegistry typeRegistry;
+    private readonly TypeRegistrar typeRegistrar;
 
     internal static Archetype EmptyArchetype = null!;
 
@@ -22,9 +22,9 @@ public sealed class ArchetypeManager : IDisposable
     /// </summary>
     public event ArchetypeCreatedHandler? ArchetypeCreated;
 
-    public ArchetypeManager(TypeRegistry typeRegistry)
+    public ArchetypeManager(TypeRegistrar typeRegistrar)
     {
-        this.typeRegistry = typeRegistry;
+        this.typeRegistrar = typeRegistrar;
         GetOrCreateArchetype([]);
 
         EmptyArchetype = archetypes[0];
@@ -48,7 +48,7 @@ public sealed class ArchetypeManager : IDisposable
             }
 
             var id = archetypes.Count;
-            var typeInfoList = array.Select(id => typeRegistry.GetTypeInfo(id).Item2).ToArray();
+            var typeInfoList = array.Select(id => typeRegistrar.GetTypeInfo(id)).ToArray();
             archetypes.Add(new(id, array, typeInfoList));
 
             ArchetypeCreated?.Invoke();
@@ -60,7 +60,7 @@ public sealed class ArchetypeManager : IDisposable
     public Archetype GetOrCreateArchetype<T>()
     {
         var typeList = TypeUtils.GetTupleTypes<T>();
-        var typeIds = typeList.Select(x => typeRegistry.RegisterComponent(x)).ToArray();
+        var typeIds = typeList.Select(x => typeRegistrar.RegisterComponent(x)).ToArray();
 
         return GetOrCreateArchetype(typeIds);
     }
@@ -69,7 +69,7 @@ public sealed class ArchetypeManager : IDisposable
     {
         var type = typeof(T);
         var fields = type.GetFields();
-        var typeIds = fields.Select(f => typeRegistry.RegisterComponent(f.FieldType)).ToArray();
+        var typeIds = fields.Select(f => typeRegistrar.RegisterComponent(f.FieldType)).ToArray();
 
         Array.Sort(typeIds);
         return GetOrCreateArchetype(typeIds);
@@ -97,7 +97,7 @@ public sealed class ArchetypeManager : IDisposable
             return archetypes.Where(a =>
             {
                 var ret = requires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
-                return allFilter.Select(type => typeRegistry.RegisterComponent(type))
+                return allFilter.Select(type => typeRegistrar.RegisterComponent(type))
                     .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
             }).Where(a =>
             {
@@ -105,7 +105,7 @@ public sealed class ArchetypeManager : IDisposable
 
                 foreach (var type in anyFilter)
                 {
-                    var typeId = typeRegistry.RegisterComponent(type);
+                    var typeId = typeRegistrar.RegisterComponent(type);
                     ret |= a.TypeIdList.Contains(typeId);
                 }
 
@@ -116,7 +116,7 @@ public sealed class ArchetypeManager : IDisposable
 
                 foreach (var type in noneFilter)
                 {
-                    var typeId = typeRegistry.RegisterComponent(type);
+                    var typeId = typeRegistrar.RegisterComponent(type);
                     ret &= !a.TypeIdList.Contains(typeId);
                 }
 

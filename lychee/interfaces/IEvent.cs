@@ -1,5 +1,8 @@
 ﻿namespace lychee.interfaces;
 
-public interface IEvent;
+internal interface IEvent
+{
+    internal void PrepareForNextUpdate();
+}
 
 public interface IEntityEvent;

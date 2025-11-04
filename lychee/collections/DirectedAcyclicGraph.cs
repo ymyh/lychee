@@ -140,6 +140,11 @@ public sealed class DirectedAcyclicGraph<T>
         return result;
     }
 
+    public void Clear()
+    {
+        Nodes.Clear();
+    }
+
     /// <summary>
     /// Perform a depth-first search to traverse the graph.
     /// </summary>

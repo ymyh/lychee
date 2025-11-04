@@ -1,9 +1,27 @@
-﻿using System.Diagnostics;
+﻿using lychee_game.schedules;
 using lychee;
 using lychee.attributes;
 using lychee.interfaces;
 
 namespace lychee_game;
+
+[AutoImplSystem]
+public partial class InitBasicGamePluginSystem
+{
+    private static void Execute([Resource] Time time)
+    {
+        time.Start();
+    }
+}
+
+[AutoImplSystem]
+public partial class UpdateTimeResourceSystem
+{
+    private static void Execute([Resource] Time time)
+    {
+        time.Update();
+    }
+}
 
 public sealed class DefaultPluginDescriptor
 {
@@ -12,36 +30,83 @@ public sealed class DefaultPluginDescriptor
     public int FixedUpdateCatchUpCount = 5;
 }
 
-[AutoImplSystem]
-internal partial class InitTimeSystem
-{
-    private static void Execute([Resource] Time time)
-    {
-        time.Start();
-    }
-}
-
 /// <summary>
-///
+/// A plugin that provides basic game features. <br/>
+/// It provides the following schedules:
+/// <list type="bullet">
+///     <item>
+///         <description>
+///             <see cref="StartUp"/> (Contains a <see cref="InitBasicGamePluginSystem"/>)
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="First"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="FixedUpdate"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="PreUpdate"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="Update"/> (Contains a <see cref="UpdateTimeResourceSystem"/>)
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="PostUpdate"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="Render"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="Last"/>
+///         </description>
+///     </item>
+/// </list>
+/// It also provides the following resources:
+/// <list type="bullet">
+///     <item>
+///         <description>
+///             <see cref="Time"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="GameControl"/>
+///         </description>
+///     </item>
+/// </list>
 /// </summary>
-/// <param name="desc"></param>
+/// <param name="desc">The plugin descriptor.</param>
 public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 {
-    public SimpleSchedule StartUp = null!;
+    public FireOnceSchedule StartUp = null!;
 
-    public SimpleSchedule FixedUpdate = null!;
+    public FixedIntervalSchedule FixedUpdate = null!;
 
-    public SimpleSchedule First = null!;
+    public DefaultSchedule First = null!;
 
-    public SimpleSchedule PreUpdate = null!;
+    public DefaultSchedule PreUpdate = null!;
 
-    public SimpleSchedule Update = null!;
+    public DefaultSchedule Update = null!;
 
-    public SimpleSchedule PostUpdate = null!;
+    public DefaultSchedule PostUpdate = null!;
 
-    public SimpleSchedule Render = null!;
+    public DefaultSchedule Render = null!;
 
-    public SimpleSchedule Last = null!;
+    public DefaultSchedule Last = null!;
 
     public BasicGamePlugin() : this(new())
     {
@@ -53,88 +118,46 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
         app.AddResource(new GameControl());
 
         {
-            var firstTime = true;
-            StartUp = new(app, () =>
-            {
-                if (firstTime)
-                {
-                    firstTime = false;
-                    return ExecuteStrategy.Exec;
-                }
-
-                return ExecuteStrategy.NoExec;
-            });
-
+            StartUp = new(app);
             app.AddSchedule(StartUp);
 
-            StartUp.AddSystem(new InitTimeSystem());
+            StartUp.AddSystem(new InitBasicGamePluginSystem());
         }
 
         {
-            First = new(app, () => ExecuteStrategy.Exec);
+            First = new(app);
             app.AddSchedule(First);
         }
 
         {
-            var firstTime = true;
-            var stopwatch = new Stopwatch();
-            var accErr = 0L;
-
-            FixedUpdate = new(app, () =>
-            {
-                if (firstTime)
-                {
-                    stopwatch.Start();
-                    firstTime = false;
-                    return ExecuteStrategy.Exec;
-                }
-
-                var now = stopwatch.ElapsedMilliseconds + accErr;
-                var exec = now >= desc.FixedUpdateInterval;
-
-                if (exec)
-                {
-                    stopwatch.Restart();
-                    now -= desc.FixedUpdateInterval;
-                    accErr = now;
-
-                    return now >= desc.FixedUpdateInterval ? ExecuteStrategy.ExecAgain : ExecuteStrategy.Exec;
-                }
-
-                return ExecuteStrategy.NoExec;
-            });
-
+            FixedUpdate = new(app, BasicSchedule.CommitPointEnum.Synchronization, desc.FixedUpdateInterval, desc.FixedUpdateCatchUpCount);
             app.AddSchedule(FixedUpdate);
         }
 
         {
-            PreUpdate = new(app, () => ExecuteStrategy.Exec);
+            PreUpdate = new(app);
             app.AddSchedule(PreUpdate);
         }
 
         {
-            Update = new(app, () => ExecuteStrategy.Exec);
+            Update = new(app);
             app.AddSchedule(Update);
+
+            Update.AddSystem(new UpdateTimeResourceSystem());
         }
 
         {
-            PostUpdate = new(app, () => ExecuteStrategy.Exec);
+            PostUpdate = new(app);
             app.AddSchedule(PostUpdate);
         }
 
         {
-            // Render = new(app, () =>
-            // {
-            //     var gameControl = app.ResourcePool.GetResource<GameControl>();
-            //     SpinWait.SpinUntil(() => gameControl.Rendering);
-            //
-            //     return ExecuteStrategy.Exec;
-            // });
-            // app.AddSchedule(Render);
+            Render = new(app);
+            app.AddSchedule(Render);
         }
 
         {
-            Last = new(app, () => ExecuteStrategy.Exec);
+            Last = new(app);
             app.AddSchedule(Last);
         }
     }

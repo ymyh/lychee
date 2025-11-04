@@ -60,14 +60,10 @@ public sealed class SystemSchedules
     }
 }
 
-public enum ExecuteStrategy
-{
-    NoExec,
-    Exec,
-    ExecAgain,
-}
-
-public sealed class SimpleSchedule : ISchedule
+/// <summary>
+/// A base class for schedules that provides basic functionality.
+/// </summary>
+public abstract class BasicSchedule : ISchedule
 {
     /// <summary>
     /// Indicates when the schedule should commit the changes.
@@ -85,11 +81,9 @@ public sealed class SimpleSchedule : ISchedule
         ScheduleEnd
     }
 
-    private readonly Func<ExecuteStrategy> shouldExecute;
-
     private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
 
-    private FrozenDAGNode<SystemInfo>[][] frozenDAGNodes = [];
+    private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
 
     private readonly App app;
 
@@ -105,16 +99,21 @@ public sealed class SimpleSchedule : ISchedule
 
 #region Constructor
 
-    public SimpleSchedule(App app, Func<ExecuteStrategy> shouldExecute, CommitPointEnum commitPointEnum = CommitPointEnum.Synchronization)
+    public BasicSchedule(App app, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
     {
         this.app = app;
-        this.shouldExecute = shouldExecute;
-        CommitPoint = commitPointEnum;
+        CommitPoint = commitPoint;
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
 
         executionGraph.AddNode(new());
     }
+
+#endregion
+
+#region ISchedule Members
+
+    public abstract void Execute();
 
 #endregion
 
@@ -176,6 +175,12 @@ public sealed class SimpleSchedule : ISchedule
         executionGraph.AddEdge(addAfterNode, node);
 
         return system;
+    }
+
+    public void ClearSystems()
+    {
+        executionGraph.Clear();
+        executionGraph.AddNode(new());
     }
 
 #endregion
@@ -285,13 +290,11 @@ public sealed class SimpleSchedule : ISchedule
 
 #endregion
 
-#region ISchedule Members
-
-    public void Execute()
+    protected void ExecuteImpl()
     {
         if (!isFrozen)
         {
-            frozenDAGNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
+            frozenDagNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
             isFrozen = true;
         }
 
@@ -301,48 +304,48 @@ public sealed class SimpleSchedule : ISchedule
             needConfigure = false;
         }
 
-        ExecuteStrategy strategy;
-
-        do
+        foreach (var group in frozenDagNodes)
         {
-            strategy = shouldExecute();
-            if (strategy == ExecuteStrategy.NoExec)
+            foreach (var frozenDagNode in group)
             {
-                return;
+                // tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
+                // entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
+                app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
             }
 
-            foreach (var group in frozenDAGNodes)
-            {
-                foreach (var frozenDagNode in group)
-                {
-                    // tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
-                    // entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
-                    // var act = () => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); };
-                    app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
-                }
+            app.ThreadPool.SpinWait();
+            // Task.WaitAll(tasks);
+            // tasks.Clear();
 
-                app.ThreadPool.SpinWait();
-                // Task.WaitAll(tasks);
-                // tasks.Clear();
-
-                if (CommitPoint == CommitPointEnum.Synchronization)
-                {
-                    Commit();
-                }
-
-                if (needConfigure)
-                {
-                    Configure();
-                    needConfigure = false;
-                }
-            }
-
-            if (CommitPoint == CommitPointEnum.ScheduleEnd)
+            if (CommitPoint == CommitPointEnum.Synchronization)
             {
                 Commit();
             }
-        } while (strategy == ExecuteStrategy.ExecAgain);
-    }
 
-#endregion
+            if (needConfigure)
+            {
+                Configure();
+                needConfigure = false;
+            }
+        }
+
+        if (CommitPoint == CommitPointEnum.ScheduleEnd)
+        {
+            Commit();
+        }
+    }
+}
+
+/// <summary>
+/// Executes with no condition.
+/// </summary>
+/// <param name="app">The application.</param>
+/// <param name="commitPoint">The commit point.</param>
+public sealed class DefaultSchedule(App app, BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
+    : BasicSchedule(app, commitPoint)
+{
+    public override void Execute()
+    {
+        ExecuteImpl();
+    }
 }

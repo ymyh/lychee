@@ -127,7 +127,9 @@ public sealed class App : IDisposable
 
     public void Dispose()
     {
+        ThreadPool.Dispose();
         World.Dispose();
+
         GC.SuppressFinalize(this);
     }
 

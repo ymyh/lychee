@@ -120,19 +120,4 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
             throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
         }
     }
-
-    /// <summary>
-    /// Remove the resource from the pool.
-    /// </summary>
-    /// <typeparam name="T">The type of the resource.</typeparam>
-    /// <exception cref="ArgumentException">Resource does not exist.</exception>
-    public void RemoveResource<T>() where T : class
-    {
-        if (!dataMap.ContainsKey(typeof(T)))
-        {
-            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
-        }
-
-        dataMap.Remove(typeof(T));
-    }
 }

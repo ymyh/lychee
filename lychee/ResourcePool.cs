@@ -54,13 +54,24 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
     public T GetResource<T>()
     {
+        return (T)GetResource(typeof(T));
+    }
+
+    /// <summary>
+    /// Get the resource from the pool.
+    /// </summary>
+    /// <param name="type">The type of the resource.</param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public object GetResource(Type type)
+    {
         try
         {
-            return (T)dataMap[typeof(T)];
+            return dataMap[type];
         }
         catch (KeyNotFoundException)
         {
-            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
+            throw new ArgumentException($"Resource {type.Name} does not exist");
         }
     }
 

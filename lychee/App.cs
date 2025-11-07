@@ -1,24 +1,10 @@
-﻿using System.Diagnostics;
-using lychee.interfaces;
+﻿using lychee.interfaces;
 using ThreadPool = lychee.threading.ThreadPool;
 
 namespace lychee;
 
 /// <summary>
-/// The control of the application and some basic properties.
-/// </summary>
-public class AppControl
-{
-    public readonly Stopwatch Stopwatch = new();
-
-    public int UpdateCount;
-
-    public bool ShouldExit;
-}
-
-/// <summary>
 /// The ECS application. <br/>
-/// The application will contain a <see cref="AppControl"/> reesource and a default <see cref="Runner"/> when created.
 /// </summary>
 public sealed class App : IDisposable
 {
@@ -30,38 +16,27 @@ public sealed class App : IDisposable
 
     public readonly World World;
 
-    internal readonly ThreadPool ThreadPool = new(4);
+    internal readonly ThreadPool ThreadPool;
 
-    /// <summary>
-    /// Controls how the application should run. <br/>
-    /// The default runner will update the world until <see cref="AppControl.ShouldExit"/> is set to true.
-    /// </summary>
-    public Action<ResourcePool> Runner { get; set; }
-
-    public SystemSchedules SystemSchedules { get; }
+    private readonly HashSet<Type> pluginInstalled = [];
 
 #endregion
 
 #region Constructors & Destructors
 
-    public App()
+    public App(int threadCountHint = 0)
     {
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
-        ResourcePool.AddResource(new AppControl());
-        SystemSchedules = World.SystemSchedules;
 
-        Runner = pool =>
+        if (threadCountHint == 0)
         {
-            var control = pool.GetResource<AppControl>();
-            control.Stopwatch.Start();
-
-            while (!control.ShouldExit)
-            {
-                World.Update();
-                control.UpdateCount++;
-            }
-        };
+            ThreadPool = new(Environment.ProcessorCount / 2);
+        }
+        else
+        {
+            ThreadPool = new(threadCountHint);
+        }
     }
 
     ~App()
@@ -98,27 +73,61 @@ public sealed class App : IDisposable
 
     public void AddSchedule(ISchedule schedule)
     {
-        SystemSchedules.AddSchedule(schedule);
+        World.SystemSchedules.AddSchedule(schedule);
     }
 
     public void AddSchedule(ISchedule schedule, ISchedule addAfter)
     {
-        SystemSchedules.AddSchedule(schedule, addAfter);
+        World.SystemSchedules.AddSchedule(schedule, addAfter);
     }
 
     public void ClearSchedules()
     {
-        SystemSchedules.ClearSchedules();
+        World.SystemSchedules.ClearSchedules();
     }
 
-    public void InstallPlugin(IPlugin plugin)
+    public ISchedule? GetSchedule(string name)
     {
+        return World.SystemSchedules.GetSchedule(name);
+    }
+
+    /// <summary>
+    /// Install a plugin to the application. Install same plugin takes no effect.
+    /// </summary>
+    /// <param name="plugin">The plugin to install.</param>
+    /// <typeparam name="T">The plugin type.</typeparam>
+    /// <returns></returns>
+    public T InstallPlugin<T>(T plugin) where T : IPlugin
+    {
+        var type = plugin.GetType();
+        if (pluginInstalled.Contains(type))
+        {
+            return plugin;
+        }
+
         plugin.Install(this);
+        pluginInstalled.Add(plugin.GetType());
+
+        return plugin;
     }
 
-    public void Run()
+    /// <summary>
+    /// Check if a plugin is installed.
+    /// </summary>
+    /// <typeparam name="T">The plugin type.</typeparam>
+    /// <returns>True if the plugin is installed, otherwise false.</returns>
+    public bool CheckInstalledPlugin<T>() where T : IPlugin
     {
-        Runner(ResourcePool);
+        return pluginInstalled.Contains(typeof(T));
+    }
+
+    /// <summary>
+    /// Update the application once.
+    /// </summary>
+    /// <param name="scheduleEnd"></param>
+    public void Update(ISchedule? scheduleEnd = null)
+    {
+        World.Update(scheduleEnd);
     }
 
 #endregion

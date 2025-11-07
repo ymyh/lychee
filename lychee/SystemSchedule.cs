@@ -1,14 +1,14 @@
-﻿using System.Reflection;
-using lychee.attributes;
-using lychee.collections;
-using lychee.interfaces;
-using lychee.utils;
+﻿using lychee.interfaces;
 
 namespace lychee;
 
 public sealed class SystemSchedules
 {
     private readonly List<ISchedule> schedules = [];
+
+    private readonly Dictionary<string, ISchedule> scheduleDict = [];
+
+    private int lastScheduleIndex = 0;
 
     private bool needClear;
 
@@ -21,6 +21,7 @@ public sealed class SystemSchedules
         }
 
         schedules.Add(schedule);
+        scheduleDict.Add(schedule.Name, schedule);
     }
 
     public void AddSchedule(ISchedule schedule, ISchedule addAfter)
@@ -38,6 +39,18 @@ public sealed class SystemSchedules
         }
 
         schedules.Insert(index + 1, schedule);
+        scheduleDict.Add(schedule.Name, schedule);
+    }
+
+    public void AddSchedule(ISchedule schedule, string addAfter)
+    {
+        var addAfterSchedule = GetSchedule(addAfter);
+        if (addAfterSchedule == null)
+        {
+            throw new ArgumentException($"Schedule {addAfter} not found");
+        }
+
+        AddSchedule(schedule, addAfterSchedule);
     }
 
     public void ClearSchedules()
@@ -45,307 +58,44 @@ public sealed class SystemSchedules
         needClear = true;
     }
 
-    public void Execute()
+    public bool Execute(ISchedule? scheduleEnd = null)
     {
-        foreach (var schedule in schedules)
+        for (var i = lastScheduleIndex; i < schedules.Count; i++)
         {
-            schedule.Execute();
+            if (schedules[i] == scheduleEnd)
+            {
+                break;
+            }
+
+            schedules[i].Execute();
+            lastScheduleIndex = i;
         }
 
-        if (needClear)
+        if (lastScheduleIndex == schedules.Count - 1)
         {
-            schedules.Clear();
-            needClear = false;
+            lastScheduleIndex = 0;
+
+            if (needClear)
+            {
+                schedules.Clear();
+                scheduleDict.Clear();
+
+                needClear = false;
+            }
+
+            return true;
         }
+
+        return false;
     }
-}
 
-/// <summary>
-/// A base class for schedules that provides basic functionality.
-/// </summary>
-public abstract class BasicSchedule : ISchedule
-{
     /// <summary>
-    /// Indicates when the schedule should commit the changes.
+    /// Get a schedule by name.
     /// </summary>
-    public enum CommitPointEnum
+    /// <param name="name">The name of the schedule.</param>
+    /// <returns>The schedule with the given name, or null if not found.</returns>
+    public ISchedule? GetSchedule(string name)
     {
-        /// <summary>
-        /// Commits the changes at every synchronization point.
-        /// </summary>
-        Synchronization,
-
-        /// <summary>
-        /// Commits the changes at the end of the schedule execution.
-        /// </summary>
-        ScheduleEnd
-    }
-
-    private readonly DirectedAcyclicGraph<SystemInfo> executionGraph = new();
-
-    private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
-
-    private readonly App app;
-
-    private readonly List<Task> tasks = [];
-
-    private readonly List<EntityCommander> entityCommanders = [];
-
-    public CommitPointEnum CommitPoint { get; set; }
-
-    private bool isFrozen;
-
-    private bool needConfigure = true;
-
-#region Constructor
-
-    public BasicSchedule(App app, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
-    {
-        this.app = app;
-        CommitPoint = commitPoint;
-
-        this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
-
-        executionGraph.AddNode(new());
-    }
-
-#endregion
-
-#region ISchedule Members
-
-    public abstract void Execute();
-
-#endregion
-
-#region Public methods
-
-    public T AddSystem<[SystemConcept, SealedRequired] T>() where T : ISystem, new()
-    {
-        return AddSystem(new T(), new());
-    }
-
-    public T AddSystem<[SystemConcept, SealedRequired] T>(SystemDescriptor descriptor) where T : ISystem, new()
-    {
-        return AddSystem(new T(), descriptor);
-    }
-
-    public T AddSystem<[SystemConcept, SealedRequired] T>(T system) where T : ISystem
-    {
-        return AddSystem(system, new());
-    }
-
-    public T AddSystem<[SystemConcept, SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
-    {
-        system.InitializeAG(app);
-
-        var systemParamInfo = ExtractSystemParamInfo(system, descriptor);
-        var node = new DAGNode<SystemInfo>(new(system, systemParamInfo, descriptor));
-        DAGNode<SystemInfo> addAfterNode = null!;
-
-        isFrozen = false;
-
-        var list = executionGraph.AsList();
-        var currentGroup = -1;
-
-        foreach (var n in list)
-        {
-            addAfterNode = n;
-
-            if (descriptor.AddAfter != null)
-            {
-                if (n.Data.System == descriptor.AddAfter)
-                {
-                    currentGroup = n.Group;
-                    descriptor.AddAfter = null;
-                }
-
-                continue;
-            }
-
-            if (n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
-            {
-                if (n.Parents.Count > 0)
-                {
-                    addAfterNode = n.Parents[0];
-                }
-            }
-        }
-
-        executionGraph.AddNode(node);
-        executionGraph.AddEdge(addAfterNode, node);
-
-        return system;
-    }
-
-    public void ClearSystems()
-    {
-        executionGraph.Clear();
-        executionGraph.AddNode(new());
-    }
-
-#endregion
-
-#region Private methods
-
-    private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, SystemDescriptor descriptor)
-    {
-        var sysType = system.GetType();
-        var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
-        var parameters = method.GetParameters();
-
-        foreach (var param in parameters)
-        {
-            var type = param.ParameterType;
-
-            if (param.ParameterType.IsByRef)
-            {
-                type = param.ParameterType.GetElementType()!;
-            }
-
-            if (type.GetInterface(typeof(IComponent).FullName!) != null)
-            {
-                app.TypeRegistrar.RegisterComponent(type);
-
-                if (!TypeUtils.ContainsField(type))
-                {
-                    throw new ArgumentException($"Type {param} as a component parameter is not supported, because it doesn't contains any field");
-                }
-            }
-            else
-            {
-                app.TypeRegistrar.Register(type);
-            }
-        }
-
-        foreach (var type in descriptor.AllFilter)
-        {
-            app.TypeRegistrar.RegisterComponent(type);
-        }
-
-        foreach (var type in descriptor.AnyFilter)
-        {
-            app.TypeRegistrar.RegisterComponent(type);
-        }
-
-        foreach (var type in descriptor.NoneFilter)
-        {
-            app.TypeRegistrar.RegisterComponent(type);
-        }
-
-        // Check this here because we need to make sure all types in descriptor are valid
-        if (descriptor.NoneFilter.Length > 0)
-        {
-            if (parameters.Select(p => p.ParameterType).Intersect(descriptor.NoneFilter).Any())
-            {
-                throw new ArgumentException($"System {system} has component parameter that also in NoneFilter");
-            }
-        }
-
-        return parameters.Select(p =>
-        {
-            var targetAttr = p.CustomAttributes.FirstOrDefault(a => a.AttributeType == typeof(Resource));
-
-            if (targetAttr != null)
-            {
-                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, (bool)targetAttr.ConstructorArguments[0].Value!);
-            }
-
-            return new(p.ParameterType, p.IsIn);
-        }).ToArray();
-    }
-
-    private void Configure()
-    {
-        executionGraph.ForEach(x =>
-        {
-            if (x != executionGraph.Root)
-            {
-                x.Data.System.ConfigureAG(app, x.Data.Descriptor);
-            }
-        });
-    }
-
-    private void Commit()
-    {
-        entityCommanders.ForEach(x => x.Commit());
-        entityCommanders.Clear();
-    }
-
-    private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
-    {
-        var intersected = systemA.Parameters.Intersect(systemB.Parameters,
-            EqualityComparer<SystemParameterInfo>.Create((a, b) =>
-            {
-                var same = a.Type == b.Type;
-                if (same && a.ReadOnly && b.ReadOnly)
-                {
-                    return false;
-                }
-
-                return same;
-            }, info => HashCode.Combine(info.Type.GetHashCode(), info.ReadOnly))).ToArray();
-
-        return intersected.Length == 0;
-    }
-
-#endregion
-
-    protected void ExecuteImpl()
-    {
-        if (!isFrozen)
-        {
-            frozenDagNodes = executionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
-            isFrozen = true;
-        }
-
-        if (needConfigure)
-        {
-            Configure();
-            needConfigure = false;
-        }
-
-        foreach (var group in frozenDagNodes)
-        {
-            foreach (var frozenDagNode in group)
-            {
-                // tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
-                // entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
-                app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
-            }
-
-            app.ThreadPool.SpinWait();
-            // Task.WaitAll(tasks);
-            // tasks.Clear();
-
-            if (CommitPoint == CommitPointEnum.Synchronization)
-            {
-                Commit();
-            }
-
-            if (needConfigure)
-            {
-                Configure();
-                needConfigure = false;
-            }
-        }
-
-        if (CommitPoint == CommitPointEnum.ScheduleEnd)
-        {
-            Commit();
-        }
-    }
-}
-
-/// <summary>
-/// Executes with no condition.
-/// </summary>
-/// <param name="app">The application.</param>
-/// <param name="commitPoint">The commit point.</param>
-public sealed class DefaultSchedule(App app, BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, commitPoint)
-{
-    public override void Execute()
-    {
-        ExecuteImpl();
+        return scheduleDict.GetValueOrDefault(name);
     }
 }

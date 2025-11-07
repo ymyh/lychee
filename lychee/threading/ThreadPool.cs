@@ -41,6 +41,10 @@ public sealed class ThreadPool : IDisposable
                         act();
                         taskCompleteChannel.Writer.TryWrite(0);
                     }
+                    catch (ChannelClosedException)
+                    {
+                        break;
+                    }
                     catch (Exception e)
                     {
                         Console.WriteLine(e.StackTrace);

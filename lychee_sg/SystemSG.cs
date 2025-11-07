@@ -55,6 +55,21 @@ namespace lychee_sg
 
             context.RegisterSourceOutput(values, (spc, sysInfo) =>
             {
+                if (sysInfo.Params == null)
+                {
+                    var descriptor = new DiagnosticDescriptor(
+                        "LYCHEE_COMPILE_ERR_1004",
+                        "System must contain a method named 'Execute'",
+                        "System must contain a method named 'Execute'",
+                        "System Auto Implementation",
+                        DiagnosticSeverity.Error,
+                        isEnabledByDefault: true
+                    );
+
+                    spc.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, sysInfo.Name));
+                    return;
+                }
+
                 var componentTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Component).ToArray();
                 var resourceTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Resource || p.ParamKind == ParamKind.ResourceRef).ToArray();
                 var sb = new StringBuilder($@"
@@ -315,8 +330,8 @@ sealed partial class {sysInfo.Name} : ISystem
                     iterMoveNextCode.Add($"iter{i}.MoveNext()");
 
                     iterDeclCurrentCode.AppendLine(i == 0
-                        ? $"                var ({componentParams[i].Type.Name.ToLower()}, size) = iter{i}.Current;"
-                        : $"                var ({componentParams[i].Type.Name.ToLower()}, _) = iter{i}.Current;");
+                        ? $"                var ({componentParams[i].ParamName}, size) = iter{i}.Current;"
+                        : $"                var ({componentParams[i].ParamName}, _) = iter{i}.Current;");
                 }
 
                 var iterateChunkWhileExpr = $@"

@@ -35,13 +35,14 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
     /// <summary>
     /// Trigger all system schedules to execute once.
     /// </summary>
-    public void Update()
+    public void Update(ISchedule? scheduleEnd = null)
     {
-        SystemSchedules.Execute();
-
-        foreach (var ev in events)
+        if (SystemSchedules.Execute(scheduleEnd))
         {
-            ev.PrepareForNextUpdate();
+            foreach (var ev in events)
+            {
+                ev.PrepareForNextUpdate();
+            }
         }
     }
 

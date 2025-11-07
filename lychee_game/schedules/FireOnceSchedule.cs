@@ -3,12 +3,12 @@
 namespace lychee_game.schedules;
 
 /// <summary>
-/// Only execute once.
+/// Execute once then idle until <see cref="Reset"/> is called.
 /// </summary>
 /// <param name="app">The application.</param>
 /// <param name="commitPoint">The commit point.</param>
-public sealed class FireOnceSchedule(App app, BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.ScheduleEnd)
-    : BasicSchedule(app, commitPoint)
+public sealed class FireOnceSchedule(App app, string name, BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.ScheduleEnd)
+    : BasicSchedule(app, name, commitPoint)
 {
     private bool fired;
 
@@ -19,5 +19,13 @@ public sealed class FireOnceSchedule(App app, BasicSchedule.CommitPointEnum comm
             fired = true;
             ExecuteImpl();
         }
+    }
+
+    /// <summary>
+    /// Reset the fired status.
+    /// </summary>
+    public void Reset()
+    {
+        fired = false;
     }
 }

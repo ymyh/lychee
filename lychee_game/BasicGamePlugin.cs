@@ -1,27 +1,8 @@
 ﻿using lychee_game.schedules;
 using lychee;
-using lychee.attributes;
 using lychee.interfaces;
 
 namespace lychee_game;
-
-[AutoImplSystem]
-public partial class InitBasicGamePluginSystem
-{
-    private static void Execute([Resource] Time time)
-    {
-        time.Start();
-    }
-}
-
-[AutoImplSystem]
-public partial class UpdateTimeResourceSystem
-{
-    private static void Execute([Resource] Time time)
-    {
-        time.Update();
-    }
-}
 
 public sealed class DefaultPluginDescriptor
 {
@@ -36,7 +17,7 @@ public sealed class DefaultPluginDescriptor
 /// <list type="bullet">
 ///     <item>
 ///         <description>
-///             <see cref="StartUp"/> (Contains a <see cref="InitBasicGamePluginSystem"/>)
+///             <see cref="StartUp"/>
 ///         </description>
 ///     </item>
 ///     <item>
@@ -51,17 +32,7 @@ public sealed class DefaultPluginDescriptor
 ///     </item>
 ///     <item>
 ///         <description>
-///             <see cref="PreUpdate"/>
-///         </description>
-///     </item>
-///     <item>
-///         <description>
-///             <see cref="Update"/> (Contains a <see cref="UpdateTimeResourceSystem"/>)
-///         </description>
-///     </item>
-///     <item>
-///         <description>
-///             <see cref="PostUpdate"/>
+///             <see cref="Update"/>
 ///         </description>
 ///     </item>
 ///     <item>
@@ -75,19 +46,6 @@ public sealed class DefaultPluginDescriptor
 ///         </description>
 ///     </item>
 /// </list>
-/// It also provides the following resources:
-/// <list type="bullet">
-///     <item>
-///         <description>
-///             <see cref="Time"/>
-///         </description>
-///     </item>
-///     <item>
-///         <description>
-///             <see cref="GameControl"/>
-///         </description>
-///     </item>
-/// </list>
 /// </summary>
 /// <param name="desc">The plugin descriptor.</param>
 public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
@@ -97,8 +55,6 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
     public FixedIntervalSchedule FixedUpdate = null!;
 
     public DefaultSchedule First = null!;
-
-    public DefaultSchedule PreUpdate = null!;
 
     public DefaultSchedule Update = null!;
 
@@ -114,51 +70,25 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 
     public void Install(App app)
     {
-        app.AddResource(new Time());
-        app.AddResource(new GameControl());
+        StartUp = new(app, nameof(StartUp));
+        app.AddSchedule(StartUp);
 
-        {
-            StartUp = new(app);
-            app.AddSchedule(StartUp);
+        First = new(app, nameof(First));
+        app.AddSchedule(First);
 
-            StartUp.AddSystem(new InitBasicGamePluginSystem());
-        }
+        FixedUpdate = new(app, nameof(FixedUpdate), BasicSchedule.CommitPointEnum.Synchronization, desc.FixedUpdateInterval, desc.FixedUpdateCatchUpCount);
+        app.AddSchedule(FixedUpdate);
 
-        {
-            First = new(app);
-            app.AddSchedule(First);
-        }
+        Update = new(app, nameof(Update));
+        app.AddSchedule(Update);
 
-        {
-            FixedUpdate = new(app, BasicSchedule.CommitPointEnum.Synchronization, desc.FixedUpdateInterval, desc.FixedUpdateCatchUpCount);
-            app.AddSchedule(FixedUpdate);
-        }
+        PostUpdate = new(app, nameof(PostUpdate));
+        app.AddSchedule(PostUpdate);
 
-        {
-            PreUpdate = new(app);
-            app.AddSchedule(PreUpdate);
-        }
+        Render = new(app, nameof(Render));
+        app.AddSchedule(Render);
 
-        {
-            Update = new(app);
-            app.AddSchedule(Update);
-
-            Update.AddSystem(new UpdateTimeResourceSystem());
-        }
-
-        {
-            PostUpdate = new(app);
-            app.AddSchedule(PostUpdate);
-        }
-
-        {
-            Render = new(app);
-            app.AddSchedule(Render);
-        }
-
-        {
-            Last = new(app);
-            app.AddSchedule(Last);
-        }
+        Last = new(app, nameof(Last));
+        app.AddSchedule(Last);
     }
 }

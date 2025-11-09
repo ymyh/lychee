@@ -16,7 +16,7 @@ public sealed class App : IDisposable
 
     public readonly World World;
 
-    internal readonly ThreadPool ThreadPool;
+    public readonly ThreadPool ThreadPool;
 
     private readonly HashSet<Type> pluginInstalled = [];
 

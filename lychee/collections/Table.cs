@@ -44,7 +44,7 @@ public sealed class Table : IDisposable
 
     internal readonly List<TableMemoryChunk> Chunks = [];
 
-    private readonly int chunkCapacity;
+    internal readonly int ChunkCapacity;
 
     private readonly int chunkSizeBytes;
 
@@ -73,7 +73,7 @@ public sealed class Table : IDisposable
                     chunkSizeBytes *= 2;
                 }
 
-                chunkCapacity = chunkSizeBytes / lastByteOffset;
+                ChunkCapacity = chunkSizeBytes / lastByteOffset;
             }
         }
     }
@@ -121,7 +121,7 @@ public sealed class Table : IDisposable
         var typeInfo = Layout.TypeInfoList[typeIdx];
         var ptr = (byte*)Chunks[chunkIdx].Data;
 
-        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
+        return ptr + (typeInfo.Offset * ChunkCapacity + typeInfo.Size * indexInChunk);
     }
 
     public IEnumerable<(nint ptr, int size)> IterateOfTypeAmongChunk(int typeIdx)
@@ -134,11 +134,25 @@ public sealed class Table : IDisposable
 
             unsafe
             {
-                ptr = (nint)chunk.Data + typeInfo.Offset * chunkCapacity;
+                ptr = (nint)chunk.Data + typeInfo.Offset * ChunkCapacity;
             }
 
             yield return (ptr, chunk.Size);
         }
+    }
+
+    public (nint ptr, int size) GetChunkData(int typeIdx, int chunkIdx)
+    {
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+
+        nint ptr;
+
+        unsafe
+        {
+            ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * ChunkCapacity;
+        }
+
+        return (ptr, Chunks[chunkIdx].Size);
     }
 
 #endregion
@@ -158,6 +172,23 @@ public sealed class Table : IDisposable
         return (chunkIdx, idx);
     }
 
+    internal int CalcTotalOffset(int chunkIdx, int idx)
+    {
+        Debug.Assert((uint)chunkIdx < (uint)Chunks.Count);
+
+        var result = 0;
+
+        for (var i = 0; i < chunkIdx; i++)
+        {
+            var chunk = Chunks[i];
+            result += chunk.Size;
+        }
+
+        Debug.Assert(idx < Chunks[chunkIdx].Size);
+
+        return result + idx;
+    }
+
 #endregion
 
 #region Private methods
@@ -166,7 +197,7 @@ public sealed class Table : IDisposable
     {
         if (chunkSizeBytes > 0)
         {
-            var chunk = new TableMemoryChunk(chunkCapacity);
+            var chunk = new TableMemoryChunk(ChunkCapacity);
             chunk.Chunk.Alloc(chunkSizeBytes);
 
             Chunks.Add(chunk);

@@ -5,4 +5,4 @@
 /// Target class must be partial
 /// </summary>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class AutoImplSystem : Attribute;
+public sealed class AutoImplSystem(uint groupSize = 0, uint threadCount = 0) : Attribute;

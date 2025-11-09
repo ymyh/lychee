@@ -176,10 +176,46 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
 #region Public Methods
 
-    public IEnumerable<(nint ptr, int size)> IterateTypeAmongChunk(int typeId)
+    public IEnumerable<(nint ptr, int size)> IterateDataAmongChunk(int typeId)
     {
         var typeIdx = GetTypeIndex(typeId);
         return Table.IterateOfTypeAmongChunk(typeIdx);
+    }
+
+    public IEnumerable<(int chunkIdx, int chunkCount, int entityIdx)> IterateChunksAmongType(int groupSize)
+    {
+        var chunkIdx = 0;
+        var chunkCount = 0;
+        var count = 0;
+
+        while (chunkIdx < Table.Chunks.Count)
+        {
+            count += Table.Chunks[chunkIdx + chunkCount].Size;
+            chunkCount++;
+
+            if (count < groupSize)
+            {
+                if (chunkIdx == Table.Chunks.Count - 1)
+                {
+                    yield return (chunkIdx, chunkCount, Table.CalcTotalOffset(chunkIdx, 0));
+                    break;
+                }
+
+                continue;
+            }
+
+            yield return (chunkIdx, chunkCount, Table.CalcTotalOffset(chunkIdx, 0));
+
+            chunkIdx += chunkCount;
+            chunkCount = 0;
+            count = 0;
+        }
+    }
+
+    public (nint ptr, int size) GetChunkData(int typeId, int chunkIdx)
+    {
+        var typeIdx = GetTypeIndex(typeId);
+        return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
     public Span<(int, Entity)> GetEntitiesSpan()

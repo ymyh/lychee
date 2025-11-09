@@ -291,7 +291,7 @@ public abstract class BasicSchedule : ISchedule
                 app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
             }
 
-            app.ThreadPool.SpinWait();
+            app.ThreadPool.AsTask().Wait();
             // Task.WaitAll(tasks);
             // tasks.Clear();
 

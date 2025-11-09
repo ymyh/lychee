@@ -73,7 +73,7 @@ public sealed class ThreadPool : IDisposable
     {
         while (true)
         {
-            await taskCompleteChannel.Reader.ReadAsync().ConfigureAwait(false);
+            await taskCompleteChannel.Reader.ReadAsync();
             taskCount--;
 
             if (taskCount == 0)

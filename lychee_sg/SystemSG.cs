@@ -89,9 +89,7 @@ sealed partial class {sysInfo.Name} : ISystem
 {{
     private static class SystemDataAG
     {{
-        public static ResourcePool Pool;
-
-        public static ThreadPool ThreadPool;
+        public static ResourcePool Pool;{(sysInfo.ThreadCount > 1 ? "\n        public static ThreadPool ThreadPool;" : "")}
 
         public static int[] TypeIdList;
 
@@ -392,8 +390,7 @@ sealed partial class {sysInfo.Name} : ISystem
                             : $"                var ({componentParams[i].ParamName}, _) = iter{i}.Current;");
                     }
 
-                    var iterateChunkWhileExpr = $@"
-{declIterCode}
+                    var iterateChunkWhileExpr = $@"{declIterCode}
             while ({string.Join(" & ", iterMoveNextCode)})
             {{
 {iterDeclCurrentCode}

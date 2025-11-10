@@ -1,7 +1,7 @@
 ﻿namespace lychee.attributes;
 
 /// <summary>
-/// Mark a parameter as a resource.
+/// Mark a system parameter is supplied from resource.
 /// </summary>
 /// <param name="readOnly">Only apply on managed types. If true, we assume the parameter will be read-only.
 /// If this assumption is violated, it may cause multi-threading synchronization issues. <br/>

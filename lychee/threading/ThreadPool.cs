@@ -14,6 +14,11 @@ public sealed class ThreadPool : IDisposable
 
     public ThreadPool(int threadCount)
     {
+        if (threadCount <= 1)
+        {
+            throw new ArgumentException("threadCount must be greater than 1");
+        }
+
         threads = new(threadCount);
         sendTaskChannel = Channel.CreateBounded<Action>(new BoundedChannelOptions(64)
         {

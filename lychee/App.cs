@@ -124,7 +124,7 @@ public sealed class App : IDisposable
     /// <summary>
     /// Update the application once.
     /// </summary>
-    /// <param name="scheduleEnd"></param>
+    /// <param name="scheduleEnd">Trigger schedule execution up to this schedule. If null, all schedules will be executed.</param>
     public void Update(ISchedule? scheduleEnd = null)
     {
         World.Update(scheduleEnd);

@@ -34,6 +34,7 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
 
     /// <summary>
     /// Trigger all system schedules to execute once.
+    /// <param name="scheduleEnd">Trigger schedule execution up to this schedule. If null, all schedules will be executed.</param>
     /// </summary>
     public void Update(ISchedule? scheduleEnd = null)
     {

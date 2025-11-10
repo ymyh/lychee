@@ -171,6 +171,8 @@ public abstract class BasicSchedule : ISchedule
         var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
         var parameters = method.GetParameters();
 
+        CheckAutoImplSystemAttribute(system, sysType);
+
         foreach (var param in parameters)
         {
             var type = param.ParameterType;
@@ -230,6 +232,22 @@ public abstract class BasicSchedule : ISchedule
 
             return new(p.ParameterType, p.IsIn);
         }).ToArray();
+    }
+
+    private static void CheckAutoImplSystemAttribute(ISystem system, Type systemType)
+    {
+        var attribute = systemType.CustomAttributes.FirstOrDefault(a => a.AttributeType == typeof(AutoImplSystem));
+
+        if (attribute != null)
+        {
+            var groupSize = (uint)attribute.ConstructorArguments[0].Value!;
+            var threadCount = (uint)attribute.ConstructorArguments[1].Value!;
+
+            if ((groupSize > 0 && threadCount == 0) || (groupSize == 0 && threadCount > 0))
+            {
+                throw new ArgumentException($"System {system} has a invalid AutoImplSystem attribute parameter");
+            }
+        }
     }
 
     private void Configure()

@@ -184,6 +184,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     public IEnumerable<(int chunkIdx, int chunkCount, int entityIdx)> IterateChunksAmongType(int groupSize)
     {
+        if (groupSize < 1)
+        {
+            throw new ArgumentException("groupSize must be greater than 0");
+        }
+
         var chunkIdx = 0;
         var chunkCount = 0;
         var count = 0;

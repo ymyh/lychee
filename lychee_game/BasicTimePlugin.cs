@@ -23,8 +23,18 @@ public partial class UpdateTimeResourceSystem
     }
 }
 
+/// <summary>
+/// Provide basic time support. Requires <see cref="BasicGamePlugin"/>. <br/>
+/// Add a <see cref="Time"/> resource to the app. <br/>
+/// Add a <see cref="InitBasicTimePluginSystem"/> to the <see cref="BasicGamePlugin.StartUp"/> schedule. <br/>
+/// Add a <see cref="UpdateTimeResourceSystem"/> to the <see cref="BasicGamePlugin.Update"/> schedule.
+/// </summary>
 public sealed class BasicTimePlugin : IPlugin
 {
+    public readonly InitBasicTimePluginSystem InitBasicTimePluginSystem = new();
+
+    public readonly UpdateTimeResourceSystem UpdateTimeResourceSystem = new();
+
     public void Install(App app)
     {
         if (!app.CheckInstalledPlugin<BasicGamePlugin>())
@@ -35,9 +45,9 @@ public sealed class BasicTimePlugin : IPlugin
         app.AddResource(new Time());
 
         var startUp = (FireOnceSchedule)app.GetSchedule("StartUp")!;
-        startUp.AddSystem(new InitBasicTimePluginSystem());
+        startUp.AddSystem(InitBasicTimePluginSystem);
 
         var update = (DefaultSchedule)app.GetSchedule("Update")!;
-        update.AddSystem(new UpdateTimeResourceSystem());
+        update.AddSystem(UpdateTimeResourceSystem);
     }
 }

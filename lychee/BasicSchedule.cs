@@ -106,6 +106,7 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
+    ///
     /// Add a system to schedule, with descriptor. The added system will call <see cref="ISystem.InitializeAG"/>.
     /// </summary>
     /// <param name="system">The system to added.</param>
@@ -223,11 +224,11 @@ public abstract class BasicSchedule : ISchedule
 
         return parameters.Select(p =>
         {
-            var targetAttr = p.CustomAttributes.FirstOrDefault(a => a.AttributeType == typeof(Resource));
+            var resourceAttr = p.GetCustomAttribute<Resource>();
 
-            if (targetAttr != null)
+            if (resourceAttr != null)
             {
-                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, (bool)targetAttr.ConstructorArguments[0].Value!);
+                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, resourceAttr.ReadOnly);
             }
 
             return new(p.ParameterType, p.IsIn);
@@ -236,12 +237,12 @@ public abstract class BasicSchedule : ISchedule
 
     private static void CheckAutoImplSystemAttribute(ISystem system, Type systemType)
     {
-        var attribute = systemType.CustomAttributes.FirstOrDefault(a => a.AttributeType == typeof(AutoImplSystem));
+        var attribute = systemType.GetCustomAttribute<AutoImplSystem>();
 
         if (attribute != null)
         {
-            var groupSize = (uint)attribute.ConstructorArguments[0].Value!;
-            var threadCount = (uint)attribute.ConstructorArguments[1].Value!;
+            var groupSize = attribute.GroupSize;
+            var threadCount = attribute.ThreadCount;
 
             if ((groupSize > 0 && threadCount == 0) || (groupSize == 0 && threadCount > 0))
             {

@@ -104,12 +104,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     /// <returns>Returns true if the value is found, otherwise false</returns>
     public bool ContainsKey(int key)
     {
-        if ((uint)key < (uint)sparseArray.Count && sparseArray[key] != -1)
-        {
-            return true;
-        }
-
-        return false;
+        return (uint)key < (uint)sparseArray.Count && sparseArray[key] != -1;
     }
 
     /// <summary>
@@ -121,13 +116,13 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
         denseArray.ForEach(x => { action(x.key, x.value); });
     }
 
-    public delegate void ForEachRefDelegate<T>(int key, ref T value);
+    public delegate void ForEachRefDelegate(int key, ref T value);
 
     /// <summary>
     /// Like <see cref="ForEach"/>, except the action parameter is pass by ref.
     /// </summary>
     /// <param name="action"></param>
-    public void ForEachRef(ForEachRefDelegate<T> action)
+    public void ForEachRef(ForEachRefDelegate action)
     {
         denseArray.ForEach(x => { action(x.key, ref x.value); });
     }
@@ -182,7 +177,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
         {
             var lastElement = denseArray[^1];
             denseArray[denseIndex] = lastElement;
-            sparseArray[lastElement.Item1] = denseIndex;
+            sparseArray[lastElement.key] = denseIndex;
         }
 
         // 移除最后一个元素
@@ -210,6 +205,10 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
         return true;
     }
 
+    /// <summary>
+    /// Get dense array as span.
+    /// </summary>
+    /// <returns></returns>
     public Span<(int, T)> GetDenseAsSpan()
     {
         return CollectionsMarshal.AsSpan(denseArray);

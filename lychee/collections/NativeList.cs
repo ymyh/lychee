@@ -330,7 +330,7 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     /// <summary>
     /// Performs the specified action on each element of the <see cref="NativeList&lt;T&gt;"/>.
     /// </summary>
-    /// <param name="action">The delegate to perform on each element of the <see cref="NativeList&lt;T&gt;"/>.</param>
+    /// <param name="act">The delegate to perform on each element of the <see cref="NativeList&lt;T&gt;"/>.</param>
     public void ForEach(Action<T> act)
     {
         unsafe

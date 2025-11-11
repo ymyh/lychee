@@ -8,4 +8,7 @@
 /// Unmanaged types are determined by the parameter modifier (i.e. `in`, `out`, `ref`).
 /// </param>
 [AttributeUsage(AttributeTargets.Parameter)]
-public sealed class Resource(bool readOnly = false) : Attribute;
+public sealed class Resource(bool readOnly = false) : Attribute
+{
+    public bool ReadOnly = readOnly;
+}

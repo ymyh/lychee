@@ -9,4 +9,9 @@
 /// <param name="threadCount">Number of thread to execute system</param>
 /// </summary>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class AutoImplSystem(uint groupSize = 0, uint threadCount = 0) : Attribute;
+public sealed class AutoImplSystem(uint groupSize = 0, uint threadCount = 0) : Attribute
+{
+    public uint GroupSize = groupSize;
+
+    public uint ThreadCount = threadCount;
+}

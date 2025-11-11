@@ -26,18 +26,30 @@ public struct Entity : IEquatable<Entity>
     {
         return !a.Equals(b);
     }
+
+    public override bool Equals(object? obj)
+    {
+        return obj is Entity other && Equals(other);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Generation, ID);
+    }
 }
 
 public struct EntityInfo
 {
     internal int ArchetypeId;
 
-    internal int ChunkIdx;
+    internal readonly int ChunkIdx;
 
-    internal int Idx;
+    internal readonly int Idx;
 
     internal EntityInfo(int archetypeId, int chunkIdx, int idx)
     {
         ArchetypeId = archetypeId;
+        ChunkIdx = chunkIdx;
+        Idx = idx;
     }
 }

@@ -7,6 +7,7 @@ namespace lychee;
 /// The ECS application. <br/>
 /// </summary>
 public sealed class App : IDisposable
+
 {
 #region Fields
 

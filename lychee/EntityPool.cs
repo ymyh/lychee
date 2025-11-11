@@ -80,7 +80,7 @@ public sealed class EntityPool : IDisposable
             if (id == entities.Count)
             {
                 entities.Add(new(id, 0));
-                entityInfoList.Add(new (archetypeId, chunkIdx, idx));
+                entityInfoList.Add(new(archetypeId, chunkIdx, idx));
             }
             else
             {
@@ -107,7 +107,7 @@ public sealed class EntityPool : IDisposable
     public bool RemoveEntity(Entity entity)
     {
         var id = entity.ID;
-        Debug.Assert(id >= 0 && id < entities.Count);
+        Debug.Assert((uint)id < (uint)entities.Count);
 
         if (entity.Generation != entities[id].Generation)
         {
@@ -139,7 +139,7 @@ public sealed class EntityPool : IDisposable
     public bool CommitRemoveEntity(Entity entity)
     {
         var id = entity.ID;
-        Debug.Assert(id >= 0 && id < entities.Count);
+        Debug.Assert((uint)id < (uint)entities.Count);
 
         if (entity.Generation != entities[id].Generation)
         {

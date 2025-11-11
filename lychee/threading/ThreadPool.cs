@@ -35,7 +35,6 @@ public sealed class ThreadPool : IDisposable
 
         for (var i = 0; i < threadCount; i++)
         {
-            var num = i;
             var thread = new Thread(async () =>
             {
                 while (true)
@@ -52,6 +51,7 @@ public sealed class ThreadPool : IDisposable
                     }
                     catch (Exception e)
                     {
+                        Console.WriteLine(e.Message);
                         Console.WriteLine(e.StackTrace);
                         break;
                     }
@@ -76,30 +76,21 @@ public sealed class ThreadPool : IDisposable
 
     public async Task AsTask()
     {
-        while (true)
+        while (taskCount > 0)
         {
             await taskCompleteChannel.Reader.ReadAsync();
             taskCount--;
-
-            if (taskCount == 0)
-            {
-                break;
-            }
         }
     }
 
     public void SpinWait()
     {
-        while (true)
+        while (taskCount > 0)
         {
             var task = taskCompleteChannel.Reader.ReadAsync();
             System.Threading.SpinWait.SpinUntil(() => task.IsCompleted);
 
             taskCount--;
-            if (taskCount == 0)
-            {
-                break;
-            }
         }
     }
 

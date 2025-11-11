@@ -37,6 +37,11 @@ public sealed class DefaultPluginDescriptor
 ///     </item>
 ///     <item>
 ///         <description>
+///             <see cref="PostUpdate"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
 ///             <see cref="Render"/>
 ///         </description>
 ///     </item>

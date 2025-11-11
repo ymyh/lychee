@@ -75,7 +75,6 @@ public sealed class EntityCommander(App app) : IDisposable
                 return false;
             }
 
-            // EntityPool.MarkRemoveEntity(entity);
             entityPool.GetEntityInfo(entity, out var entityInfo);
 
             if (entityInfo.ArchetypeId != SrcArchetype.ID)

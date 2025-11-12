@@ -28,6 +28,22 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
+    /// Indicates how the schedule should execute the systems.
+    /// </summary>
+    public enum ExecutionModeEnum
+    {
+        /// <summary>
+        /// Executes the systems in a single thread.
+        /// </summary>
+        SingleThread,
+
+        /// <summary>
+        /// Executes the systems in multiple threads.
+        /// </summary>
+        MultiThread,
+    }
+
+    /// <summary>
     /// The execution graph of systems. You can easily see the execution order of systems through here.
     /// We don't recommend you modify this graph directly, you should use other APIs to do this.
     /// Make sure you know what you are doing before modifying this.
@@ -38,11 +54,11 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly App app;
 
-    private readonly List<Task> tasks = [];
-
     private readonly List<EntityCommander> entityCommanders = [];
 
     public CommitPointEnum CommitPoint { get; set; }
+
+    public ExecutionModeEnum ExecutionMode { get; set; }
 
     private bool isFrozen;
 
@@ -50,10 +66,11 @@ public abstract class BasicSchedule : ISchedule
 
 #region Constructor
 
-    protected BasicSchedule(App app, string name, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
+    protected BasicSchedule(App app, string name, ExecutionModeEnum executionMode = ExecutionModeEnum.SingleThread, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
     {
         this.app = app;
         CommitPoint = commitPoint;
+        ExecutionMode = executionMode;
         Name = name;
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
@@ -305,14 +322,20 @@ public abstract class BasicSchedule : ISchedule
         {
             foreach (var frozenDagNode in group)
             {
-                // tasks.Add(Task.Run(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); }));
-                // entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
-                app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
+                if (ExecutionMode == ExecutionModeEnum.SingleThread)
+                {
+                    entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
+                }
+                else
+                {
+                    app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
+                }
             }
 
-            app.ThreadPool.AsTask().Wait();
-            // Task.WaitAll(tasks);
-            // tasks.Clear();
+            if (ExecutionMode == ExecutionModeEnum.MultiThread)
+            {
+                app.ThreadPool.AsTask().Wait();
+            }
 
             if (CommitPoint == CommitPointEnum.Synchronization)
             {
@@ -338,8 +361,12 @@ public abstract class BasicSchedule : ISchedule
 /// </summary>
 /// <param name="app">The application.</param>
 /// <param name="commitPoint">The commit point.</param>
-public sealed class DefaultSchedule(App app, string name, BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, name, commitPoint)
+public sealed class DefaultSchedule(
+    App app,
+    string name,
+    BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
+    BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     public override void Execute()
     {

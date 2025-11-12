@@ -81,7 +81,11 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
         First = new(app, nameof(First));
         app.AddSchedule(First);
 
-        FixedUpdate = new(app, nameof(FixedUpdate), BasicSchedule.CommitPointEnum.Synchronization, desc.FixedUpdateInterval, desc.FixedUpdateCatchUpCount);
+        FixedUpdate = new(app, nameof(FixedUpdate))
+        {
+            FixedUpdateInterval = desc.FixedUpdateInterval,
+            CatchUpCount = desc.FixedUpdateCatchUpCount
+        };
         app.AddSchedule(FixedUpdate);
 
         Update = new(app, nameof(Update));

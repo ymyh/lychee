@@ -13,10 +13,11 @@ namespace lychee_game.schedules;
 public sealed class FixedIntervalSchedule(
     App app,
     string name,
+    BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization,
     int fixedUpdateInterval = 20,
     int catchUpCount = 5)
-    : BasicSchedule(app, name, commitPoint)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     private long accErr = fixedUpdateInterval;
 

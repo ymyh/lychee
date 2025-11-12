@@ -12,8 +12,9 @@ public sealed class ConditionalSchedule(
     App app,
     string name,
     Func<bool> predicate,
+    BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, name, commitPoint)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     public override void Execute()
     {

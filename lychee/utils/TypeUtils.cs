@@ -41,19 +41,17 @@ public static class TypeUtils
         var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
         List<Type> list = [];
 
-        var i = 1;
         foreach (var field in fields)
         {
             if (field.Name == "Rest")
             {
-                var subList = (List<Type>?)GetTupleTypesMethod?.MakeGenericMethod(field.FieldType).Invoke(null, null);
+                var subList = (List<Type>)GetTupleTypesMethod.MakeGenericMethod(field.FieldType).Invoke(null, null)!;
                 list.AddRange(subList);
 
                 continue;
             }
 
             list.Add(field.FieldType);
-            i += 1;
         }
 
         return list;

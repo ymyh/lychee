@@ -41,7 +41,7 @@ public sealed class EntityCommander(App app) : IDisposable
 
     private readonly SparseMap<ModifiedEntityInfo> modifiedEntityInfoMap = new();
 
-    private readonly SparseMap<int> removedEntityMap = new();
+    private readonly SparseMap<Entity> removedEntityMap = new();
 
     internal EntityTransferInfo? TransferDstInfo;
 
@@ -92,7 +92,7 @@ public sealed class EntityCommander(App app) : IDisposable
 
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity);
-        removedEntityMap.Add(entity.ID, 0);
+        removedEntityMap.Add(entity.ID, entity);
 
         return true;
     }
@@ -288,6 +288,11 @@ public sealed class EntityCommander(App app) : IDisposable
         {
             var entity = entityPool.CommitReservedEntity(id, info.Archetype.ID, info.ChunkIdx, info.Idx);
             info.Archetype.CommitReservedEntity(entity);
+        }
+
+        foreach (var (_, entity) in removedEntityMap)
+        {
+            entityPool.CommitRemoveEntity(entity);
         }
 
         ArchetypeManager.Commit();

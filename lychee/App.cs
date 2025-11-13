@@ -16,7 +16,7 @@ public sealed class App : IDisposable
 
     public readonly World World;
 
-    public readonly ThreadPool ThreadPool;
+    internal readonly ThreadPool ThreadPool;
 
     private readonly HashSet<Type> pluginInstalled = [];
 
@@ -56,9 +56,9 @@ public sealed class App : IDisposable
         World.AddEvent(ev);
     }
 
-    public void AddResource<T>(T resource)
+    public T AddResource<T>(T resource)
     {
-        ResourcePool.AddResource(resource);
+        return ResourcePool.AddResource(resource);
     }
 
     public T GetResource<T>()
@@ -124,7 +124,9 @@ public sealed class App : IDisposable
     /// <summary>
     /// Update the application once.
     /// </summary>
-    /// <param name="scheduleEnd">Trigger schedule execution up to this schedule. If null, all schedules will be executed.</param>
+    /// <param name="scheduleEnd">Trigger schedule execution up to before this schedule. If null or not found, all schedules will be executed.
+    /// Call this method again will continue from the last schedule until all schedules are executed and then begin a new round.
+    /// </param>
     public void Update(ISchedule? scheduleEnd = null)
     {
         World.Update(scheduleEnd);

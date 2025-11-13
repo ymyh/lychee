@@ -85,7 +85,7 @@ using ThreadPool = lychee.threading.ThreadPool;
 
 namespace {sysInfo.Namespace};
 
-sealed partial class {sysInfo.Name} : ISystem
+partial class {sysInfo.Name} : ISystem
 {{
     private static class SystemDataAG
     {{
@@ -413,8 +413,7 @@ sealed partial class {sysInfo.Name} : ISystem
             else
             {
                 body = $@"
-{declResourceCode}        Execute({execParams});
-        {(hasAfterExecute ? "AfterExecute();" : "")}
+{declResourceCode}        Execute({execParams}); {(hasAfterExecute ? "\n        AfterExecute();" : "")}
 
         return SystemDataAG.EntityCommander;";
             }

@@ -7,7 +7,8 @@ using lychee.utils;
 namespace lychee;
 
 /// <summary>
-/// A base class for schedules that provides basic functionality.
+/// A base class for schedule. Providing basic functionality like add and execute system. <br/>
+/// It provides two modes to execute systems, see <see cref="ExecutionModeEnum"/>.
 /// </summary>
 public abstract class BasicSchedule : ISchedule
 {
@@ -95,7 +96,7 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     /// <typeparam name="T">The type of system to added.</typeparam>
     /// <returns>The system just added.</returns>
-    public T AddSystem<[SystemConcept, SealedRequired] T>() where T : ISystem, new()
+    public T AddSystem<[SystemConcept] T>() where T : ISystem, new()
     {
         return AddSystem(new T(), new());
     }
@@ -106,7 +107,7 @@ public abstract class BasicSchedule : ISchedule
     /// <param name="descriptor">The system descriptor</param>
     /// <typeparam name="T">The type of system to added.</typeparam>
     /// <returns>The system just added.</returns>
-    public T AddSystem<[SystemConcept, SealedRequired] T>(SystemDescriptor descriptor) where T : ISystem, new()
+    public T AddSystem<[SystemConcept] T>(SystemDescriptor descriptor) where T : ISystem, new()
     {
         return AddSystem(new T(), descriptor);
     }
@@ -117,20 +118,19 @@ public abstract class BasicSchedule : ISchedule
     /// <param name="system">The system to added.</param>
     /// <typeparam name="T">The system type.</typeparam>
     /// <returns>The system just added.</returns>
-    public T AddSystem<[SystemConcept, SealedRequired] T>(T system) where T : ISystem
+    public T AddSystem<[SystemConcept] T>(T system) where T : ISystem
     {
         return AddSystem(system, new());
     }
 
     /// <summary>
-    ///
     /// Add a system to schedule, with descriptor. The added system will call <see cref="ISystem.InitializeAG"/>.
     /// </summary>
     /// <param name="system">The system to added.</param>
     /// <param name="descriptor">The system descriptor</param>
     /// <typeparam name="T">The type of system to added.</typeparam>
     /// <returns>The system just added</returns>
-    public T AddSystem<[SystemConcept, SealedRequired] T>(T system, SystemDescriptor descriptor) where T : ISystem
+    public T AddSystem<[SystemConcept] T>(T system, SystemDescriptor descriptor) where T : ISystem
     {
         system.InitializeAG(app);
 

@@ -16,8 +16,9 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// </summary>
     /// <param name="resource">The resource to add.</param>
     /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <returns>The resource just added.</returns>
     /// <exception cref="ArgumentException">Resource already exists.</exception>
-    public void AddResource<T>(T resource)
+    public T AddResource<T>(T resource)
     {
         Debug.Assert(resource != null);
         typeRegistrar.Register<T>();
@@ -44,6 +45,8 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
                 throw new ArgumentException($"Resource {typeof(T).Name} already exists");
             }
         }
+
+        return resource;
     }
 
     /// <summary>

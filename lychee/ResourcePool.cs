@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace lychee;
@@ -84,12 +85,30 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
-    public ref T GetResourceRef<T>() where T : unmanaged
+    public ref T GetResourceStructRef<T>() where T : unmanaged
     {
         try
         {
             var arr = (byte[])dataMap[typeof(T)];
             return ref MemoryMarshal.AsRef<T>(new Span<byte>(arr));
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
+        }
+    }
+
+    /// <summary>
+    /// Get the resource from the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <returns>The resource.</returns>
+    /// <exception cref="ArgumentException">Resource does not exist.</exception>
+    public ref T GetResourceClassRef<T>() where T : class
+    {
+        try
+        {
+            return ref Unsafe.As<object, T>(ref CollectionsMarshal.GetValueRefOrNullRef(dataMap, typeof(T)));
         }
         catch (KeyNotFoundException)
         {

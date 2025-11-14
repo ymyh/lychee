@@ -66,9 +66,14 @@ public sealed class App : IDisposable
         return ResourcePool.GetResource<T>();
     }
 
-    public ref T GetResourceRef<T>() where T : unmanaged
+    public ref T GetResourceStructRef<T>() where T : unmanaged
     {
-        return ref ResourcePool.GetResourceRef<T>();
+        return ref ResourcePool.GetResourceStructRef<T>();
+    }
+
+    public ref T GetResourceClassRef<T>() where T : class
+    {
+        return ref ResourcePool.GetResourceClassRef<T>();
     }
 
     public void AddSchedule(ISchedule schedule)

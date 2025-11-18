@@ -55,7 +55,7 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly App app;
 
-    private readonly List<EntityCommander> entityCommanders = [];
+    private readonly List<Commands> entityCommanders = [];
 
     public CommitPointEnum CommitPoint { get; set; }
 
@@ -177,6 +177,14 @@ public abstract class BasicSchedule : ISchedule
     {
         ExecutionGraph.Clear();
         ExecutionGraph.AddNode(new());
+    }
+
+    public T AddObserver<[SystemConcept] T>() where T : ISystem, new()
+    {
+        var system = new T();
+        system.InitializeAG(app);
+
+        return system;
     }
 
 #endregion

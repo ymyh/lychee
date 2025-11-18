@@ -1,21 +1,22 @@
 ﻿using lychee;
+using lychee.collections;
 using lychee.interfaces;
 
 namespace lychee_game;
 
 public sealed class Relationship
 {
-    private Dictionary<Entity, List<Entity>> relationships = new();
+    private readonly SparseMap<(Entity parent, List<Entity> children)> relationships = new();
 
     public void AddRelationship(Entity parent, Entity child)
     {
-        if (!relationships.TryGetValue(parent, out var children))
+        if (!relationships.TryGetValue(parent.ID, out var relation))
         {
-            children = [];
-            relationships.Add(parent, children);
+            relation.children = [];
+            relationships.Add(parent.ID, relation);
         }
 
-        children.Add(child);
+        relation.children.Add(child);
     }
 }
 

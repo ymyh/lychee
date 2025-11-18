@@ -29,7 +29,7 @@ namespace lychee_sg
         Resource,
         ResourceRef,
         Entity,
-        EntityCommander,
+        Commands,
     }
 
     internal struct ParamInfo
@@ -95,7 +95,7 @@ partial class {sysInfo.Name} : ISystem
 
         public static Archetype[] Archetypes;
 
-        public static EntityCommander EntityCommander;
+        public static Commands Commands;
     }}
 {MakeResourceDataAGCode(resourceTypes)}
 {MakeInitializeAGCode(componentTypes, resourceTypes, sysInfo.ThreadCount)}
@@ -149,9 +149,9 @@ partial class {sysInfo.Name} : ISystem
                         {
                             var paramKind = ParamKind.Component;
 
-                            if (x.Type.ToDisplayString() == "lychee.EntityCommander")
+                            if (x.Type.ToDisplayString() == "lychee.Commands")
                             {
-                                paramKind = ParamKind.EntityCommander;
+                                paramKind = ParamKind.Commands;
                             }
                             else if (x.Type.ToDisplayString() == "lychee.Entity")
                             {
@@ -204,11 +204,11 @@ partial class {sysInfo.Name} : ISystem
             {
                 if (resourceType.ParamKind == ParamKind.Resource)
                 {
-                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.ResourcePool.GetResource<{resourceType.Type}>();");
+                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.GetResource<{resourceType.Type}>();");
                 }
                 else
                 {
-                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.ResourcePool.GetResourcePtr<{resourceType.Type}>();");
+                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.GetResourcePtr<{resourceType.Type}>();");
                 }
             }
 
@@ -220,7 +220,7 @@ partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Pool = app.ResourcePool;{initThreadPoolCode}
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.EntityCommander = new(app);
+        SystemDataAG.Commands = new(app);
 
 {resourceDecl}
     }}";
@@ -290,16 +290,30 @@ partial class {sysInfo.Name} : ISystem
                         break;
 
                     case ParamKind.Resource:
-                        return $"ResourceDataAG.{paramName}";
+
+                        switch (param.RefKind)
+                        {
+                            case RefKind.In:
+                            case RefKind.RefReadOnlyParameter:
+                                return $"in {paramName}";
+                            case RefKind.Out:
+                                return $"out {paramName}";
+                            case RefKind.Ref:
+                                return $"ref {paramName}";
+                            case RefKind.None:
+                                return $"ResourceDataAG.{paramName}";
+                        }
+
+                        break;
 
                     case ParamKind.ResourceRef:
                         switch (param.RefKind)
                         {
                             case RefKind.In:
                             case RefKind.RefReadOnlyParameter:
-                                return "in " + paramName;
+                                return $"in {paramName}";
                             case RefKind.Out:
-                                return "out " + paramName;
+                                return $"out {paramName}";
                             case RefKind.Ref:
                                 return $"ref {paramName}";
                             case RefKind.None:
@@ -308,8 +322,8 @@ partial class {sysInfo.Name} : ISystem
 
                         break;
 
-                    case ParamKind.EntityCommander:
-                        return "SystemDataAG.EntityCommander";
+                    case ParamKind.Commands:
+                        return "SystemDataAG.Commands";
 
                     case ParamKind.Entity:
                         hasEntityParam = true;
@@ -330,6 +344,10 @@ partial class {sysInfo.Name} : ISystem
                     if (resourceParam.ParamKind == ParamKind.ResourceRef)
                     {
                         declResourceCode.AppendLine($"        ref var {paramName} = ref MemoryMarshal.AsRef<{resourceParam.Type}>(new Span<byte>(ResourceDataAG.{paramName}));");
+                    }
+                    else if (resourceParam.ParamKind == ParamKind.Resource && resourceParam.RefKind != RefKind.None)
+                    {
+                        declResourceCode.AppendLine($"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
                     }
                 }
             }
@@ -407,7 +425,7 @@ partial class {sysInfo.Name} : ISystem
 {iterateChunkWhileExpr}
         }}{(hasAfterExecute ? "\n        AfterExecute();" : "")}
 
-        return SystemDataAG.EntityCommander;";
+        return SystemDataAG.Commands;";
                 }
             }
             else
@@ -415,11 +433,11 @@ partial class {sysInfo.Name} : ISystem
                 body = $@"
 {declResourceCode}        Execute({execParams}); {(hasAfterExecute ? "\n        AfterExecute();" : "")}
 
-        return SystemDataAG.EntityCommander;";
+        return SystemDataAG.Commands;";
             }
 
             return $@"
-    public unsafe EntityCommander ExecuteAG()
+    public unsafe Commands ExecuteAG()
     {{{body}
     }}";
         }

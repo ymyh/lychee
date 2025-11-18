@@ -133,24 +133,4 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
             throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
         }
     }
-
-    /// <summary>
-    /// Update the resource in the pool.
-    /// </summary>
-    /// <param name="resource">The resource to update.</param>
-    /// <typeparam name="T">The type of the resource.</typeparam>
-    /// <exception cref="ArgumentException">Resource does not exist.</exception>
-    public void UpdateResource<T>(T resource) where T : class
-    {
-        Debug.Assert(resource != null);
-
-        if (dataMap.ContainsKey(typeof(T)))
-        {
-            dataMap[typeof(T)] = resource;
-        }
-        else
-        {
-            throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
-        }
-    }
 }

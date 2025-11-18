@@ -37,7 +37,7 @@ public sealed class BasicTimePlugin : IPlugin
 
     public void Install(App app)
     {
-        if (!app.CheckInstalledPlugin<BasicGamePlugin>())
+        if (!app.CheckPluginInstalled<BasicGamePlugin>())
         {
             throw new PluginRequirementException("BasicGamePlugin is required");
         }

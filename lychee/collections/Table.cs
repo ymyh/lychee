@@ -145,14 +145,11 @@ public sealed class Table : IDisposable
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
-        nint ptr;
-
         unsafe
         {
-            ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * ChunkCapacity;
+            var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * ChunkCapacity;
+            return (ptr, Chunks[chunkIdx].Size);
         }
-
-        return (ptr, Chunks[chunkIdx].Size);
     }
 
 #endregion

@@ -205,9 +205,9 @@ public sealed class TypeRegistrar
     /// <summary>
     /// Gets id by type T
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <returns></returns>
-    public int? GetTypeId<T>()
+    /// <typeparam name="T">The target type.</typeparam>
+    /// <returns>The id of the target type. Returns -1 if the type is not registered.</returns>
+    public int GetTypeId<T>()
     {
         var type = typeof(T);
         return GetTypeId(type);
@@ -216,15 +216,10 @@ public sealed class TypeRegistrar
     /// <summary>
     /// Gets id by full type
     /// </summary>
-    /// <param name="type"></param>
-    /// <returns></returns>
-    public int? GetTypeId(Type type)
+    /// <param name="type">The target type.</param>
+    /// <returns>The id of the target type. Returns -1 if the type is not registered.</returns>
+    public int GetTypeId(Type type)
     {
-        if (typeToIdDict.TryGetValue(type, out var id))
-        {
-            return id;
-        }
-
-        return null;
+        return typeToIdDict.GetValueOrDefault(type, -1);
     }
 }

@@ -97,6 +97,11 @@ public sealed class EntityPool : IDisposable
 
     public bool CheckEntityValid(Entity entity)
     {
+        if ((uint)entity.ID >= (uint)entities.Count)
+        {
+            return false;
+        }
+
         return entities[entity.ID].Generation == entity.Generation;
     }
 
@@ -153,21 +158,15 @@ public sealed class EntityPool : IDisposable
     }
 
     /// <summary>
-    /// Get entity info by entity
+    /// Get entity info by entity.
     /// </summary>
-    /// <param name="entity"></param>
-    /// <param name="info"></param>
-    /// <returns></returns>
-    public bool GetEntityInfo(Entity entity, out EntityInfo info)
+    /// <param name="entity">The target entity.</param>
+    /// <returns>The entity info of the target entity.</returns>
+    public EntityInfo GetEntityInfo(Entity entity)
     {
-        if (entity.ID < entityInfoList.Count)
-        {
-            info = entityInfoList[entity.ID];
-            return true;
-        }
+        Debug.Assert((uint)entity.ID < (uint)entityInfoList.Count);
 
-        info = default;
-        return false;
+        return entityInfoList[entity.ID];
     }
 
 #region IDisposable member

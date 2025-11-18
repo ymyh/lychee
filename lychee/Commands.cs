@@ -25,7 +25,7 @@ internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, in
     public readonly (TypeInfo info, int typeId)[] BundleInfo = bundleInfo;
 }
 
-public sealed class EntityCommander(App app) : IDisposable
+public sealed class Commands(App app) : IDisposable
 {
 #region Fields
 
@@ -75,7 +75,7 @@ public sealed class EntityCommander(App app) : IDisposable
                 return false;
             }
 
-            entityPool.GetEntityInfo(entity, out var entityInfo);
+            var entityInfo = entityPool.GetEntityInfo(entity);
 
             if (entityInfo.ArchetypeId != SrcArchetype.ID)
             {
@@ -258,8 +258,9 @@ public sealed class EntityCommander(App app) : IDisposable
         }
         else
         {
-            if (entityPool.GetEntityInfo(entity, out var entityInfo))
+            if (entityPool.CheckEntityValid(entity))
             {
+                var entityInfo = entityPool.GetEntityInfo(entity);
                 SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
                 (srcChunkIdx, srcIdx) = SrcArchetype.Table.GetChunkAndIndex(SrcArchetype.GetEntityIndex(entity));
             }
@@ -276,6 +277,30 @@ public sealed class EntityCommander(App app) : IDisposable
         }
 
         return (srcChunkIdx, srcIdx);
+    }
+
+    public ref T GetEntityComponent<T>(Entity entity) where T : unmanaged, IComponent
+    {
+        if (modifiedEntityInfoMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity))
+        {
+            throw new ArgumentException($"Entity {entity.ID} is invalid or has already been modified");
+        }
+
+        var typeId = TypeRegistrar.GetTypeId<T>();
+        var info = entityPool.GetEntityInfo(entity);
+        var archetype = ArchetypeManager.GetArchetype(info.ArchetypeId);
+        var (ptr, size) = archetype.GetChunkData(typeId, info.ChunkIdx);
+
+        Debug.Assert((uint)info.Idx < (uint)size);
+
+        unsafe
+        {
+            return ref *((T*)ptr + info.Idx);
+        }
+    }
+
+    public void Trigger()
+    {
     }
 
 #endregion
@@ -317,14 +342,14 @@ public sealed class EntityCommander(App app) : IDisposable
 
 public static class EntityCommandBufferExtensions
 {
-    extension(EntityCommander self)
+    extension(Commands self)
     {
         internal void AddComponentTransferInfo<T>() where T : unmanaged, IComponent
         {
             nint ptr;
             unsafe
             {
-                ptr = (nint)(delegate* <EntityCommander, void>)&AddComponentTransferInfo<T>;
+                ptr = (nint)(delegate* <Commands, void>)&AddComponentTransferInfo<T>;
             }
 
             if (self.ArchetypeAddingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))
@@ -353,7 +378,7 @@ public static class EntityCommandBufferExtensions
             nint ptr;
             unsafe
             {
-                ptr = (nint)(delegate* <EntityCommander, void>)&AddComponentsTransferInfo<T>;
+                ptr = (nint)(delegate* <Commands, void>)&AddComponentsTransferInfo<T>;
             }
 
             if (self.ArchetypeAddingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))
@@ -383,7 +408,7 @@ public static class EntityCommandBufferExtensions
             nint ptr;
             unsafe
             {
-                ptr = (nint)(delegate* <EntityCommander, void>)&RemoveComponentTransferInfo<T>;
+                ptr = (nint)(delegate* <Commands, void>)&RemoveComponentTransferInfo<T>;
             }
 
             if (self.ArchetypeRemovingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))
@@ -412,7 +437,7 @@ public static class EntityCommandBufferExtensions
             nint ptr;
             unsafe
             {
-                ptr = (nint)(delegate* <EntityCommander, void>)&RemoveComponentsTransferInfo<T>;
+                ptr = (nint)(delegate* <Commands, void>)&RemoveComponentsTransferInfo<T>;
             }
 
             if (self.ArchetypeRemovingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))
@@ -442,7 +467,7 @@ public static class EntityCommandBufferExtensions
             nint ptr;
             unsafe
             {
-                ptr = (nint)(delegate* <EntityCommander, void>)&RemoveComponentsTupleTransferInfo<T>;
+                ptr = (nint)(delegate* <Commands, void>)&RemoveComponentsTupleTransferInfo<T>;
             }
 
             if (self.ArchetypeRemovingTypeMap.TryGetValue(self.SrcArchetype.ID, out var dict))

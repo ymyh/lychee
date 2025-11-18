@@ -4,7 +4,7 @@ using ThreadPool = lychee.threading.ThreadPool;
 namespace lychee;
 
 /// <summary>
-/// The ECS application. <br/>
+/// The ECS application.
 /// </summary>
 public sealed class App : IDisposable
 {
@@ -24,18 +24,19 @@ public sealed class App : IDisposable
 
 #region Constructors & Destructors
 
-    public App(int threadCountHint = 0)
+    /// <param name="threadCount">The thread count of the thread pool. If 0, use <see cref="Environment.ProcessorCount"/> / 2 as the default value.</param>
+    public App(int threadCount = 0)
     {
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
 
-        if (threadCountHint == 0)
+        if (threadCount == 0)
         {
             ThreadPool = new(Environment.ProcessorCount / 2);
         }
         else
         {
-            ThreadPool = new(threadCountHint);
+            ThreadPool = new(threadCount);
         }
     }
 
@@ -76,6 +77,11 @@ public sealed class App : IDisposable
         return ref ResourcePool.GetResourceClassRef<T>();
     }
 
+    public byte[] GetResourcePtr<T>() where T : unmanaged
+    {
+        return ResourcePool.GetResourcePtr<T>();
+    }
+
     public void AddSchedule(ISchedule schedule)
     {
         World.SystemSchedules.AddSchedule(schedule);
@@ -102,7 +108,7 @@ public sealed class App : IDisposable
     /// <param name="plugin">The plugin to install.</param>
     /// <typeparam name="T">The plugin type.</typeparam>
     /// <returns></returns>
-    public T InstallPlugin<T>(T plugin) where T : IPlugin
+    public T InstallPlugin<T>(T plugin) where T : IPlugin, new()
     {
         var type = plugin.GetType();
         if (pluginInstalled.Contains(type))
@@ -121,7 +127,7 @@ public sealed class App : IDisposable
     /// </summary>
     /// <typeparam name="T">The plugin type.</typeparam>
     /// <returns>True if the plugin is installed, otherwise false.</returns>
-    public bool CheckInstalledPlugin<T>() where T : IPlugin
+    public bool CheckPluginInstalled<T>() where T : IPlugin
     {
         return pluginInstalled.Contains(typeof(T));
     }
@@ -129,8 +135,8 @@ public sealed class App : IDisposable
     /// <summary>
     /// Update the application once.
     /// </summary>
-    /// <param name="scheduleEnd">Trigger schedule execution up to before this schedule. If null or not found, all schedules will be executed.
-    /// Call this method again will continue from the last schedule until all schedules are executed and then begin a new round.
+    /// <param name="scheduleEnd">Trigger schedule execute up to before this schedule. If null or not found, all schedules will be executed.
+    /// Call this method again will continue from the last schedule until all schedules are executed and then begin a new loop.
     /// </param>
     public void Update(ISchedule? scheduleEnd = null)
     {

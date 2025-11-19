@@ -283,7 +283,7 @@ public sealed class Commands(App app) : IDisposable
     {
         if (modifiedEntityInfoMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity))
         {
-            throw new ArgumentException($"Entity {entity.ID} is invalid or has already been modified");
+            throw new ArgumentException($"Entity {entity.ID} is invalid or in uncommitted state");
         }
 
         var typeId = TypeRegistrar.GetTypeId<T>();
@@ -299,8 +299,9 @@ public sealed class Commands(App app) : IDisposable
         }
     }
 
-    public void Trigger()
+    public ref T GetCurrentEntityComponent<T>() where T : unmanaged, IComponent
     {
+        throw new NotImplementedException();
     }
 
 #endregion

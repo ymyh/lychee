@@ -2,11 +2,14 @@
 
 namespace lychee.threading;
 
+/// <summary>
+/// A simple thread pool that dispatch tasks to multiple threads.
+/// </summary>
 public sealed class ThreadPool : IDisposable
 {
     private readonly List<Thread> threads;
 
-    private readonly Channel<Action> sendTaskChannel;
+    private readonly Channel<Action<int>> sendTaskChannel;
 
     private readonly Channel<int> taskCompleteChannel;
 
@@ -20,7 +23,7 @@ public sealed class ThreadPool : IDisposable
         }
 
         threads = new(threadCount);
-        sendTaskChannel = Channel.CreateBounded<Action>(new BoundedChannelOptions(64)
+        sendTaskChannel = Channel.CreateBounded<Action<int>>(new BoundedChannelOptions(64)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
@@ -35,6 +38,7 @@ public sealed class ThreadPool : IDisposable
 
         for (var i = 0; i < threadCount; i++)
         {
+            var idx = i;
             var thread = new Thread(async () =>
             {
                 while (true)
@@ -42,7 +46,7 @@ public sealed class ThreadPool : IDisposable
                     try
                     {
                         var act = await sendTaskChannel.Reader.ReadAsync();
-                        act();
+                        act(idx);
                         taskCompleteChannel.Writer.TryWrite(0);
                     }
                     catch (ChannelClosedException)
@@ -68,12 +72,20 @@ public sealed class ThreadPool : IDisposable
         Dispose();
     }
 
-    public void Dispatch(Action act)
+    /// <summary>
+    /// Dispatch a task to thread.
+    /// </summary>
+    /// <param name="act">The task to dispatch. The parameter of action is the index of thread.</param>
+    public void Dispatch(Action<int> act)
     {
         taskCount++;
         sendTaskChannel.Writer.TryWrite(act);
     }
 
+    /// <summary>
+    /// Wait until all tasks are completed.
+    /// </summary>
+    /// <returns></returns>
     public async Task AsTask()
     {
         while (taskCount > 0)
@@ -83,6 +95,9 @@ public sealed class ThreadPool : IDisposable
         }
     }
 
+    /// <summary>
+    /// Spin wait until all tasks are completed.
+    /// </summary>
     public void SpinWait()
     {
         while (taskCount > 0)

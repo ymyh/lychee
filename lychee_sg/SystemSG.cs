@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -95,7 +96,7 @@ partial class {sysInfo.Name} : ISystem
 
         public static Archetype[] Archetypes;
 
-        public static Commands Commands;
+        public static Commands[] Commands;
     }}
 {MakeResourceDataAGCode(resourceTypes)}
 {MakeInitializeAGCode(componentTypes, resourceTypes, sysInfo.ThreadCount)}
@@ -220,7 +221,7 @@ partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Pool = app.ResourcePool;{initThreadPoolCode}
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.Commands = new(app);
+        SystemDataAG.Commands = Enumerable.Repeat(new Commands(app), {Math.Min(1, threadCount)}).ToArray();
 
 {resourceDecl}
     }}";
@@ -323,7 +324,14 @@ partial class {sysInfo.Name} : ISystem
                         break;
 
                     case ParamKind.Commands:
-                        return "SystemDataAG.Commands";
+                        if (groupSize == 0)
+                        {
+                            return "SystemDataAG.Commands[0]";
+                        }
+                        else
+                        {
+                            return "SystemDataAG.Commands[threadIdx]";
+                        }
 
                     case ParamKind.Entity:
                         hasEntityParam = true;
@@ -372,7 +380,7 @@ partial class {sysInfo.Name} : ISystem
             {(hasEntityParam ? "var entitySpan = archetype.GetEntitiesSpan();\n" : "")}
             foreach (var (chunkIdx, chunkCount, entityIdx) in archetype.IterateChunksAmongType({groupSize}))
             {{
-                SystemDataAG.ThreadPool.Dispatch(() =>
+                SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{
                     for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
                     {{
@@ -437,7 +445,7 @@ partial class {sysInfo.Name} : ISystem
             }
 
             return $@"
-    public unsafe Commands ExecuteAG()
+    public unsafe ReadOnlySpan<Commands> ExecuteAG()
     {{{body}
     }}";
         }

@@ -130,7 +130,7 @@ public sealed class EntityPool : IDisposable
     /// <summary>
     /// Mark entity to be removed, need to call <see cref="CommitRemoveEntity"/> to make the entity removed.
     /// </summary>
-    /// <param name="entity"></param>
+    /// <param name="entity">The entity to mark removed.</param>
     public void MarkRemoveEntity(Entity entity)
     {
         reusableEntitiesId.Push(entity.ID);
@@ -139,7 +139,7 @@ public sealed class EntityPool : IDisposable
     /// <summary>
     /// Commit a marked entity to be removed.
     /// </summary>
-    /// <param name="entity"></param>
+    /// <param name="entity">The entity to commit removed.</param>
     /// <returns></returns>
     public bool CommitRemoveEntity(Entity entity)
     {

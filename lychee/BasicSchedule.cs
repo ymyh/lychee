@@ -179,14 +179,6 @@ public abstract class BasicSchedule : ISchedule
         ExecutionGraph.AddNode(new());
     }
 
-    public T AddObserver<[SystemConcept] T>() where T : ISystem, new()
-    {
-        var system = new T();
-        system.InitializeAG(app);
-
-        return system;
-    }
-
 #endregion
 
 #region Private methods
@@ -332,11 +324,11 @@ public abstract class BasicSchedule : ISchedule
             {
                 if (ExecutionMode == ExecutionModeEnum.SingleThread)
                 {
-                    entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG());
+                    entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG());
                 }
                 else
                 {
-                    app.ThreadPool.Dispatch(() => { entityCommanders.Add(frozenDagNode.Data.System.ExecuteAG()); });
+                    app.ThreadPool.Dispatch(_ => { entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG()); });
                 }
             }
 

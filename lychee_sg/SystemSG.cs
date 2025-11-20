@@ -221,7 +221,7 @@ partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Pool = app.ResourcePool;{initThreadPoolCode}
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.Commands = Enumerable.Repeat(new Commands(app), {Math.Min(1, threadCount)}).ToArray();
+        SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("new(app)", (int)Math.Max(1, threadCount)))}];
 
 {resourceDecl}
     }}";
@@ -377,6 +377,8 @@ partial class {sysInfo.Name} : ISystem
                     body = $@"
         foreach (var archetype in SystemDataAG.Archetypes)
         {{
+            SystemDataAG.Commands[threadIdx].CurrentArchetype = archetype;
+
             {(hasEntityParam ? "var entitySpan = archetype.GetEntitiesSpan();\n" : "")}
             foreach (var (chunkIdx, chunkCount, entityIdx) in archetype.IterateChunksAmongType({groupSize}))
             {{
@@ -430,6 +432,7 @@ partial class {sysInfo.Name} : ISystem
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
         {{{(hasEntityParam ? "\n            var entitySpan = archetype.GetEntitiesSpan();\n            var entityIdx = 0;" : "")}
+            SystemDataAG.Commands[0].CurrentArchetype = archetype;
 {iterateChunkWhileExpr}
         }}{(hasAfterExecute ? "\n        AfterExecute();" : "")}
 

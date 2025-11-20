@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
@@ -46,6 +47,12 @@ public sealed class Commands(App app) : IDisposable
     internal EntityTransferInfo? TransferDstInfo;
 
     internal Archetype SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
+
+    internal Archetype CurrentArchetype = null!;
+
+    private EntityInfo currentEntityInfo;
+
+    private bool currentEntitySet;
 
     private bool srcArchetypeChanged = true;
 
@@ -279,29 +286,40 @@ public sealed class Commands(App app) : IDisposable
         return (srcChunkIdx, srcIdx);
     }
 
-    public ref T GetEntityComponent<T>(Entity entity) where T : unmanaged, IComponent
+    public void SetCurrentEntity(Entity entity, bool isCurrentArchetype = true)
     {
         if (modifiedEntityInfoMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity))
         {
             throw new ArgumentException($"Entity {entity.ID} is invalid or in uncommitted state");
         }
 
-        var typeId = TypeRegistrar.GetTypeId<T>();
-        var info = entityPool.GetEntityInfo(entity);
-        var archetype = ArchetypeManager.GetArchetype(info.ArchetypeId);
-        var (ptr, size) = archetype.GetChunkData(typeId, info.ChunkIdx);
+        currentEntityInfo = entityPool.GetEntityInfo(entity);
 
-        Debug.Assert((uint)info.Idx < (uint)size);
+        if (!isCurrentArchetype)
+        {
+            CurrentArchetype = ArchetypeManager.GetArchetype(currentEntityInfo.ArchetypeId);
+        }
+
+        currentEntitySet = true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ref T GetCurrentEntityComponent<T>() where T : unmanaged, IComponent
+    {
+        if (!currentEntitySet)
+        {
+            return ref Unsafe.NullRef<T>();
+        }
+
+        var typeId = TypeRegistrar.GetTypeId<T>();
+        var (ptr, size) = CurrentArchetype.GetChunkData(typeId, currentEntityInfo.ChunkIdx);
+
+        Debug.Assert((uint)currentEntityInfo.Idx < (uint)size);
 
         unsafe
         {
-            return ref *((T*)ptr + info.Idx);
+            return ref *((T*)ptr + currentEntityInfo.Idx);
         }
-    }
-
-    public ref T GetCurrentEntityComponent<T>() where T : unmanaged, IComponent
-    {
-        throw new NotImplementedException();
     }
 
 #endregion
@@ -310,6 +328,8 @@ public sealed class Commands(App app) : IDisposable
 
     internal void Commit()
     {
+        currentEntitySet = false;
+
         foreach (var (id, info) in modifiedEntityInfoMap)
         {
             var entity = entityPool.CommitReservedEntity(id, info.Archetype.ID, info.ChunkIdx, info.Idx);

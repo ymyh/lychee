@@ -62,6 +62,11 @@ public sealed class App : IDisposable
         return ResourcePool.AddResource(resource);
     }
 
+    public T AddResource<T>() where T : new()
+    {
+        return ResourcePool.AddResource<T>();
+    }
+
     public T GetResource<T>()
     {
         return ResourcePool.GetResource<T>();

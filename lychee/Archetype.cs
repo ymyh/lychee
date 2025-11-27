@@ -162,13 +162,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal readonly Table Table = new(new(typeInfoList));
 
-    private readonly SparseMap<Entity> entities = [];
-
     private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
 
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
-    private readonly ConcurrentStack<(int entityId, int chunkIdx, int idx)> holesInTable = new();
+    private readonly ConcurrentStack<(int chunkIdx, int idx)> holesInTable = new();
 
     private bool dirty;
 
@@ -223,16 +221,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
-    public Span<(int, Entity)> GetEntitiesSpan()
-    {
-        return entities.GetDenseAsSpan();
-    }
-
-    public int GetEntityIndex(Entity entity)
-    {
-        return entities.GetIndex(entity.ID);
-    }
-
 #endregion
 
 #region Internal Methods
@@ -260,7 +248,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             }
             else
             {
-                entities.Remove(hole.entityId);
                 chunk.Size--;
             }
         }
@@ -269,19 +256,14 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         dirty = false;
     }
 
-    internal void CommitReservedEntity(Entity entity)
-    {
-        entities.Add(entity.ID, entity);
-    }
-
     internal int GetTypeIndex(int typeId)
     {
         return typeIdxMap[typeId];
     }
 
-    internal void MarkRemove(int entityId, int chunkIdx, int idx)
+    internal void MarkRemove(int chunkIdx, int idx)
     {
-        holesInTable.Push((entityId, chunkIdx, idx));
+        holesInTable.Push((chunkIdx, idx));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)
@@ -333,11 +315,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return Table.Reserve();
     }
 
-    internal void RemoveEntity(Entity entity)
-    {
-        entities.Remove(entity.ID);
-    }
-
 #endregion
 
 #region Private methods
@@ -372,7 +349,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     public void Dispose()
     {
-        entities.Dispose();
         dstArchetypeCommCompIndices.Dispose();
         typeIdxMap.Dispose();
 

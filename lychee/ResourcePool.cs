@@ -50,6 +50,11 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
         return resource;
     }
 
+    public T AddResource<T>() where T : new()
+    {
+        return AddResource<T>(new());
+    }
+
     /// <summary>
     /// Get the resource from the pool.
     /// </summary>

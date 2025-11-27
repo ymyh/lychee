@@ -61,11 +61,11 @@ public sealed class EntityPool : IDisposable
     /// <summary>
     /// Commit a reserved entity, make it available to be used.
     /// </summary>
-    /// <param name="id"></param>
-    /// <param name="archetypeId"></param>
-    /// <param name="chunkIdx"></param>
-    /// <param name="idx"></param>
-    public Entity CommitReservedEntity(int id, int archetypeId, int chunkIdx, int idx)
+    /// <param name="id">The entity id.</param>
+    /// <param name="archetypeId">The archetype id.</param>
+    /// <param name="chunkIdx">The chunk index.</param>
+    /// <param name="idx">The entity index in the chunk.</param>
+    public void CommitReservedEntity(int id, int archetypeId, int chunkIdx, int idx)
     {
         Debug.Assert(id >= 0);
 
@@ -91,10 +91,13 @@ public sealed class EntityPool : IDisposable
                 entityInfoList[id] = new(archetypeId, chunkIdx, idx);
             }
         }
-
-        return entities[id];
     }
 
+    /// <summary>
+    /// Check if the entity is valid.
+    /// </summary>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns></returns>
     public bool CheckEntityValid(Entity entity)
     {
         if ((uint)entity.ID >= (uint)entities.Count)

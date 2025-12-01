@@ -89,12 +89,12 @@ public sealed class Commands(App app) : IDisposable
                 SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
             }
 
-            SrcArchetype.MarkRemove(entityInfo.ChunkIdx, entityInfo.Idx);
+            SrcArchetype.MarkRemove(entity.ID, entityInfo.ChunkIdx, entityInfo.Idx);
         }
         else
         {
             modifiedEntityInfoMap.TryGetValue(entity.ID, out var info);
-            info.Archetype.MarkRemove(info.ChunkIdx, info.Idx);
+            info.Archetype.MarkRemove(entity.ID, info.ChunkIdx, info.Idx);
         }
 
         modifiedEntityInfoMap.Remove(entity.ID);
@@ -126,7 +126,7 @@ public sealed class Commands(App app) : IDisposable
         TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(srcChunkIdx, srcIdx);
+        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
 
         return true;
@@ -167,7 +167,7 @@ public sealed class Commands(App app) : IDisposable
         }
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(srcChunkIdx, srcIdx);
+        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
 
         return true;
@@ -193,7 +193,7 @@ public sealed class Commands(App app) : IDisposable
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(srcChunkIdx, srcIdx);
+        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
 
         return true;
@@ -219,7 +219,7 @@ public sealed class Commands(App app) : IDisposable
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(srcChunkIdx, srcIdx);
+        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
 
         return true;
@@ -245,7 +245,7 @@ public sealed class Commands(App app) : IDisposable
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(srcChunkIdx, srcIdx);
+        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
 
         return true;

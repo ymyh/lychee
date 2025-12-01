@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
@@ -166,7 +165,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
 
-    private readonly ConcurrentStack<(int chunkIdx, int idx)> holesInTable = new();
+    private readonly SparseMap<Entity> entities = [];
+
+    private readonly Stack<(int id, int chunkIdx, int idx)> holesInTable = new();
 
     private bool dirty;
 
@@ -221,6 +222,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
+    public Span<(int, Entity)> GetEntitiesSpan()
+    {
+        return entities.GetDenseAsSpan();
+    }
+
 #endregion
 
 #region Internal Methods
@@ -261,9 +267,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return typeIdxMap[typeId];
     }
 
-    internal void MarkRemove(int chunkIdx, int idx)
+    internal void MarkRemove(int id, int chunkIdx, int idx)
     {
-        holesInTable.Push((chunkIdx, idx));
+        holesInTable.Push((id, chunkIdx, idx));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)

@@ -221,7 +221,7 @@ partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Pool = app.ResourcePool;{initThreadPoolCode}
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("new(app)", (int)Math.Max(1, threadCount)))}];
+        SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("app.CreateCommands()", (int)Math.Max(1, threadCount)))}];
 
 {resourceDecl}
     }}";

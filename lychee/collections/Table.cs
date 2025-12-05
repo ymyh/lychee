@@ -101,8 +101,7 @@ public sealed class Table : IDisposable
 
         while (idx == -1)
         {
-            GetFirstAvailableViewIdx();
-            idx = Chunks[lastAvailableViewIndex].Reserve();
+            idx = Chunks[GetFirstAvailableViewIdx()].Reserve();
         }
 
         return (lastAvailableViewIndex, idx);

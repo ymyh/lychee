@@ -26,15 +26,15 @@ internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, in
     public readonly (TypeInfo info, int typeId)[] BundleInfo = bundleInfo;
 }
 
-public sealed class Commands(App app) : IDisposable
+public sealed class Commands : IDisposable
 {
 #region Fields
 
-    private readonly EntityPool entityPool = app.World.EntityPool;
+    private readonly EntityPool entityPool;
 
-    internal readonly ArchetypeManager ArchetypeManager = app.World.ArchetypeManager;
+    internal readonly ArchetypeManager ArchetypeManager;
 
-    internal readonly TypeRegistrar TypeRegistrar = app.TypeRegistrar;
+    internal readonly TypeRegistrar TypeRegistrar;
 
     internal readonly TransferInfoMap ArchetypeAddingTypeMap = new();
 
@@ -46,7 +46,7 @@ public sealed class Commands(App app) : IDisposable
 
     internal EntityTransferInfo? TransferDstInfo;
 
-    internal Archetype SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
+    internal Archetype SrcArchetype;
 
     public Archetype CurrentArchetype { get; set; } = null!;
 
@@ -57,6 +57,14 @@ public sealed class Commands(App app) : IDisposable
     private bool srcArchetypeChanged = true;
 
 #endregion
+
+    internal Commands(App app)
+    {
+        entityPool = app.World.EntityPool;
+        ArchetypeManager = app.World.ArchetypeManager;
+        TypeRegistrar = app.TypeRegistrar;
+        SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
+    }
 
 #region Public Methods
 

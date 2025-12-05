@@ -20,6 +20,8 @@ public sealed class App : IDisposable
 
     private readonly HashSet<Type> pluginInstalled = [];
 
+    private readonly List<Commands> commandsList = [];
+
 #endregion
 
 #region Constructors & Destructors
@@ -102,6 +104,12 @@ public sealed class App : IDisposable
         World.SystemSchedules.ClearSchedules();
     }
 
+    public Commands CreateCommands()
+    {
+        commandsList.Add(new(this));
+        return commandsList[^1];
+    }
+
     public ISchedule? GetSchedule(string name)
     {
         return World.SystemSchedules.GetSchedule(name);
@@ -156,6 +164,11 @@ public sealed class App : IDisposable
     {
         ThreadPool.Dispose();
         World.Dispose();
+
+        foreach (var commands in commandsList)
+        {
+            commands.Dispose();
+        }
 
         GC.SuppressFinalize(this);
     }

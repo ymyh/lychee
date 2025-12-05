@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
 using lychee.utils;
@@ -12,7 +11,7 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly TypeRegistrar typeRegistrar;
 
-    internal static Archetype EmptyArchetype = null!;
+    internal static Archetype EmptyArchetype { get; private set; } = null!;
 
     public delegate void ArchetypeCreatedHandler();
 
@@ -78,15 +77,19 @@ public sealed class ArchetypeManager : IDisposable
     {
         lock (archetypes)
         {
-            Debug.Assert(id >= 0 && id < archetypes.Count);
             return archetypes[id];
         }
     }
 
-    public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
-        int[] requires)
+    public Archetype GetArchetypeUnsafe(int id)
     {
-        if (requires.Length == 0)
+        return archetypes[id];
+    }
+
+    public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
+        int[] typeRequires)
+    {
+        if (typeRequires.Length == 0)
         {
             return [];
         }
@@ -95,7 +98,7 @@ public sealed class ArchetypeManager : IDisposable
         {
             return archetypes.Where(a =>
             {
-                var ret = requires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+                var ret = typeRequires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
                 return allFilter.Select(type => typeRegistrar.RegisterComponent(type))
                     .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
             }).Where(a =>

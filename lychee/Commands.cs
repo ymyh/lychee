@@ -8,9 +8,11 @@ namespace lychee;
 
 using TransferInfoMap = SparseMap<Dictionary<nint, EntityTransferInfo>>;
 
-internal struct ModifiedEntityInfo(Archetype archetype, int chunkIdx, int idx)
+internal struct ModifiedEntityInfo(Archetype archetype, Entity entity, int chunkIdx, int idx)
 {
     public readonly Archetype Archetype = archetype;
+
+    public readonly Entity Entity = entity;
 
     public readonly int ChunkIdx = chunkIdx;
 
@@ -135,7 +137,7 @@ public sealed class Commands : IDisposable
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
         SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
     }
@@ -176,7 +178,7 @@ public sealed class Commands : IDisposable
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
         SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
     }
@@ -202,7 +204,7 @@ public sealed class Commands : IDisposable
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
         SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
     }
@@ -228,7 +230,7 @@ public sealed class Commands : IDisposable
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
         SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
     }
@@ -254,7 +256,7 @@ public sealed class Commands : IDisposable
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
         SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, chunkIdx, idx));
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
     }
@@ -343,11 +345,15 @@ public sealed class Commands : IDisposable
         foreach (var (id, info) in modifiedEntityInfoMap)
         {
             entityPool.CommitReservedEntity(id, info.Archetype.ID, info.ChunkIdx, info.Idx);
+            var archetype = ArchetypeManager.GetArchetypeUnsafe(info.Archetype.ID);
+            archetype.CommitAddEntity(info.Entity);
         }
 
         foreach (var (_, entity) in removedEntityMap)
         {
             entityPool.CommitRemoveEntity(entity);
+            var archetype = ArchetypeManager.GetArchetypeUnsafe(entityPool.GetEntityInfo(entity).ArchetypeId);
+            archetype.CommitRemoveEntity(entity);
         }
 
         ArchetypeManager.Commit();

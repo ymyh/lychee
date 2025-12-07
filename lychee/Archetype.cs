@@ -81,11 +81,6 @@ public sealed class ArchetypeManager : IDisposable
         }
     }
 
-    public Archetype GetArchetypeUnsafe(int id)
-    {
-        return archetypes[id];
-    }
-
     public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
         int[] typeRequires)
     {
@@ -137,6 +132,11 @@ public sealed class ArchetypeManager : IDisposable
         {
             archetype.Commit();
         }
+    }
+
+    internal Archetype GetArchetypeUnsafe(int id)
+    {
+        return archetypes[id];
     }
 
 #endregion
@@ -263,6 +263,16 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
         Table.CommitReserved();
         dirty = false;
+    }
+
+    internal void CommitAddEntity(Entity entity)
+    {
+        entities[entity.ID] = entity;
+    }
+
+    internal void CommitRemoveEntity(Entity entity)
+    {
+        entities.Remove(entity.ID);
     }
 
     internal int GetTypeIndex(int typeId)

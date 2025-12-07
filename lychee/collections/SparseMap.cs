@@ -36,7 +36,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
                 throw new KeyNotFoundException();
             }
 
-            return denseArray[sparseArray[key]].Item2;
+            return denseArray[sparseArray[key]].value;
         }
 
         set => Add(key, value);
@@ -169,10 +169,8 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
             return;
         }
 
-        // 获取要移除的元素的id
-        var removedId = denseArray[denseIndex].Item1;
+        var removedId = denseArray[denseIndex].key;
 
-        // 如果移除的不是最后一个元素，则用最后一个元素填充空位
         if (denseIndex < denseArray.Count - 1)
         {
             var lastElement = denseArray[^1];
@@ -201,7 +199,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
             return false;
         }
 
-        value = denseArray[sparseArray[key]].Item2;
+        value = denseArray[sparseArray[key]].value;
         return true;
     }
 

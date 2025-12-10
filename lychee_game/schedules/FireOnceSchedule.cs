@@ -11,7 +11,7 @@ public sealed class FireOnceSchedule(
     App app,
     string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
-    BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.ScheduleEnd)
+    BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
     : BasicSchedule(app, name, executionMode, commitPoint)
 {
     private bool fired;

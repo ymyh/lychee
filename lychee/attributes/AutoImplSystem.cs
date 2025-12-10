@@ -5,7 +5,7 @@
 /// Target class must be partial. <br/>
 /// The parameter groupSize and threadCount must be greater than 0 to take effect.
 /// Together they define the parallelism of system execution.
-/// <param name="groupSize">Size of entities to execute in same thread</param>
+/// <param name="groupSize">Number of entities to execute in same thread</param>
 /// <param name="threadCount">Number of thread to execute system</param>
 /// </summary>
 [AttributeUsage(AttributeTargets.Class)]

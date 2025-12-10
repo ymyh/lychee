@@ -85,27 +85,25 @@ public sealed class Commands : IDisposable
             return false;
         }
 
-        if (entity.Generation != 0)
+        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
         {
-            if (!entityPool.CheckEntityValid(entity))
-            {
-                return false;
-            }
-
-            var entityInfo = entityPool.GetEntityInfo(entity);
-
-            if (entityInfo.ArchetypeId != SrcArchetype.ID)
-            {
-                SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
-            }
-
-            SrcArchetype.MarkRemove(entity.ID, entityInfo.ChunkIdx, entityInfo.Idx);
-        }
-        else
-        {
-            modifiedEntityInfoMap.TryGetValue(entity.ID, out var info);
             info.Archetype.MarkRemove(entity.ID, info.ChunkIdx, info.Idx);
+            return true;
         }
+
+        if (!entityPool.CheckEntityValid(entity))
+        {
+            return false;
+        }
+
+        var entityInfo = entityPool.GetEntityInfo(entity);
+
+        if (entityInfo.ArchetypeId != SrcArchetype.ID)
+        {
+            SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
+        }
+
+        SrcArchetype.MarkRemove(entity.ID, entityInfo.ChunkIdx, entityInfo.Idx);
 
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity);
@@ -355,6 +353,8 @@ public sealed class Commands : IDisposable
             var archetype = ArchetypeManager.GetArchetypeUnsafe(entityPool.GetEntityInfo(entity).ArchetypeId);
             archetype.CommitRemoveEntity(entity);
         }
+
+        entityPool.Commit();
 
         ArchetypeManager.Commit();
         removedEntityMap.Clear();

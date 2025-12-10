@@ -19,6 +19,7 @@ public abstract class BasicSchedule : ISchedule
     {
         /// <summary>
         /// Commits the changes at every synchronization point.
+        /// For SingleThread execution mode, it will commit the changes at every system execution.
         /// </summary>
         Synchronization,
 

@@ -27,6 +27,7 @@ namespace lychee_sg
     internal enum ParamKind
     {
         Component,
+        ComponentSpan,
         Resource,
         ResourceRef,
         Entity,
@@ -149,14 +150,19 @@ partial class {sysInfo.Name} : ISystem
                         paramList = symbol.Parameters.Select(x =>
                         {
                             var paramKind = ParamKind.Component;
+                            var typeName = x.Type.ToDisplayString();
 
-                            if (x.Type.ToDisplayString() == "lychee.Commands")
+                            if (typeName == "lychee.Commands")
                             {
                                 paramKind = ParamKind.Commands;
                             }
-                            else if (x.Type.ToDisplayString() == "lychee.Entity")
+                            else if (typeName == "lychee.Entity")
                             {
                                 paramKind = ParamKind.Entity;
+                            }
+                            else if (typeName.StartsWith("System.Span") || typeName.StartsWith("System.ReadOnlySpan"))
+                            {
+                                paramKind = ParamKind.ComponentSpan;
                             }
 
                             if (x.GetAttributes().Any(a =>
@@ -324,14 +330,7 @@ partial class {sysInfo.Name} : ISystem
                         break;
 
                     case ParamKind.Commands:
-                        if (groupSize == 0)
-                        {
-                            return "SystemDataAG.Commands[0]";
-                        }
-                        else
-                        {
-                            return "SystemDataAG.Commands[threadIdx]";
-                        }
+                        return groupSize == 0 ? "SystemDataAG.Commands[0]" : "SystemDataAG.Commands[threadIdx]";
 
                     case ParamKind.Entity:
                         hasEntityParam = true;

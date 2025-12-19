@@ -2,6 +2,9 @@
 
 namespace lychee;
 
+/// <summary>
+/// Holds all system schedules.
+/// </summary>
 public sealed class SystemSchedules
 {
     private readonly List<ISchedule> schedules = [];
@@ -12,6 +15,11 @@ public sealed class SystemSchedules
 
     private bool needClear;
 
+    /// <summary>
+    /// Add a schedule.
+    /// </summary>
+    /// <param name="schedule">The schedule to add.</param>
+    /// <exception cref="ArgumentException">Thrown when the schedule already exists.</exception>
     public void AddSchedule(ISchedule schedule)
     {
         var index = schedules.IndexOf(schedule);
@@ -24,6 +32,12 @@ public sealed class SystemSchedules
         scheduleDict.Add(schedule.Name, schedule);
     }
 
+    /// <summary>
+    /// Add a schedule after another schedule.
+    /// </summary>
+    /// <param name="schedule">The schedule to add.</param>
+    /// <param name="addAfter">The schedule after which to add the new schedule.</param>
+    /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
     public void AddSchedule(ISchedule schedule, ISchedule addAfter)
     {
         var index = schedules.IndexOf(schedule);
@@ -42,6 +56,12 @@ public sealed class SystemSchedules
         scheduleDict.Add(schedule.Name, schedule);
     }
 
+    /// <summary>
+    /// Add a schedule after another schedule by name.
+    /// </summary>
+    /// <param name="schedule">The schedule to add.</param>
+    /// <param name="addAfter">The name of the schedule after which to add the new schedule.</param>
+    /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
     public void AddSchedule(ISchedule schedule, string addAfter)
     {
         var addAfterSchedule = GetSchedule(addAfter);
@@ -53,6 +73,9 @@ public sealed class SystemSchedules
         AddSchedule(schedule, addAfterSchedule);
     }
 
+    /// <summary>
+    /// Clear all schedules.
+    /// </summary>
     public void ClearSchedules()
     {
         needClear = true;
@@ -97,5 +120,16 @@ public sealed class SystemSchedules
     public ISchedule? GetSchedule(string name)
     {
         return scheduleDict.GetValueOrDefault(name);
+    }
+
+    /// <summary>
+    /// Get a schedule by name.
+    /// </summary>
+    /// <param name="name">The name of the schedule.</param>
+    /// <typeparam name="T">The type of the schedule.</typeparam>
+    /// <returns>The schedule with the given name, or null if not found.</returns>
+    public T? GetSchedule<T>(string name) where T : class, ISchedule
+    {
+        return scheduleDict.GetValueOrDefault(name) as T;
     }
 }

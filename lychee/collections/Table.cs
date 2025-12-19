@@ -44,7 +44,7 @@ public sealed class Table : IDisposable
 
     internal readonly List<TableMemoryChunk> Chunks = [];
 
-    internal readonly int ChunkCapacity;
+    private readonly int chunkCapacity;
 
     private readonly int chunkSizeBytes;
 
@@ -73,7 +73,7 @@ public sealed class Table : IDisposable
                     chunkSizeBytes *= 2;
                 }
 
-                ChunkCapacity = chunkSizeBytes / lastByteOffset;
+                chunkCapacity = chunkSizeBytes / lastByteOffset;
             }
         }
     }
@@ -120,7 +120,7 @@ public sealed class Table : IDisposable
         var typeInfo = Layout.TypeInfoList[typeIdx];
         var ptr = (byte*)Chunks[chunkIdx].Data;
 
-        return ptr + (typeInfo.Offset * ChunkCapacity + typeInfo.Size * indexInChunk);
+        return ptr + (typeInfo.Offset * chunkCapacity + typeInfo.Size * indexInChunk);
     }
 
     public IEnumerable<(nint ptr, int size)> IterateOfTypeAmongChunk(int typeIdx)
@@ -133,7 +133,7 @@ public sealed class Table : IDisposable
 
             unsafe
             {
-                ptr = (nint)chunk.Data + typeInfo.Offset * ChunkCapacity;
+                ptr = (nint)chunk.Data + typeInfo.Offset * chunkCapacity;
             }
 
             yield return (ptr, chunk.Size);
@@ -146,7 +146,7 @@ public sealed class Table : IDisposable
 
         unsafe
         {
-            var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * ChunkCapacity;
+            var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * chunkCapacity;
             return (ptr, Chunks[chunkIdx].Size);
         }
     }
@@ -193,7 +193,7 @@ public sealed class Table : IDisposable
     {
         if (chunkSizeBytes > 0)
         {
-            var chunk = new TableMemoryChunk(ChunkCapacity);
+            var chunk = new TableMemoryChunk(chunkCapacity);
             chunk.Chunk.Alloc(chunkSizeBytes);
 
             Chunks.Add(chunk);
@@ -246,7 +246,7 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     internal int Size;
 
-    internal readonly int Capacity = capacity;
+    public readonly int Capacity = capacity;
 
     internal volatile int Reservation;
 

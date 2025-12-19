@@ -2,11 +2,15 @@
 
 namespace lychee;
 
+/// <summary>
+/// An ECS world that holds all entities, components, systems and events.
+/// </summary>
+/// <param name="typeRegistrar">The <see cref="TypeRegistrar"/> from <see cref="App"/>.</param>
 public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
 {
 #region Fields
 
-    internal readonly SystemSchedules SystemSchedules = new();
+    public readonly SystemSchedules SystemSchedules = new();
 
     public readonly EntityPool EntityPool = new();
 

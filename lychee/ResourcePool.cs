@@ -5,9 +5,9 @@ using System.Runtime.InteropServices;
 namespace lychee;
 
 /// <summary>
-/// Holds all resources. Each type can only add once, or update the existing one.
+/// Holds all resources. Each type can only add once.
 /// </summary>
-/// <param name="typeRegistrar">The TypeRegistrar from App.</param>
+/// <param name="typeRegistrar">The <see cref="TypeRegistrar"/> from <see cref="App"/>.</param>
 public sealed class ResourcePool(TypeRegistrar typeRegistrar)
 {
     private readonly Dictionary<Type, object> dataMap = new();
@@ -50,6 +50,12 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
         return resource;
     }
 
+    /// <summary>
+    /// Add a new resource to the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <returns>The resource just added.</returns>
+    /// <exception cref="ArgumentException">Resource already exists.</exception>
     public T AddResource<T>() where T : new()
     {
         return AddResource<T>(new());
@@ -122,10 +128,10 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get the resource from the pool.
+    /// Get the pointer of struct type resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
-    /// <returns>The resource.</returns>
+    /// <returns>The resource pointer.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
     public byte[] GetResourcePtr<T>() where T : unmanaged
     {

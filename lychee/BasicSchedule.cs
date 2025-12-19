@@ -135,8 +135,7 @@ public abstract class BasicSchedule : ISchedule
     {
         system.InitializeAG(app);
 
-        var systemParamInfo = ExtractSystemParamInfo(system, descriptor);
-        var node = new DAGNode<SystemInfo>(new(system, systemParamInfo, descriptor));
+        var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, descriptor), descriptor));
         DAGNode<SystemInfo> addAfterNode = null!;
 
         isFrozen = false;
@@ -188,17 +187,53 @@ public abstract class BasicSchedule : ISchedule
     {
         var sysType = system.GetType();
         var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
-        var parameters = method.GetParameters();
+        var parameters = method.GetParameters().Select(p =>
+        {
+            var resourceAttr = p.GetCustomAttribute<Resource>();
+
+            if (resourceAttr != null)
+            {
+                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, resourceAttr.ReadOnly);
+            }
+
+            return new(p.ParameterType, p.IsIn);
+        }).ToArray();
 
         CheckAutoImplSystemAttribute(system, sysType);
+        RegisterSystemComponent(parameters, descriptor);
+        ValidateParameter(system, parameters);
 
+        // Check this here because we need to make sure all types in descriptor are valid
+        if (descriptor.NoneFilter.Length > 0)
+        {
+            if (parameters.Select(p => p.Type).Intersect(descriptor.NoneFilter).Any())
+            {
+                throw new ArgumentException($"System {system} has component parameter that also in NoneFilter");
+            }
+        }
+
+        return parameters;
+    }
+
+    private void RegisterSystemComponent(SystemParameterInfo[] parameters, SystemDescriptor descriptor)
+    {
         foreach (var param in parameters)
         {
-            var type = param.ParameterType;
+            var type = param.Type;
 
-            if (param.ParameterType.IsByRef)
+            if (param.Type.IsGenericType)
             {
-                type = param.ParameterType.GetElementType()!;
+                var t = param.Type.GetGenericTypeDefinition();
+
+                if (t == typeof(Span<>) || t == typeof(ReadOnlySpan<>))
+                {
+                    type = param.Type.GetGenericArguments()[0];
+                }
+            }
+
+            if (param.Type.IsByRef)
+            {
+                type = param.Type.GetElementType()!;
             }
 
             if (type.GetInterface(typeof(IComponent).FullName!) != null)
@@ -230,27 +265,34 @@ public abstract class BasicSchedule : ISchedule
         {
             app.TypeRegistrar.RegisterComponent(type);
         }
+    }
 
-        // Check this here because we need to make sure all types in descriptor are valid
-        if (descriptor.NoneFilter.Length > 0)
+    private static void ValidateParameter(ISystem system, SystemParameterInfo[] parameters)
+    {
+        var spanTypeCount = 0;
+        var componentTypeCount = 0;
+
+        for (var i = 0; i < parameters.Length; i++)
         {
-            if (parameters.Select(p => p.ParameterType).Intersect(descriptor.NoneFilter).Any())
+            var param = parameters[i];
+            var type = param.Type;
+            if (type.IsGenericType)
             {
-                throw new ArgumentException($"System {system} has component parameter that also in NoneFilter");
+                if (type == typeof(Span<>) || type == typeof(ReadOnlySpan<>))
+                {
+                    parameters[i] = new(param.Type.GetGenericArguments()[0], type == typeof(ReadOnlySpan<>));
+                    spanTypeCount++;
+                    continue;
+                }
             }
+
+            componentTypeCount++;
         }
 
-        return parameters.Select(p =>
+        if (spanTypeCount > 0 && componentTypeCount > 0)
         {
-            var resourceAttr = p.GetCustomAttribute<Resource>();
-
-            if (resourceAttr != null)
-            {
-                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, resourceAttr.ReadOnly);
-            }
-
-            return new(p.ParameterType, p.IsIn);
-        }).ToArray();
+            throw new ArgumentException($"System {system} has both span parameter and component parameter, which is not supported");
+        }
     }
 
     private static void CheckAutoImplSystemAttribute(ISystem system, Type systemType)

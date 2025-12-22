@@ -184,7 +184,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return Table.IterateOfTypeAmongChunk(typeIdx);
     }
 
-    public IEnumerable<(int chunkIdx, int chunkCount, int entityIdx)> IterateChunksAmongType(int groupSize)
+    public IEnumerable<(int chunkIdx, int chunkCount)> IterateChunksAmongType(int groupSize)
     {
         if (groupSize < 1)
         {
@@ -204,14 +204,14 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             {
                 if (chunkIdx == Table.Chunks.Count - 1)
                 {
-                    yield return (chunkIdx, chunkCount, Table.CalcTotalOffset(chunkIdx, 0));
+                    yield return (chunkIdx, chunkCount);
                     break;
                 }
 
                 continue;
             }
 
-            yield return (chunkIdx, chunkCount, Table.CalcTotalOffset(chunkIdx, 0));
+            yield return (chunkIdx, chunkCount);
 
             chunkIdx += chunkCount;
             chunkCount = 0;

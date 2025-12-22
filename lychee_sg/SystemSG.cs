@@ -28,8 +28,8 @@ namespace lychee_sg
     {
         Component,
         ComponentSpan,
-        Resource,
-        ResourceRef,
+        ClassResource,
+        StructResource,
         Entity,
         Commands,
     }
@@ -76,8 +76,10 @@ namespace lychee_sg
                     return;
                 }
 
-                var componentTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Component).ToArray();
-                var resourceTypes = sysInfo.Params.Where(p => p.ParamKind == ParamKind.Resource || p.ParamKind == ParamKind.ResourceRef).ToArray();
+                var componentTypes = sysInfo.Params
+                    .Where(p => p.ParamKind == ParamKind.Component || p.ParamKind == ParamKind.ComponentSpan).ToArray();
+                var resourceTypes = sysInfo.Params.Where(p =>
+                    p.ParamKind == ParamKind.ClassResource || p.ParamKind == ParamKind.StructResource).ToArray();
                 var sb = new StringBuilder($@"
 using System;
 using System.Runtime.InteropServices;
@@ -106,7 +108,7 @@ partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(descriptor.AllFilter, descriptor.AnyFilter, descriptor.NoneFilter, SystemDataAG.TypeIdList);
     }}
-{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo.GroupSize, sysInfo.HasAfterExecute)}
+{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
 }}
 
 ");
@@ -134,7 +136,8 @@ partial class {sysInfo.Name} : ISystem
             ParamInfo[] paramList = null;
 
             var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDecl);
-            var autoImplAttr = classSymbol.GetAttributes().First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystem");
+            var autoImplAttr = classSymbol.GetAttributes()
+                .First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystem");
 
             var groupSize = (uint)autoImplAttr.ConstructorArguments[0].Value;
             var threadCount = (uint)autoImplAttr.ConstructorArguments[1].Value;
@@ -171,7 +174,7 @@ partial class {sysInfo.Name} : ISystem
                                     return name == "lychee.attributes.Resource";
                                 }))
                             {
-                                paramKind = x.Type.IsValueType ? ParamKind.ResourceRef : ParamKind.Resource;
+                                paramKind = x.Type.IsValueType ? ParamKind.StructResource : ParamKind.ClassResource;
                             }
 
                             return new ParamInfo
@@ -184,7 +187,8 @@ partial class {sysInfo.Name} : ISystem
                         }).ToArray();
                     }
 
-                    if (memberDecl.Kind() == SyntaxKind.MethodDeclaration && methodDecl.Identifier.Text == "AfterExecute")
+                    if (memberDecl.Kind() == SyntaxKind.MethodDeclaration &&
+                        methodDecl.Identifier.Text == "AfterExecute")
                     {
                         var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
                         hasAfterExecute = symbol.Parameters.Length == 0;
@@ -203,29 +207,44 @@ partial class {sysInfo.Name} : ISystem
             };
         }
 
-        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, ParamInfo[] resourceTypes, uint threadCount)
+        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, ParamInfo[] resourceTypes,
+            uint threadCount)
         {
             var resourceDecl = new StringBuilder();
 
             foreach (var resourceType in resourceTypes)
             {
-                if (resourceType.ParamKind == ParamKind.Resource)
+                if (resourceType.ParamKind == ParamKind.ClassResource)
                 {
-                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.GetResource<{resourceType.Type}>();");
+                    resourceDecl.AppendLine(
+                        $"        ResourceDataAG.{resourceType.ParamName} = app.GetResource<{resourceType.Type}>();");
                 }
                 else
                 {
-                    resourceDecl.AppendLine($"        ResourceDataAG.{resourceType.ParamName} = app.GetResourcePtr<{resourceType.Type}>();");
+                    resourceDecl.AppendLine(
+                        $"        ResourceDataAG.{resourceType.ParamName} = app.GetResourcePtr<{resourceType.Type}>();");
                 }
             }
 
-            var initThreadPoolCode = threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = new({threadCount});" : "";
-            var registerTypes = string.Join(", ", componentTypes.Select(p => $"app.TypeRegistrar.RegisterComponent<{p.Type}>()"));
+            var registerTypes = string.Join(", ", componentTypes.Select(p =>
+            {
+                if (p.Type is INamedTypeSymbol named)
+                {
+                    var typeName = p.Type.ToDisplayString();
+
+                    if (typeName.StartsWith("System.Span") || typeName.StartsWith("System.ReadOnlySpan"))
+                    {
+                        return $"app.TypeRegistrar.RegisterComponent<{named.TypeArguments[0]}>()";
+                    }
+                }
+
+                return $"app.TypeRegistrar.RegisterComponent<{p.Type}>()";
+            }));
 
             return $@"
     public void InitializeAG(App app)
     {{
-        SystemDataAG.Pool = app.ResourcePool;{initThreadPoolCode}
+        SystemDataAG.Pool = app.ResourcePool;{(threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = new({threadCount});" : "")}
         SystemDataAG.TypeIdList = [{registerTypes}];
         SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("app.CreateCommands()", (int)Math.Max(1, threadCount)))}];
 
@@ -247,7 +266,7 @@ partial class {sysInfo.Name} : ISystem
                     var resourceParam = resourceParams[i];
                     var paramName = resourceParam.ParamName;
 
-                    if (resourceParam.ParamKind == ParamKind.Resource)
+                    if (resourceParam.ParamKind == ParamKind.ClassResource)
                     {
                         declResourceCode.AppendLine($"        public static {resourceParam.Type} {paramName};");
                     }
@@ -268,12 +287,183 @@ partial class {sysInfo.Name} : ISystem
             return declResourceCode.ToString();
         }
 
-        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams, ParamInfo[] resourceParams, uint groupSize, bool hasAfterExecute)
+        private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams,
+            ParamInfo[] resourceParams, SystemInfo systemInfo, bool hasComponentSpan)
         {
             string body;
-            var hasEntityParam = false;
+            var execParams = GenExecuteParams(allParams, systemInfo.GroupSize > 0, hasComponentSpan);
+            var declResourceCode = GenResourceCode(resourceParams);
 
-            var execParams = string.Join(", ", allParams.Select((param, idx) =>
+            if (componentParams.Length > 0)
+            {
+                body = $@"
+{declResourceCode}
+        foreach (var archetype in SystemDataAG.Archetypes)
+        {{
+{GenIterArchetypeCode(componentParams, execParams, hasComponentSpan, systemInfo.GroupSize)}
+        }}
+        {(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
+        return SystemDataAG.Commands;";
+            }
+            else
+            {
+                body = $@"
+{declResourceCode}        Execute({execParams}); {(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
+
+        return SystemDataAG.Commands;";
+            }
+
+            return $@"
+    public unsafe ReadOnlySpan<Commands> ExecuteAG()
+    {{{body}
+    }}";
+        }
+
+        private static string GenResourceCode(ParamInfo[] resourceParams)
+        {
+            var declResourceCode = new StringBuilder();
+
+            if (resourceParams.Length > 0)
+            {
+                foreach (var resourceParam in resourceParams)
+                {
+                    var paramName = resourceParam.ParamName;
+
+                    if (resourceParam.ParamKind == ParamKind.StructResource)
+                    {
+                        declResourceCode.AppendLine(
+                            $"        ref var {paramName} = ref MemoryMarshal.AsRef<{resourceParam.Type}>(new Span<byte>(ResourceDataAG.{paramName}));");
+                    }
+                    else if (resourceParam.ParamKind == ParamKind.ClassResource &&
+                             resourceParam.RefKind != RefKind.None)
+                    {
+                        declResourceCode.AppendLine(
+                                $"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
+                            break;
+                    }
+                }
+            }
+
+            return declResourceCode.ToString();
+        }
+
+        private static string GenIterArchetypeCode(ParamInfo[] componentParams, string execParams,
+            bool hasComponentSpan, uint groupSize)
+        {
+            return groupSize > 0
+                ? GenIterArchetypeMultiThreadCode(componentParams, execParams, hasComponentSpan, groupSize)
+                : GenIterArchetypeSingleThreadCode(componentParams, execParams, hasComponentSpan);
+        }
+
+        private static string GenIterArchetypeMultiThreadCode(ParamInfo[] componentParams, string execParams,
+            bool hasComponentSpan, uint groupSize)
+        {
+            var declIterCode = new StringBuilder();
+
+            for (var i = 0; i < componentParams.Length; i++)
+            {
+                declIterCode.AppendLine(
+                    i == 0
+                        ? $"                        var ({componentParams[i].ParamName}, size) = archetype.GetChunkData(SystemDataAG.TypeIdList[{i}], j);"
+                        : $"                        var ({componentParams[i].ParamName}, _) = archetype.GetChunkData(SystemDataAG.TypeIdList[{i}], j);");
+            }
+
+            if (hasComponentSpan)
+            {
+                return $@"
+            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType({groupSize}))
+            {{
+                SystemDataAG.ThreadPool.Dispatch(threadIdx =>
+                {{
+                    SystemDataAG.Commands[threadIdx].CurrentArchetype = archetype;
+                    var beginIndex = 0;
+
+                    for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
+                    {{
+{declIterCode}
+                        var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
+
+                        Execute({execParams});
+                        beginIndex += size;
+                    }}
+                }});
+            }}";
+            }
+
+            return $@"
+            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType({groupSize}))
+            {{
+                SystemDataAG.ThreadPool.Dispatch(threadIdx =>
+                {{
+                    SystemDataAG.Commands[threadIdx].CurrentArchetype = archetype;
+                    var beginIndex = 0;
+
+                    for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
+                    {{
+{declIterCode}
+                        var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
+                        for (var i = 0; i < size; i++)
+                        {{
+                            Execute({execParams});
+                        }}
+                        beginIndex += size;
+                    }}
+                }});
+            }}";
+        }
+
+        private static string GenIterArchetypeSingleThreadCode(ParamInfo[] componentParams, string execParams,
+            bool hasComponentSpan)
+        {
+            var declIterCode = new StringBuilder();
+            var iterDeclCurrentCode = new StringBuilder();
+            var iterMoveNextCode = new List<string>(componentParams.Length);
+
+            for (var i = 0; i < componentParams.Length; i++)
+            {
+                declIterCode.AppendLine(
+                    $"            var iter{i} = archetype.IterateDataAmongChunk(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
+                iterMoveNextCode.Add($"iter{i}.MoveNext()");
+
+                iterDeclCurrentCode.AppendLine(i == 0
+                    ? $"                var ({componentParams[i].ParamName}, size) = iter{i}.Current;"
+                    : $"                var ({componentParams[i].ParamName}, _) = iter{i}.Current;");
+            }
+
+            if (hasComponentSpan)
+            {
+                return $@"{declIterCode}
+            var beginIndex = 0;
+
+            while ({string.Join(" & ", iterMoveNextCode)})
+            {{
+{iterDeclCurrentCode}
+                var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
+
+                Execute({execParams});
+                beginIndex += size;
+            }}";
+            }
+
+            return $@"{declIterCode}
+            var beginIndex = 0;
+
+            while ({string.Join(" & ", iterMoveNextCode)})
+            {{
+{iterDeclCurrentCode}
+                var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
+
+                for (var i = 0; i < size; i++)
+                {{
+                    Execute({execParams});
+                }}
+                beginIndex += size;
+            }}";
+        }
+
+        private static string GenExecuteParams(ParamInfo[] allParams, bool multiThread, bool hasComponentSpan)
+        {
+            return string.Join(", ", allParams.Select((param, idx) =>
             {
                 var paramName = param.ParamName;
 
@@ -296,7 +486,10 @@ partial class {sysInfo.Name} : ISystem
 
                         break;
 
-                    case ParamKind.Resource:
+                    case ParamKind.ComponentSpan:
+                        return $"new Span(({param.Type}*){paramName}, size)";
+
+                    case ParamKind.ClassResource:
 
                         switch (param.RefKind)
                         {
@@ -313,7 +506,7 @@ partial class {sysInfo.Name} : ISystem
 
                         break;
 
-                    case ParamKind.ResourceRef:
+                    case ParamKind.StructResource:
                         switch (param.RefKind)
                         {
                             case RefKind.In:
@@ -330,126 +523,14 @@ partial class {sysInfo.Name} : ISystem
                         break;
 
                     case ParamKind.Commands:
-                        return groupSize == 0 ? "SystemDataAG.Commands[0]" : "SystemDataAG.Commands[threadIdx]";
+                        return multiThread ? "SystemDataAG.Commands[threadIdx]" : "SystemDataAG.Commands[0]";
 
                     case ParamKind.Entity:
-                        hasEntityParam = true;
-                        return "entitySpan[entityIdx].Item2";
+                        return hasComponentSpan ? "entitySpan" : "entitySpan[i].Item2";
                 }
 
                 return "";
             }));
-
-            var declResourceCode = new StringBuilder();
-
-            if (resourceParams.Length > 0)
-            {
-                foreach (var resourceParam in resourceParams)
-                {
-                    var paramName = resourceParam.ParamName;
-
-                    if (resourceParam.ParamKind == ParamKind.ResourceRef)
-                    {
-                        declResourceCode.AppendLine($"        ref var {paramName} = ref MemoryMarshal.AsRef<{resourceParam.Type}>(new Span<byte>(ResourceDataAG.{paramName}));");
-                    }
-                    else if (resourceParam.ParamKind == ParamKind.Resource && resourceParam.RefKind != RefKind.None)
-                    {
-                        declResourceCode.AppendLine($"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
-                    }
-                }
-            }
-
-            if (componentParams.Length > 0)
-            {
-                if (groupSize > 0)
-                {
-                    var declIterCode = new StringBuilder();
-
-                    for (var i = 0; i < componentParams.Length; i++)
-                    {
-                        declIterCode.AppendLine(
-                            i == 0
-                                ? $"                        var ({componentParams[i].ParamName}, size) = archetype.GetChunkData(SystemDataAG.TypeIdList[{i}], j);"
-                                : $"                        var ({componentParams[i].ParamName}, _) = archetype.GetChunkData(SystemDataAG.TypeIdList[{i}], j);");
-                    }
-
-                    body = $@"
-        foreach (var archetype in SystemDataAG.Archetypes)
-        {{
-            SystemDataAG.Commands[threadIdx].CurrentArchetype = archetype;
-
-            {(hasEntityParam ? "var entitySpan = archetype.GetEntitiesSpan();\n" : "")}
-            foreach (var (chunkIdx, chunkCount, entityIdx) in archetype.IterateChunksAmongType({groupSize}))
-            {{
-                SystemDataAG.ThreadPool.Dispatch(threadIdx =>
-                {{
-                    for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
-                    {{
-{declIterCode}
-                        for (var i = 0; i < size; i++)
-                        {{
-                            Execute({execParams});{(hasEntityParam ? "\n                            entityIdx++; " : "")}
-                        }}
-                    }}
-                }});
-            }}
-        }}
-
-        SystemDataAG.ThreadPool.AsTask().Wait();
-        {(hasAfterExecute ? "AfterExecute();" : "")}
-
-        return SystemDataAG.EntityCommander;";
-                }
-                else
-                {
-                    var declIterCode = new StringBuilder();
-                    var iterDeclCurrentCode = new StringBuilder();
-                    var iterMoveNextCode = new List<string>(componentParams.Length);
-
-                    for (var i = 0; i < componentParams.Length; i++)
-                    {
-                        declIterCode.AppendLine(
-                            $"            var iter{i} = archetype.IterateDataAmongChunk(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
-                        iterMoveNextCode.Add($"iter{i}.MoveNext()");
-
-                        iterDeclCurrentCode.AppendLine(i == 0
-                            ? $"                var ({componentParams[i].ParamName}, size) = iter{i}.Current;"
-                            : $"                var ({componentParams[i].ParamName}, _) = iter{i}.Current;");
-                    }
-
-                    var iterateChunkWhileExpr = $@"{declIterCode}
-            while ({string.Join(" & ", iterMoveNextCode)})
-            {{
-{iterDeclCurrentCode}
-                for (var i = 0; i < size; i++)
-                {{
-                    Execute({execParams});{(hasEntityParam ? "\n                    entityIdx++; " : "")}
-                }}
-            }}";
-
-                    body = $@"
-{declResourceCode}
-        foreach (var archetype in SystemDataAG.Archetypes)
-        {{{(hasEntityParam ? "\n            var entitySpan = archetype.GetEntitiesSpan();\n            var entityIdx = 0;" : "")}
-            SystemDataAG.Commands[0].CurrentArchetype = archetype;
-{iterateChunkWhileExpr}
-        }}{(hasAfterExecute ? "\n        AfterExecute();" : "")}
-
-        return SystemDataAG.Commands;";
-                }
-            }
-            else
-            {
-                body = $@"
-{declResourceCode}        Execute({execParams}); {(hasAfterExecute ? "\n        AfterExecute();" : "")}
-
-        return SystemDataAG.Commands;";
-            }
-
-            return $@"
-    public unsafe ReadOnlySpan<Commands> ExecuteAG()
-    {{{body}
-    }}";
         }
     }
 }

@@ -193,10 +193,10 @@ public abstract class BasicSchedule : ISchedule
 
             if (resourceAttr != null)
             {
-                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn) : new SystemParameterInfo(p.ParameterType, resourceAttr.ReadOnly);
+                return p.ParameterType.IsValueType ? new(p.ParameterType, !p.ParameterType.IsByRef || p.IsIn, true) : new SystemParameterInfo(p.ParameterType, resourceAttr.ReadOnly, true);
             }
 
-            return new(p.ParameterType, p.IsIn);
+            return new(p.ParameterType, p.IsIn, false);
         }).ToArray();
 
         CheckAutoImplSystemAttribute(system, sysType);
@@ -275,12 +275,19 @@ public abstract class BasicSchedule : ISchedule
         for (var i = 0; i < parameters.Length; i++)
         {
             var param = parameters[i];
+
+            if (param.IsResource)
+            {
+                continue;
+            }
+
             var type = param.Type;
+
             if (type.IsGenericType)
             {
                 if (type == typeof(Span<>) || type == typeof(ReadOnlySpan<>))
                 {
-                    parameters[i] = new(param.Type.GetGenericArguments()[0], type == typeof(ReadOnlySpan<>));
+                    parameters[i] = new(param.Type.GetGenericArguments()[0], type == typeof(ReadOnlySpan<>), false);
                     spanTypeCount++;
                     continue;
                 }
@@ -291,7 +298,7 @@ public abstract class BasicSchedule : ISchedule
 
         if (spanTypeCount > 0 && componentTypeCount > 0)
         {
-            throw new ArgumentException($"System {system} has both span parameter and component parameter, which is not supported");
+            throw new ArgumentException($"System {system} has both component/entity span parameter and component/entity parameter, which is not supported");
         }
     }
 

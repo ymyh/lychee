@@ -20,31 +20,28 @@ public sealed class App : IDisposable
 
     private readonly HashSet<Type> pluginInstalled = [];
 
-    private readonly List<Commands> commandsList = [];
+    private readonly List<IDisposable> disposables = [];
 
 #endregion
 
 #region Constructors & Destructors
 
-    /// <param name="threadCount">The thread count of the thread pool. If 0, use <see cref="Environment.ProcessorCount"/> / 2 as the default value.</param>
-    public App(int threadCount = 0)
+    /// <summary>
+    /// Creates an App with specified thread count.
+    /// </summary>
+    /// <param name="threadCount">The thread count of the thread pool.</param>
+    public App(int threadCount)
     {
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
-
-        if (threadCount == 0)
-        {
-            ThreadPool = new(Environment.ProcessorCount / 2);
-        }
-        else
-        {
-            ThreadPool = new(threadCount);
-        }
+        ThreadPool = new(threadCount);
     }
 
-    ~App()
+    /// <summary>
+    /// Creates an App with thread count <see cref="Environment.ProcessorCount"/> / 2.
+    /// </summary>
+    public App() : this(Environment.ProcessorCount / 2)
     {
-        Dispose();
     }
 
 #endregion
@@ -104,10 +101,28 @@ public sealed class App : IDisposable
         World.SystemSchedules.ClearSchedules();
     }
 
+    /// <summary>
+    /// Creates a <see cref="Commands"/>.
+    /// </summary>
+    /// <returns></returns>
     public Commands CreateCommands()
     {
-        commandsList.Add(new(this));
-        return commandsList[^1];
+        var commands = new Commands(this);
+        disposables.Add(commands);
+
+        return commands;
+    }
+
+    /// <summary>
+    /// Creates a <see cref="ThreadPool"/> that will call Dispose when <see cref="App"/> destoried.
+    /// </summary>
+    /// <returns></returns>
+    public ThreadPool CreateThreadPool(int threadCount)
+    {
+        var pool = new ThreadPool(threadCount);
+        disposables.Add(pool);
+
+        return pool;
     }
 
     public ISchedule? GetSchedule(string name)
@@ -121,7 +136,7 @@ public sealed class App : IDisposable
     /// <param name="plugin">The plugin to install.</param>
     /// <typeparam name="T">The plugin type.</typeparam>
     /// <returns></returns>
-    public T InstallPlugin<T>(T plugin) where T : IPlugin, new()
+    public T InstallPlugin<T>(T plugin) where T : IPlugin
     {
         var type = plugin.GetType();
         if (pluginInstalled.Contains(type))
@@ -133,6 +148,16 @@ public sealed class App : IDisposable
         pluginInstalled.Add(plugin.GetType());
 
         return plugin;
+    }
+
+    /// <summary>
+    /// Install a plugin to the application. Install same plugin takes no effect.
+    /// </summary>
+    /// <typeparam name="T">The plugin type.</typeparam>
+    /// <returns></returns>
+    public T InstallPlugin<T>() where T : IPlugin, new()
+    {
+        return InstallPlugin(new T());
     }
 
     /// <summary>
@@ -165,12 +190,10 @@ public sealed class App : IDisposable
         ThreadPool.Dispose();
         World.Dispose();
 
-        foreach (var commands in commandsList)
+        foreach (var disposable in disposables)
         {
-            commands.Dispose();
+            disposable.Dispose();
         }
-
-        GC.SuppressFinalize(this);
     }
 
 #endregion

@@ -10,5 +10,5 @@
 [AttributeUsage(AttributeTargets.Parameter)]
 public sealed class Resource(bool readOnly = false) : Attribute
 {
-    public bool ReadOnly = readOnly;
+    public readonly bool ReadOnly = readOnly;
 }

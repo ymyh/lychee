@@ -62,7 +62,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get the resource from the pool.
+    /// Get a resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
@@ -73,7 +73,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get the resource from the pool.
+    /// Get a resource from the pool.
     /// </summary>
     /// <param name="type">The type of the resource.</param>
     /// <returns></returns>
@@ -91,7 +91,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get the resource from the pool.
+    /// Get a resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
@@ -110,25 +110,24 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get the resource from the pool.
+    /// Get a class type resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
     public ref T GetResourceClassRef<T>() where T : class
     {
-        try
-        {
-            return ref Unsafe.As<object, T>(ref CollectionsMarshal.GetValueRefOrNullRef(dataMap, typeof(T)));
-        }
-        catch (KeyNotFoundException)
+        ref var value = ref CollectionsMarshal.GetValueRefOrNullRef(dataMap, typeof(T));
+        if (Unsafe.IsNullRef(ref value))
         {
             throw new ArgumentException($"Resource {typeof(T).Name} does not exist");
         }
+
+        return ref Unsafe.As<object, T>(ref value);
     }
 
     /// <summary>
-    /// Get the pointer of struct type resource from the pool.
+    /// Get a pointer of struct type resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource pointer.</returns>

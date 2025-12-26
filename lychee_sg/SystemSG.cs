@@ -19,6 +19,8 @@ namespace lychee_sg
 
         public bool HasAfterExecute;
 
+        public bool HasBeforeExecute;
+
         public uint GroupSize;
 
         public uint ThreadCount;
@@ -132,6 +134,7 @@ partial class {sysInfo.Name} : ISystem
         private static SystemInfo GetTargetMethodInfo(ref GeneratorSyntaxContext context)
         {
             var classDecl = (ClassDeclarationSyntax)context.Node;
+            var hasBeforeExecute = false;
             var hasAfterExecute = false;
             ParamInfo[] paramList = null;
 
@@ -188,6 +191,13 @@ partial class {sysInfo.Name} : ISystem
                     }
 
                     if (memberDecl.Kind() == SyntaxKind.MethodDeclaration &&
+                        methodDecl.Identifier.Text == "BeforeExecute")
+                    {
+                        var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
+                        hasBeforeExecute = symbol.Parameters.Length == 0;
+                    }
+
+                    if (memberDecl.Kind() == SyntaxKind.MethodDeclaration &&
                         methodDecl.Identifier.Text == "AfterExecute")
                     {
                         var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
@@ -201,6 +211,7 @@ partial class {sysInfo.Name} : ISystem
                 Name = classDecl.Identifier.Text,
                 Namespace = Utils.GetNamespace(classDecl),
                 Params = paramList,
+                HasBeforeExecute = hasBeforeExecute,
                 HasAfterExecute = hasAfterExecute,
                 ThreadCount = threadCount,
                 GroupSize = groupSize,
@@ -244,7 +255,7 @@ partial class {sysInfo.Name} : ISystem
             return $@"
     public void InitializeAG(App app)
     {{
-        SystemDataAG.Pool = app.ResourcePool;{(threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = new({threadCount});" : "")}
+        SystemDataAG.Pool = app.ResourcePool;{(threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool({threadCount});" : "")}
         SystemDataAG.TypeIdList = [{registerTypes}];
         SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("app.CreateCommands()", (int)Math.Max(1, threadCount)))}];
 
@@ -296,7 +307,7 @@ partial class {sysInfo.Name} : ISystem
 
             if (componentParams.Length > 0)
             {
-                body = $@"
+                body = $@"{(systemInfo.HasBeforeExecute ? "        BeforeExecute();" : "")}
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
         {{
@@ -307,8 +318,8 @@ partial class {sysInfo.Name} : ISystem
             }
             else
             {
-                body = $@"
-{declResourceCode}        Execute({execParams}); {(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
+                body = $@"{(systemInfo.HasBeforeExecute ? "        BeforeExecute();" : "")}
+{declResourceCode}        Execute({execParams});{(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
 
         return SystemDataAG.Commands;";
             }
@@ -338,8 +349,8 @@ partial class {sysInfo.Name} : ISystem
                              resourceParam.RefKind != RefKind.None)
                     {
                         declResourceCode.AppendLine(
-                                $"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
-                            break;
+                            $"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
+                        break;
                     }
                 }
             }

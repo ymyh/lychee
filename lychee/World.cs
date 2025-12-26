@@ -20,11 +20,6 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
 
 #endregion
 
-    ~World()
-    {
-        Dispose();
-    }
-
 #region Internal methods
 
     internal void AddEvent(IEvent ev)
@@ -61,8 +56,6 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
     {
         ArchetypeManager.Dispose();
         EntityPool.Dispose();
-
-        GC.SuppressFinalize(this);
     }
 
 #endregion

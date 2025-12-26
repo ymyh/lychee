@@ -55,8 +55,7 @@ public sealed class ThreadPool : IDisposable
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine(e.Message);
-                        Console.WriteLine(e.StackTrace);
+                        Console.WriteLine(e);
                         break;
                     }
                 }
@@ -65,11 +64,6 @@ public sealed class ThreadPool : IDisposable
             threads.Add(thread);
             thread.Start();
         }
-    }
-
-    ~ThreadPool()
-    {
-        Dispose();
     }
 
     /// <summary>
@@ -114,7 +108,5 @@ public sealed class ThreadPool : IDisposable
         sendTaskChannel.Writer.Complete();
         taskCompleteChannel.Writer.Complete();
         threads.ForEach(x => x.Join());
-
-        GC.SuppressFinalize(this);
     }
 }

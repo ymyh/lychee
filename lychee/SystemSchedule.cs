@@ -11,26 +11,9 @@ public sealed class SystemSchedules
 
     private readonly Dictionary<string, ISchedule> scheduleDict = [];
 
-    private int lastScheduleIndex = 0;
+    private int lastScheduleIndex;
 
     private bool needClear;
-
-    /// <summary>
-    /// Add a schedule.
-    /// </summary>
-    /// <param name="schedule">The schedule to add.</param>
-    /// <exception cref="ArgumentException">Thrown when the schedule already exists.</exception>
-    public void AddSchedule(ISchedule schedule)
-    {
-        var index = schedules.IndexOf(schedule);
-        if (index != -1)
-        {
-            throw new ArgumentException($"Schedule {schedule} already exists");
-        }
-
-        schedules.Add(schedule);
-        scheduleDict.Add(schedule.Name, schedule);
-    }
 
     /// <summary>
     /// Add a schedule after another schedule.
@@ -38,7 +21,7 @@ public sealed class SystemSchedules
     /// <param name="schedule">The schedule to add.</param>
     /// <param name="addAfter">The schedule after which to add the new schedule.</param>
     /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
-    public void AddSchedule(ISchedule schedule, ISchedule addAfter)
+    public void AddSchedule(ISchedule schedule, ISchedule? addAfter = null)
     {
         var index = schedules.IndexOf(schedule);
         if (index != -1)
@@ -46,13 +29,15 @@ public sealed class SystemSchedules
             throw new ArgumentException($"Schedule {schedule} already exists");
         }
 
-        index = schedules.IndexOf(addAfter);
-        if (index == -1)
+        if (addAfter != null && schedules.IndexOf(addAfter) == -1)
         {
-            throw new ArgumentException($"Schedule {addAfter} not found");
+            schedules.Add(schedule);
+        }
+        else
+        {
+            schedules.Insert(index + 1, schedule);
         }
 
-        schedules.Insert(index + 1, schedule);
         scheduleDict.Add(schedule.Name, schedule);
     }
 

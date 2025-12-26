@@ -337,7 +337,7 @@ public abstract class BasicSchedule : ISchedule
 
     private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
     {
-        var intersected = systemA.Parameters.Intersect(systemB.Parameters,
+        return systemA.Parameters.Intersect(systemB.Parameters,
             EqualityComparer<SystemParameterInfo>.Create((a, b) =>
             {
                 var same = a.Type == b.Type;
@@ -347,9 +347,7 @@ public abstract class BasicSchedule : ISchedule
                 }
 
                 return same;
-            }, info => HashCode.Combine(info.Type.GetHashCode(), info.ReadOnly))).ToArray();
-
-        return intersected.Length == 0;
+            }, info => HashCode.Combine(info.Type.GetHashCode(), info.ReadOnly))).Any();
     }
 
 #endregion
@@ -362,14 +360,14 @@ public abstract class BasicSchedule : ISchedule
             isFrozen = true;
         }
 
-        if (needConfigure)
-        {
-            Configure();
-            needConfigure = false;
-        }
-
         foreach (var group in frozenDagNodes)
         {
+            if (needConfigure)
+            {
+                Configure();
+                needConfigure = false;
+            }
+
             foreach (var frozenDagNode in group)
             {
                 if (ExecutionMode == ExecutionModeEnum.SingleThread)
@@ -390,12 +388,6 @@ public abstract class BasicSchedule : ISchedule
             if (CommitPoint == CommitPointEnum.Synchronization)
             {
                 Commit();
-            }
-
-            if (needConfigure)
-            {
-                Configure();
-                needConfigure = false;
             }
         }
 

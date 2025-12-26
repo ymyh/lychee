@@ -305,7 +305,7 @@ public sealed class Commands : IDisposable
 
         currentEntityInfo = entityPool.GetEntityInfo(entity);
 
-        if (!isCurrentArchetype)
+        if (!isCurrentArchetype || currentEntityInfo.ArchetypeId != CurrentArchetype.ID)
         {
             CurrentArchetype = ArchetypeManager.GetArchetype(currentEntityInfo.ArchetypeId);
         }
@@ -321,8 +321,7 @@ public sealed class Commands : IDisposable
             return ref Unsafe.NullRef<T>();
         }
 
-        var typeId = TypeRegistrar.GetTypeId<T>();
-        var (ptr, size) = CurrentArchetype.GetChunkData(typeId, currentEntityInfo.ChunkIdx);
+        var (ptr, size) = CurrentArchetype.GetChunkData(TypeRegistrar.GetTypeId<T>(), currentEntityInfo.ChunkIdx);
 
         Debug.Assert((uint)currentEntityInfo.Idx < (uint)size);
 
@@ -355,8 +354,8 @@ public sealed class Commands : IDisposable
         }
 
         entityPool.Commit();
-
         ArchetypeManager.Commit();
+
         removedEntityMap.Clear();
         modifiedEntityInfoMap.Clear();
     }

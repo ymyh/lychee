@@ -11,7 +11,7 @@
 [AttributeUsage(AttributeTargets.Class)]
 public sealed class AutoImplSystem(uint groupSize = 0, uint threadCount = 0) : Attribute
 {
-    public uint GroupSize = groupSize;
+    public readonly uint GroupSize = groupSize;
 
-    public uint ThreadCount = threadCount;
+    public readonly uint ThreadCount = threadCount;
 }

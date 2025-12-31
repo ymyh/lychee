@@ -62,18 +62,18 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get a resource from the pool.
+    /// Gets the resource from the pool by given type.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
-    public T GetResource<T>()
+    public T GetResource<T>() where T : class
     {
         return (T)GetResource(typeof(T));
     }
 
     /// <summary>
-    /// Get a resource from the pool.
+    /// Gets the resource from the pool by given type.
     /// </summary>
     /// <param name="type">The type of the resource.</param>
     /// <returns></returns>
@@ -91,7 +91,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get a resource from the pool.
+    /// Gets a resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
@@ -110,7 +110,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get a class type resource from the pool.
+    /// Gets a class type resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource.</returns>
@@ -127,7 +127,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     }
 
     /// <summary>
-    /// Get a pointer of struct type resource from the pool.
+    /// Gets a pointer of struct type resource from the pool.
     /// </summary>
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource pointer.</returns>

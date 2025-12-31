@@ -106,7 +106,7 @@ public sealed class TypeRegistrar
                 alignment = TypeUtils.GetOrGuessAlignment(type, size);
             }
 
-            typeList.Add((new(size, alignment)));
+            typeList.Add(new(size, alignment));
         }
 
         return typeList.Count - 1;
@@ -151,30 +151,30 @@ public sealed class TypeRegistrar
     /// Register all types of the given tuple.
     /// </summary>
     /// <typeparam name="T">A tuple of component types.</typeparam>
-    /// <exception cref="ArgumentException">Thrown when bundle type has no public non-static fields</exception>
+    /// <exception cref="ArgumentException">Thrown when type T is not a value tuple.</exception>
     /// <returns>All id of component types in the tuple.</returns>
     public int[] GetComponentTypeIds<T>() where T : unmanaged
     {
-        return !TypeUtils.IsValueTuple<T>() ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T)) : TypeUtils.GetTupleTypes<T>().Select(t => RegisterComponent(t)).ToArray();
+        return !TypeUtils.IsValueTuple<T>()
+            ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T))
+            : TypeUtils.GetTupleTypes<T>().Select(t => RegisterComponent(t)).ToArray();
     }
 
     /// <summary>
     /// Gets Type with given id
     /// </summary>
-    /// <param name="id">Type id registered before using Register()</param>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
+    /// <param name="typeId">Type id of a registered type.</param>
     /// <returns></returns>
-    public TypeInfo GetTypeInfo(int id)
+    public TypeInfo GetTypeInfo(int typeId)
     {
         using var rg = typeListLock.EnterReadLock();
-        return rg.Data[id];
+        return rg.Data[typeId];
     }
 
     /// <summary>
     /// Gets type info with given type
     /// </summary>
     /// <param name="type"></param>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
     /// <returns></returns>
     public TypeInfo GetTypeInfo(Type type)
     {
@@ -185,7 +185,7 @@ public sealed class TypeRegistrar
     /// <summary>
     /// Gets bundle type info with given type.
     /// </summary>
-    /// <typeparam name="T"></typeparam>
+    /// <typeparam name="T">The bundle type.</typeparam>
     /// <returns></returns>
     public (TypeInfo info, int typeId)[] GetBundleInfo<T>() where T : unmanaged, IComponentBundle
     {

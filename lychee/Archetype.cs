@@ -11,7 +11,7 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly TypeRegistrar typeRegistrar;
 
-    internal static Archetype EmptyArchetype { get; private set; } = null!;
+    internal static Archetype EmptyArchetype { get; }
 
     public delegate void ArchetypeCreatedHandler();
 
@@ -20,12 +20,15 @@ public sealed class ArchetypeManager : IDisposable
     /// </summary>
     public event ArchetypeCreatedHandler? ArchetypeCreated;
 
+    static ArchetypeManager()
+    {
+        EmptyArchetype = new(0, [], []);
+    }
+
     public ArchetypeManager(TypeRegistrar typeRegistrar)
     {
         this.typeRegistrar = typeRegistrar;
-        GetOrCreateArchetype([]);
-
-        EmptyArchetype = archetypes[0];
+        archetypes.Add(EmptyArchetype);
     }
 
 #region Public methods

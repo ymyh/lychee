@@ -56,46 +56,90 @@ public sealed class App : IDisposable
         World.AddEvent(ev);
     }
 
+    /// <summary>
+    /// Add a new resource with given value. Each type of resource can be added only once.
+    /// </summary>
+    /// <param name="resource">The resource to added.</param>
+    /// <typeparam name="T">The resource type.</typeparam>
+    /// <returns></returns>
     public T AddResource<T>(T resource)
     {
         return ResourcePool.AddResource(resource);
     }
 
+    /// <summary>
+    /// Add a new resource with default value. Each type of resource can be added only once.
+    /// </summary>
+    /// <typeparam name="T">The resource type.</typeparam>
+    /// <returns></returns>
     public T AddResource<T>() where T : new()
     {
         return ResourcePool.AddResource<T>();
     }
 
-    public T GetResource<T>()
+    /// <summary>
+    /// Gets the resource added before, target resource must be class.
+    /// </summary>
+    /// <typeparam name="T">The resource type.</typeparam>
+    /// <returns></returns>
+    public T GetResource<T>() where T : class
     {
         return ResourcePool.GetResource<T>();
     }
 
+    /// <summary>
+    /// Gets the reference of the resource added before, target resource must be unmanaged.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
     public ref T GetResourceStructRef<T>() where T : unmanaged
     {
         return ref ResourcePool.GetResourceStructRef<T>();
     }
 
+    /// <summary>
+    /// Gets the reference of the resource added before, target resource must be class.
+    /// </summary>
+    /// <typeparam name="T">The resource type, must be class.</typeparam>
+    /// <returns></returns>
     public ref T GetResourceClassRef<T>() where T : class
     {
         return ref ResourcePool.GetResourceClassRef<T>();
     }
 
+    /// <summary>
+    /// Gets the pointer of an unmanaged resource type.
+    /// </summary>
+    /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
+    /// <returns></returns>
     public byte[] GetResourcePtr<T>() where T : unmanaged
     {
         return ResourcePool.GetResourcePtr<T>();
     }
 
+    /// <summary>
+    /// Add a system schedule.
+    /// </summary>
+    /// <param name="schedule"></param>
     public void AddSchedule(ISchedule schedule)
     {
         World.SystemSchedules.AddSchedule(schedule);
     }
 
+    /// <summary>
+    /// Add a system schedule after another system schedule.
+    /// </summary>
+    /// <param name="schedule">The schedule to added.</param>
+    /// <param name="addAfter"></param>
+    /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
     public void AddSchedule(ISchedule schedule, ISchedule addAfter)
     {
         World.SystemSchedules.AddSchedule(schedule, addAfter);
     }
 
+    /// <summary>
+    /// Clear all system schedules.
+    /// </summary>
     public void ClearSchedules()
     {
         World.SystemSchedules.ClearSchedules();

@@ -78,26 +78,25 @@ public sealed class Commands : IDisposable
         return entity;
     }
 
-    public bool RemoveEntity(Entity entity)
+    public void RemoveEntity(Entity entity)
     {
         if (removedEntityMap.ContainsKey(entity.ID))
         {
-            return false;
+            return;
         }
 
         if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
         {
             info.Archetype.MarkRemove(entity.ID, info.ChunkIdx, info.Idx);
-            return true;
+            return;
         }
 
         if (!entityPool.CheckEntityValid(entity))
         {
-            return false;
+            return;
         }
 
         var entityInfo = entityPool.GetEntityInfo(entity);
-
         if (entityInfo.ArchetypeId != SrcArchetype.ID)
         {
             SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
@@ -108,8 +107,6 @@ public sealed class Commands : IDisposable
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity);
         removedEntityMap.Add(entity.ID, entity);
-
-        return true;
     }
 
     public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
@@ -284,7 +281,6 @@ public sealed class Commands : IDisposable
             else
             {
                 SrcArchetype = ArchetypeManager.EmptyArchetype;
-                srcArchetypeChanged = true;
             }
         }
 

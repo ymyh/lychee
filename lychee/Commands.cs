@@ -65,11 +65,15 @@ public sealed class Commands : IDisposable
         entityPool = app.World.EntityPool;
         ArchetypeManager = app.World.ArchetypeManager;
         TypeRegistrar = app.TypeRegistrar;
-        SrcArchetype = app.World.ArchetypeManager.GetArchetype(0);
+        SrcArchetype = ArchetypeManager.EmptyArchetype;
     }
 
 #region Public Methods
 
+    /// <summary>
+    /// Creates a new entity in uncommitted state.
+    /// </summary>
+    /// <returns></returns>
     public Entity CreateEntity()
     {
         var entity = entityPool.ReserveEntity();
@@ -78,6 +82,10 @@ public sealed class Commands : IDisposable
         return entity;
     }
 
+    /// <summary>
+    /// Removes an existing entity. If the entity is in uncommitted state or already removed, this method will do nothing.
+    /// </summary>
+    /// <param name="entity"></param>
     public void RemoveEntity(Entity entity)
     {
         if (removedEntityMap.ContainsKey(entity.ID))
@@ -109,6 +117,13 @@ public sealed class Commands : IDisposable
         removedEntityMap.Add(entity.ID, entity);
     }
 
+    /// <summary>
+    /// Adds a component to an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <param name="component">The component to add.</param>
+    /// <typeparam name="T">The component type.</typeparam>
+    /// <returns></returns>
     public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -137,6 +152,13 @@ public sealed class Commands : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Adds a component bundle to an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <param name="bundle">The component bundle to add.</param>
+    /// <typeparam name="T">The component bundle type.</typeparam>
+    /// <returns></returns>
     public bool AddComponents<T>(Entity entity, in T bundle) where T : unmanaged, IComponentBundle
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -178,6 +200,12 @@ public sealed class Commands : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Removes a component from an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component type.</typeparam>
+    /// <returns></returns>
     public bool RemoveComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -204,6 +232,12 @@ public sealed class Commands : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Removes all components inside bundle from an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component bundle type.</typeparam>
+    /// <returns></returns>
     public bool RemoveComponents<T>(Entity entity) where T : unmanaged, IComponentBundle
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -230,6 +264,12 @@ public sealed class Commands : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Removes all components inside tuple from an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component tuple type.</typeparam>
+    /// <returns></returns>
     public bool RemoveComponentsTuple<T>(Entity entity) where T : unmanaged
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -254,42 +294,6 @@ public sealed class Commands : IDisposable
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
-    }
-
-    private (int srcChunkIdx, int srcIdx) GetPositionOfEntity(Entity entity)
-    {
-        var srcChunkIdx = 0;
-        var srcIdx = 0;
-        var oldSrcArchetype = SrcArchetype;
-
-        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
-        {
-            SrcArchetype = info.Archetype;
-            srcChunkIdx = info.ChunkIdx;
-            srcIdx = info.Idx;
-        }
-        else
-        {
-            if (entityPool.CheckEntityValid(entity))
-            {
-                var entityInfo = entityPool.GetEntityInfo(entity);
-                SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
-
-                srcChunkIdx = entityInfo.ChunkIdx;
-                srcIdx = entityInfo.Idx;
-            }
-            else
-            {
-                SrcArchetype = ArchetypeManager.EmptyArchetype;
-            }
-        }
-
-        if (SrcArchetype != oldSrcArchetype)
-        {
-            srcArchetypeChanged = true;
-        }
-
-        return (srcChunkIdx, srcIdx);
     }
 
     public void SetCurrentEntity(Entity entity, bool isCurrentArchetype = true)
@@ -354,6 +358,46 @@ public sealed class Commands : IDisposable
 
         removedEntityMap.Clear();
         modifiedEntityInfoMap.Clear();
+    }
+
+#endregion
+
+#region Private methods
+
+    private (int srcChunkIdx, int srcIdx) GetPositionOfEntity(Entity entity)
+    {
+        var srcChunkIdx = 0;
+        var srcIdx = 0;
+        var oldSrcArchetype = SrcArchetype;
+
+        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            SrcArchetype = info.Archetype;
+            srcChunkIdx = info.ChunkIdx;
+            srcIdx = info.Idx;
+        }
+        else
+        {
+            if (entityPool.CheckEntityValid(entity))
+            {
+                var entityInfo = entityPool.GetEntityInfo(entity);
+                SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
+
+                srcChunkIdx = entityInfo.ChunkIdx;
+                srcIdx = entityInfo.Idx;
+            }
+            else
+            {
+                SrcArchetype = ArchetypeManager.EmptyArchetype;
+            }
+        }
+
+        if (SrcArchetype != oldSrcArchetype)
+        {
+            srcArchetypeChanged = true;
+        }
+
+        return (srcChunkIdx, srcIdx);
     }
 
 #endregion
@@ -514,7 +558,7 @@ public static class EntityCommandBufferExtensions
 
             if (self.TransferDstInfo == null)
             {
-                var typeIds = self.TypeRegistrar.GetComponentTypeIds<T>();
+                var typeIds = self.TypeRegistrar.RegisterTypesOfTuple<T>();
                 var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(self.SrcArchetype.TypeIdList.Except(typeIds));
 
                 self.TransferDstInfo = new(dstArchetype, []);

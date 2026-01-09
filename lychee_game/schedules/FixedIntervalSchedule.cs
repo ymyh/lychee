@@ -8,16 +8,15 @@ namespace lychee_game.schedules;
 /// </summary>
 /// <param name="app">The application.</param>
 /// <param name="commitPoint">The commit point.</param>
-/// <param name="fixedUpdateInterval">The interval in milliseconds.</param>
-/// <param name="catchUpCount">The catch-up attempt count in each execute.</param>
+/// <param name="fixedUpdateInterval">The interval in milliseconds, default is 20.</param>
+/// <param name="catchUpCount">The catch-up attempt count in each execute, default is 5.</param>
 public sealed class FixedIntervalSchedule(
     App app,
-    string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization,
     int fixedUpdateInterval = 20,
     int catchUpCount = 5)
-    : BasicSchedule(app, name, executionMode, commitPoint)
+    : BasicSchedule(app, executionMode, commitPoint)
 {
     private long accErr = fixedUpdateInterval;
 
@@ -37,7 +36,7 @@ public sealed class FixedIntervalSchedule(
             accErr = now;
             stopwatch.Restart();
 
-            ExecuteImpl();
+            DoExecute();
         }
 
         var i = 0;
@@ -47,7 +46,7 @@ public sealed class FixedIntervalSchedule(
             accErr = now;
             i++;
 
-            ExecuteImpl();
+            DoExecute();
         }
     }
 }

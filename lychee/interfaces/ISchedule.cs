@@ -2,7 +2,8 @@
 
 public interface ISchedule
 {
-    public string Name { get; }
-
+    /// <summary>
+    /// Executes the schedule.
+    /// </summary>
     public void Execute();
 }

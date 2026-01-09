@@ -10,17 +10,16 @@ namespace lychee_game.schedules;
 /// <param name="commitPoint">The commit point.</param>
 public sealed class ConditionalSchedule(
     App app,
-    string name,
     Func<bool> predicate,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, name, executionMode, commitPoint)
+    : BasicSchedule(app, executionMode, commitPoint)
 {
     public override void Execute()
     {
         if (predicate())
         {
-            ExecuteImpl();
+            DoExecute();
         }
     }
 }

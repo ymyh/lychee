@@ -18,13 +18,13 @@ public abstract class BasicSchedule : ISchedule
     public enum CommitPointEnum
     {
         /// <summary>
-        /// Commits the changes at every synchronization point.
-        /// For SingleThread execution mode, it will commit the changes at every system execution.
+        /// Commits changes at every synchronization point.
+        /// For SingleThread execution mode, it will commit changes after every system execution.
         /// </summary>
         Synchronization,
 
         /// <summary>
-        /// Commits the changes at the end of the schedule execution.
+        /// Commits changes at the end of the schedule execution.
         /// </summary>
         ScheduleEnd
     }
@@ -35,12 +35,12 @@ public abstract class BasicSchedule : ISchedule
     public enum ExecutionModeEnum
     {
         /// <summary>
-        /// Executes the systems in a single thread.
+        /// Executes all systems in a single thread.
         /// </summary>
         SingleThread,
 
         /// <summary>
-        /// Executes the systems in multiple threads.
+        /// Executes all systems in multiple threads.
         /// </summary>
         MultiThread,
     }
@@ -68,12 +68,11 @@ public abstract class BasicSchedule : ISchedule
 
 #region Constructor
 
-    protected BasicSchedule(App app, string name, ExecutionModeEnum executionMode = ExecutionModeEnum.SingleThread, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
+    protected BasicSchedule(App app, ExecutionModeEnum executionMode = ExecutionModeEnum.SingleThread, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
     {
         this.app = app;
         CommitPoint = commitPoint;
         ExecutionMode = executionMode;
-        Name = name;
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
 
@@ -84,8 +83,6 @@ public abstract class BasicSchedule : ISchedule
 
 #region ISchedule Members
 
-    public string Name { get; }
-
     public abstract void Execute();
 
 #endregion
@@ -95,7 +92,7 @@ public abstract class BasicSchedule : ISchedule
     /// <summary>
     /// Add a system to schedule. The added system will call <see cref="ISystem.InitializeAG"/>.
     /// </summary>
-    /// <typeparam name="T">The type of system to added.</typeparam>
+    /// <typeparam name="T">The type of system to add.</typeparam>
     /// <returns>The system just added.</returns>
     public T AddSystem<[SystemConcept] T>() where T : ISystem, new()
     {
@@ -106,7 +103,7 @@ public abstract class BasicSchedule : ISchedule
     /// Add a system to schedule, with descriptor. The added system will call <see cref="ISystem.InitializeAG"/>.
     /// </summary>
     /// <param name="descriptor">The system descriptor</param>
-    /// <typeparam name="T">The type of system to added.</typeparam>
+    /// <typeparam name="T">The type of system to add.</typeparam>
     /// <returns>The system just added.</returns>
     public T AddSystem<[SystemConcept] T>(SystemDescriptor descriptor) where T : ISystem, new()
     {
@@ -116,7 +113,7 @@ public abstract class BasicSchedule : ISchedule
     /// <summary>
     /// Add a system to schedule. The added system will call <see cref="ISystem.InitializeAG"/>.
     /// </summary>
-    /// <param name="system">The system to added.</param>
+    /// <param name="system">The system to add.</param>
     /// <typeparam name="T">The system type.</typeparam>
     /// <returns>The system just added.</returns>
     public T AddSystem<[SystemConcept] T>(T system) where T : ISystem
@@ -127,9 +124,9 @@ public abstract class BasicSchedule : ISchedule
     /// <summary>
     /// Add a system to schedule, with descriptor. The added system will call <see cref="ISystem.InitializeAG"/>.
     /// </summary>
-    /// <param name="system">The system to added.</param>
+    /// <param name="system">The system to add.</param>
     /// <param name="descriptor">The system descriptor</param>
-    /// <typeparam name="T">The type of system to added.</typeparam>
+    /// <typeparam name="T">The type of system to add.</typeparam>
     /// <returns>The system just added</returns>
     public T AddSystem<[SystemConcept] T>(T system, SystemDescriptor descriptor) where T : ISystem
     {
@@ -240,7 +237,7 @@ public abstract class BasicSchedule : ISchedule
             {
                 app.TypeRegistrar.RegisterComponent(type);
 
-                if (!TypeUtils.ContainsField(type))
+                if (TypeUtils.IsEmptyStruct(type))
                 {
                     throw new ArgumentException($"Type {param} as a component parameter is not supported, because it doesn't contains any field");
                 }
@@ -313,7 +310,7 @@ public abstract class BasicSchedule : ISchedule
 
             if ((groupSize > 0 && threadCount == 0) || (groupSize == 0 && threadCount > 0))
             {
-                throw new ArgumentException($"System {system} has a invalid AutoImplSystem attribute parameter");
+                throw new ArgumentException($"System {system} has a invalid AutoImplSystem attribute parameter, they must both be greater than 0 or both be 0");
             }
         }
     }
@@ -352,7 +349,11 @@ public abstract class BasicSchedule : ISchedule
 
 #endregion
 
-    protected void ExecuteImpl()
+    /// <summary>
+    /// Executes all systems in the schedule.
+    /// Inherited class should call this method in their Execute method.
+    /// </summary>
+    protected void DoExecute()
     {
         if (!isFrozen)
         {
@@ -401,17 +402,18 @@ public abstract class BasicSchedule : ISchedule
 /// <summary>
 /// Execute with no condition.
 /// </summary>
-/// <param name="app">The application.</param>
-/// <param name="commitPoint">The commit point.</param>
+/// <param name="app">The ECS application.</param>
+/// <param name="name">The schedule name.</param>
+/// <param name="executionMode">The execution mode, default is SingleThread.</param>
+/// <param name="commitPoint">The commit point, default is Synchronization.</param>
 public sealed class DefaultSchedule(
     App app,
-    string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, name, executionMode, commitPoint)
+    : BasicSchedule(app, executionMode, commitPoint)
 {
     public override void Execute()
     {
-        ExecuteImpl();
+        DoExecute();
     }
 }

@@ -17,7 +17,7 @@ public sealed class Event<T> : IEvent
         return queue.GetEnumerable();
     }
 
-    public void PrepareForNextUpdate()
+    public void ExchangeFrontBack()
     {
         queue.Exchange();
         queue.ClearBack();

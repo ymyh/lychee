@@ -22,10 +22,10 @@ public sealed class Relationship
 
 public sealed class RelationshipPlugin : IPlugin
 {
-    public Relationship Relationship = null!;
+    public readonly Relationship Relationship = new();
 
     public void Install(App app)
     {
-        Relationship = app.AddResource(new Relationship());
+        app.AddResource(Relationship);
     }
 }

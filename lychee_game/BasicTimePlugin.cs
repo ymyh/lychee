@@ -44,10 +44,10 @@ public sealed class BasicTimePlugin : IPlugin
 
         app.AddResource(new Time());
 
-        var startUp = (FireOnceSchedule)app.GetSchedule("StartUp")!;
+        var startUp = app.GetSchedule<FireOnceSchedule>("StartUp")!;
         startUp.AddSystem(InitBasicTimePluginSystem);
 
-        var update = (DefaultSchedule)app.GetSchedule("Update")!;
+        var update = app.GetSchedule<DefaultSchedule>("Update")!;
         update.AddSystem(UpdateTimeResourceSystem);
     }
 }

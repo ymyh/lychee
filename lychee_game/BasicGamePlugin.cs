@@ -55,19 +55,19 @@ public sealed class DefaultPluginDescriptor
 /// <param name="desc">The plugin descriptor.</param>
 public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 {
-    public FireOnceSchedule StartUp = null!;
+    public FireOnceSchedule StartUp { get; private set; } = null!;
 
-    public FixedIntervalSchedule FixedUpdate = null!;
+    public FixedIntervalSchedule FixedUpdate { get; private set; } = null!;
 
-    public DefaultSchedule First = null!;
+    public DefaultSchedule First { get; private set; } = null!;
 
-    public DefaultSchedule Update = null!;
+    public DefaultSchedule Update { get; private set; } = null!;
 
-    public DefaultSchedule PostUpdate = null!;
+    public DefaultSchedule PostUpdate { get; private set; } = null!;
 
-    public DefaultSchedule Render = null!;
+    public DefaultSchedule Render { get; private set; } = null!;
 
-    public DefaultSchedule Last = null!;
+    public DefaultSchedule Last { get; private set; } = null!;
 
     public BasicGamePlugin() : this(new())
     {
@@ -75,29 +75,29 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 
     public void Install(App app)
     {
-        StartUp = new(app, nameof(StartUp));
-        app.AddSchedule(StartUp);
+        StartUp = new(app);
+        app.AddSchedule(StartUp, nameof(StartUp));
 
-        First = new(app, nameof(First));
-        app.AddSchedule(First);
+        First = new(app);
+        app.AddSchedule(First, nameof(First));
 
-        FixedUpdate = new(app, nameof(FixedUpdate))
+        FixedUpdate = new(app)
         {
             FixedUpdateInterval = desc.FixedUpdateInterval,
             CatchUpCount = desc.FixedUpdateCatchUpCount
         };
-        app.AddSchedule(FixedUpdate);
+        app.AddSchedule(FixedUpdate, nameof(FixedUpdate));
 
-        Update = new(app, nameof(Update));
-        app.AddSchedule(Update);
+        Update = new(app);
+        app.AddSchedule(Update, nameof(Update));
 
-        PostUpdate = new(app, nameof(PostUpdate));
-        app.AddSchedule(PostUpdate);
+        PostUpdate = new(app);
+        app.AddSchedule(PostUpdate, nameof(PostUpdate));
 
-        Render = new(app, nameof(Render));
-        app.AddSchedule(Render);
+        Render = new(app);
+        app.AddSchedule(Render, nameof(Render));
 
-        Last = new(app, nameof(Last));
-        app.AddSchedule(Last);
+        Last = new(app);
+        app.AddSchedule(Last, nameof(Last));
     }
 }

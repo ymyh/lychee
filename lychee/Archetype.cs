@@ -58,7 +58,7 @@ public sealed class ArchetypeManager : IDisposable
         }
     }
 
-    public Archetype GetOrCreateArchetype<T>()
+    public Archetype GetOrCreateArchetypeWithTuple<T>()
     {
         var typeList = TypeUtils.GetTupleTypes<T>();
         var typeIds = typeList.Select(x => typeRegistrar.RegisterComponent(x)).ToArray();
@@ -66,7 +66,7 @@ public sealed class ArchetypeManager : IDisposable
         return GetOrCreateArchetype(typeIds);
     }
 
-    public Archetype GetOrCreateArchetype2<T>() where T : IComponentBundle
+    public Archetype GetOrCreateArchetypeWithBundle<T>() where T : IComponentBundle
     {
         var type = typeof(T);
         var fields = type.GetFields();
@@ -76,6 +76,11 @@ public sealed class ArchetypeManager : IDisposable
         return GetOrCreateArchetype(typeIds);
     }
 
+    /// <summary>
+    /// Get archetype by id, this method is multi-thread safe.
+    /// </summary>
+    /// <param name="id">Target archetype id.</param>
+    /// <returns></returns>
     public Archetype GetArchetype(int id)
     {
         lock (archetypes)

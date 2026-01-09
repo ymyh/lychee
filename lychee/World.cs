@@ -43,7 +43,7 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
         {
             foreach (var ev in events)
             {
-                ev.PrepareForNextUpdate();
+                ev.ExchangeFrontBack();
             }
         }
     }

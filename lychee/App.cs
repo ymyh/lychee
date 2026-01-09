@@ -30,17 +30,17 @@ public sealed class App : IDisposable
     /// Creates an App with specified thread count.
     /// </summary>
     /// <param name="threadCount">The thread count of the thread pool.</param>
-    public App(int threadCount)
+    public App(uint threadCount)
     {
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
-        ThreadPool = new(threadCount);
+        ThreadPool = new((int)threadCount);
     }
 
     /// <summary>
-    /// Creates an App with thread count <see cref="Environment.ProcessorCount"/> / 2.
+    /// Creates an App with thread count of <see cref="Environment.ProcessorCount"/> / 2.
     /// </summary>
-    public App() : this(Environment.ProcessorCount / 2)
+    public App() : this((uint)Environment.ProcessorCount / 2)
     {
     }
 
@@ -59,9 +59,9 @@ public sealed class App : IDisposable
     /// <summary>
     /// Add a new resource with given value. Each type of resource can be added only once.
     /// </summary>
-    /// <param name="resource">The resource to added.</param>
+    /// <param name="resource">The resource to add.</param>
     /// <typeparam name="T">The resource type.</typeparam>
-    /// <returns></returns>
+    /// <returns>The resource just added.</returns>
     public T AddResource<T>(T resource)
     {
         return ResourcePool.AddResource(resource);
@@ -71,7 +71,7 @@ public sealed class App : IDisposable
     /// Add a new resource with default value. Each type of resource can be added only once.
     /// </summary>
     /// <typeparam name="T">The resource type.</typeparam>
-    /// <returns></returns>
+    /// <returns>The resource just added.</returns>
     public T AddResource<T>() where T : new()
     {
         return ResourcePool.AddResource<T>();
@@ -120,21 +120,23 @@ public sealed class App : IDisposable
     /// <summary>
     /// Add a system schedule.
     /// </summary>
-    /// <param name="schedule"></param>
-    public void AddSchedule(ISchedule schedule)
+    /// <param name="schedule">The schedule to add.</param>
+    /// <param name="name">The schedule name.</param>
+    public void AddSchedule(ISchedule schedule, string name)
     {
-        World.SystemSchedules.AddSchedule(schedule);
+        World.SystemSchedules.AddSchedule(schedule, name);
     }
 
     /// <summary>
     /// Add a system schedule after another system schedule.
     /// </summary>
-    /// <param name="schedule">The schedule to added.</param>
-    /// <param name="addAfter"></param>
+    /// <param name="schedule">The schedule to add.</param>
+    /// <param name="name">The schedule name.</param>
+    /// <param name="addAfter">The schedule name to add after.</param>
     /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
-    public void AddSchedule(ISchedule schedule, ISchedule addAfter)
+    public void AddSchedule(ISchedule schedule, string name, string addAfter)
     {
-        World.SystemSchedules.AddSchedule(schedule, addAfter);
+        World.SystemSchedules.AddSchedule(schedule, name, addAfter);
     }
 
     /// <summary>
@@ -169,9 +171,24 @@ public sealed class App : IDisposable
         return pool;
     }
 
+    /// <summary>
+    /// Gets a system schedule by name.
+    /// </summary>
+    /// <param name="name">The schedule name.</param>
+    /// <returns></returns>
     public ISchedule? GetSchedule(string name)
     {
         return World.SystemSchedules.GetSchedule(name);
+    }
+
+    /// <summary>
+    /// Gets a system schedule by name.
+    /// </summary>
+    /// <param name="name">The schedule name.</param>
+    /// <returns></returns>
+    public T? GetSchedule<T>(string name) where T : class, ISchedule
+    {
+        return World.SystemSchedules.GetSchedule<T>(name);
     }
 
     /// <summary>

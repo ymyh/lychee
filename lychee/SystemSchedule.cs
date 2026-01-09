@@ -19,14 +19,20 @@ public sealed class SystemSchedules
     /// Add a schedule after another schedule.
     /// </summary>
     /// <param name="schedule">The schedule to add.</param>
+    /// <param name="name">The schedule name.</param>
     /// <param name="addAfter">The schedule after which to add the new schedule.</param>
     /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
-    public void AddSchedule(ISchedule schedule, ISchedule? addAfter = null)
+    public void AddSchedule(ISchedule schedule, string name, ISchedule? addAfter = null)
     {
         var index = schedules.IndexOf(schedule);
         if (index != -1)
         {
             throw new ArgumentException($"Schedule {schedule} already exists");
+        }
+
+        if (scheduleDict.ContainsKey(name))
+        {
+            throw new ArgumentException($"Schedule {name} already exists");
         }
 
         if (addAfter != null && schedules.IndexOf(addAfter) == -1)
@@ -38,16 +44,17 @@ public sealed class SystemSchedules
             schedules.Insert(index + 1, schedule);
         }
 
-        scheduleDict.Add(schedule.Name, schedule);
+        scheduleDict.Add(name, schedule);
     }
 
     /// <summary>
     /// Add a schedule after another schedule by name.
     /// </summary>
     /// <param name="schedule">The schedule to add.</param>
+    /// <param name="name">The schedule name.</param>
     /// <param name="addAfter">The name of the schedule after which to add the new schedule.</param>
     /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
-    public void AddSchedule(ISchedule schedule, string addAfter)
+    public void AddSchedule(ISchedule schedule, string name, string addAfter)
     {
         var addAfterSchedule = GetSchedule(addAfter);
         if (addAfterSchedule == null)
@@ -55,7 +62,7 @@ public sealed class SystemSchedules
             throw new ArgumentException($"Schedule {addAfter} not found");
         }
 
-        AddSchedule(schedule, addAfterSchedule);
+        AddSchedule(schedule, name, addAfterSchedule);
     }
 
     /// <summary>

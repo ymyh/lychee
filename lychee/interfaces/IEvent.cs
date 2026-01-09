@@ -2,7 +2,5 @@
 
 internal interface IEvent
 {
-    internal void PrepareForNextUpdate();
+    internal void ExchangeFrontBack();
 }
-
-public interface IEntityEvent;

@@ -6,10 +6,10 @@ namespace lychee.utils;
 public static class TypeUtils
 {
     private static readonly MethodInfo GetTupleTypesMethod =
-        typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static)!;
+        typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static | BindingFlags.Public)!;
 
     private static readonly MethodInfo TestUnmanagedMethod =
-        typeof(TypeUtils).GetMethod("TestUnmanaged", BindingFlags.Static, [])!;
+        typeof(TypeUtils).GetMethod("TestUnmanaged", BindingFlags.Static | BindingFlags.NonPublic)!;
 
     private static readonly Type[] TupleTypes =
     [
@@ -57,20 +57,30 @@ public static class TypeUtils
         return list;
     }
 
-    public static bool ContainsField<T>()
+    /// <summary>
+    /// Check if a struct is empty.
+    /// </summary>
+    /// <typeparam name="T">The type to check.</typeparam>
+    /// <returns>True if the type is an empty struct, false otherwise.</returns>
+    public static bool IsEmptyStruct<T>() where T : unmanaged
     {
-        return ContainsField(typeof(T));
-    }
-
-    public static bool ContainsField(Type type)
-    {
-        return type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Length > 0;
+        return IsEmptyStruct(typeof(T));
     }
 
     /// <summary>
-    /// Check if a type is a value tuple.
+    /// Check if a struct is empty.
     /// </summary>
-    /// <param name="t"></param>
+    /// <param name="type">The type to check.</param>
+    /// <returns>True if the type is an empty struct, false otherwise.</returns>
+    public static bool IsEmptyStruct(Type type)
+    {
+        return type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Length == 0;
+    }
+
+    /// <summary>
+    /// Check if a type is value tuple.
+    /// </summary>
+    /// <typeparam name="T">The type to check.</typeparam>
     /// <returns></returns>
     public static bool IsValueTuple<T>()
     {
@@ -81,7 +91,7 @@ public static class TypeUtils
     /// Check if a type is a value tuple.
     /// </summary>
     /// <param name="t"></param>
-    /// <returns></returns>
+    /// <returns>True if the type is a value tuple, false otherwise.</returns>
     public static bool IsValueTuple(Type t)
     {
         return TupleTypes.Any(x => x == t.GetGenericTypeDefinition());
@@ -91,10 +101,10 @@ public static class TypeUtils
     /// Get all public fields types of a <see cref="IComponentBundle"/>
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    /// <returns></returns>
+    /// <returns>An array of types of all fields of the bundle.</returns>
     public static Type[] GetBundleTypes<T>() where T : IComponentBundle
     {
-        var fields = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance);
+        var fields = typeof(T).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
         return fields.Select(f => f.FieldType).ToArray();
     }
 
@@ -103,8 +113,8 @@ public static class TypeUtils
     /// Simply return the value of StructLayoutAttribute.Pack if present, <br/>
     /// or try to guess the alignment based on size of type.
     /// </summary>
-    /// <param name="type"></param>
-    /// <param name="size"></param>
+    /// <param name="type">The type to get alignment.</param>
+    /// <param name="size">The size of type.</param>
     /// <returns></returns>
     public static int GetOrGuessAlignment(Type type, int size)
     {
@@ -123,8 +133,8 @@ public static class TypeUtils
     /// <summary>
     /// Returns whether a specified type is unmanaged
     /// </summary>
-    /// <param name="type"></param>
-    /// <returns></returns>
+    /// <param name="type">The type to check.</param>
+    /// <returns>True if the type is unmanaged, false otherwise.</returns>
     public static bool IsUnmanaged(Type type)
     {
         try

@@ -270,6 +270,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         }
 
         Table.CommitReserved();
+        ShirkTable();
         dirty = false;
     }
 
@@ -290,6 +291,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal void MarkRemove(int id, int chunkIdx, int idx)
     {
+        dirty = true;
         holesInTable.Push((id, chunkIdx, idx));
     }
 
@@ -367,6 +369,35 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         {
             output[i] = typeIdxMap[typeId];
             i++;
+        }
+    }
+
+    private void ShirkTable()
+    {
+        for (var i = 0; i < Table.Chunks.Count - 1; i++)
+        {
+            var current = Table.Chunks[i];
+            var next = Table.Chunks[i + 1];
+
+            if (current.Size + next.Size <= current.Capacity)
+            {
+                foreach (var typeInfo in Table.Layout.TypeInfoList)
+                {
+                    unsafe
+                    {
+                        var src = (nint)next.Data;
+                        src += (typeInfo.Offset * next.Capacity);
+
+                        var dst = (nint)current.Data;
+                        dst += (typeInfo.Offset * current.Capacity + typeInfo.Size * current.Size);
+
+                        NativeMemory.Copy((void*)src, (void*)dst, (nuint)(typeInfo.Size * next.Size));
+                    }
+                }
+
+                current.Size += next.Size;
+                Table.Chunks.RemoveAt(i + 1);
+            }
         }
     }
 

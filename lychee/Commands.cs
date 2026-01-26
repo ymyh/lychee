@@ -52,6 +52,8 @@ public sealed class Commands : IDisposable
 
     public Archetype CurrentArchetype { get; set; } = null!;
 
+    public Entity CurrentEntity { get; set; }
+
     private EntityInfo currentEntityInfo;
 
     private bool currentEntitySet;
@@ -85,7 +87,7 @@ public sealed class Commands : IDisposable
     /// <summary>
     /// Removes an existing entity. If the entity is in uncommitted state or already removed, this method will do nothing.
     /// </summary>
-    /// <param name="entity"></param>
+    /// <param name="entity">The entity to remove.</param>
     public void RemoveEntity(Entity entity)
     {
         if (removedEntityMap.ContainsKey(entity.ID))
@@ -131,7 +133,8 @@ public sealed class Commands : IDisposable
             return false;
         }
 
-        var (srcChunkIdx, srcIdx) = GetPositionOfEntity(entity);
+        var srcInfo = GetEntityInfo(entity);
+        ChangeSrcArchetype(srcInfo.ArchetypeId);
 
         if (srcArchetypeChanged)
         {
@@ -145,11 +148,16 @@ public sealed class Commands : IDisposable
 
         TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
 
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
+    }
+
+    public bool AddComponent<T>(Entity entity) where T : unmanaged, IComponent
+    {
+        return AddComponent(entity, new T());
     }
 
     /// <summary>
@@ -166,7 +174,8 @@ public sealed class Commands : IDisposable
             return false;
         }
 
-        var (srcChunkIdx, srcIdx) = GetPositionOfEntity(entity);
+        var srcInfo = GetEntityInfo(entity);
+        ChangeSrcArchetype(srcInfo.ArchetypeId);
 
         if (srcArchetypeChanged)
         {
@@ -193,8 +202,8 @@ public sealed class Commands : IDisposable
             }
         }
 
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
@@ -213,7 +222,8 @@ public sealed class Commands : IDisposable
             return false;
         }
 
-        var (srcChunkIdx, srcIdx) = GetPositionOfEntity(entity);
+        var srcInfo = GetEntityInfo(entity);
+        ChangeSrcArchetype(srcInfo.ArchetypeId);
 
         if (srcArchetypeChanged)
         {
@@ -225,8 +235,8 @@ public sealed class Commands : IDisposable
 
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
@@ -245,7 +255,8 @@ public sealed class Commands : IDisposable
             return false;
         }
 
-        var (srcChunkIdx, srcIdx) = GetPositionOfEntity(entity);
+        var srcInfo = GetEntityInfo(entity);
+        ChangeSrcArchetype(srcInfo.ArchetypeId);
 
         if (srcArchetypeChanged)
         {
@@ -257,8 +268,8 @@ public sealed class Commands : IDisposable
 
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
@@ -277,7 +288,8 @@ public sealed class Commands : IDisposable
             return false;
         }
 
-        var (srcChunkIdx, srcIdx) = GetPositionOfEntity(entity);
+        var srcInfo = GetEntityInfo(entity);
+        ChangeSrcArchetype(srcInfo.ArchetypeId);
 
         if (srcArchetypeChanged)
         {
@@ -289,8 +301,8 @@ public sealed class Commands : IDisposable
 
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
-        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcChunkIdx, srcIdx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcChunkIdx, srcIdx);
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
         modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
 
         return true;
@@ -398,6 +410,33 @@ public sealed class Commands : IDisposable
         }
 
         return (srcChunkIdx, srcIdx);
+    }
+
+    private void ChangeSrcArchetype(int archetypeId)
+    {
+        var oldSrcArchetype = SrcArchetype;
+        SrcArchetype = ArchetypeManager.GetArchetype(archetypeId);
+
+        if (oldSrcArchetype != SrcArchetype)
+        {
+            srcArchetypeChanged = true;
+        }
+    }
+
+    private EntityInfo GetEntityInfo(Entity entity)
+    {
+        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            return new(info.Archetype.ID, info.ChunkIdx, info.Idx);
+        }
+
+        if (entityPool.CheckEntityValid(entity))
+        {
+            var entityInfo = entityPool.GetEntityInfo(entity);
+            return entityInfo;
+        }
+
+        return new(0, 0, 0);
     }
 
 #endregion

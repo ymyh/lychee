@@ -130,6 +130,32 @@ public abstract class BasicSchedule : ISchedule
     /// <returns>The system just added</returns>
     public T AddSystem<[SystemConcept] T>(T system, SystemDescriptor descriptor) where T : ISystem
     {
+        DoAddSystem(system, descriptor);
+        return system;
+    }
+
+    public void AddSystems(params ISystem[] systems)
+    {
+        ISystem addAfter = null!;
+        foreach (var system in systems)
+        {
+            DoAddSystem(system, new SystemDescriptor { AddAfter = addAfter });
+            addAfter = system;
+        }
+    }
+
+    public void ClearSystems()
+    {
+        ExecutionGraph.Clear();
+        ExecutionGraph.AddNode(new());
+    }
+
+#endregion
+
+#region Private methods
+
+    private void DoAddSystem(ISystem system, SystemDescriptor descriptor)
+    {
         system.InitializeAG(app);
 
         var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, descriptor), descriptor));
@@ -166,19 +192,7 @@ public abstract class BasicSchedule : ISchedule
 
         ExecutionGraph.AddNode(node);
         ExecutionGraph.AddEdge(addAfterNode, node);
-
-        return system;
     }
-
-    public void ClearSystems()
-    {
-        ExecutionGraph.Clear();
-        ExecutionGraph.AddNode(new());
-    }
-
-#endregion
-
-#region Private methods
 
     private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, SystemDescriptor descriptor)
     {

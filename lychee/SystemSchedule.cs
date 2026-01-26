@@ -37,11 +37,17 @@ public sealed class SystemSchedules
 
         if (addAfter != null && schedules.IndexOf(addAfter) == -1)
         {
-            schedules.Add(schedule);
+            index = schedules.IndexOf(addAfter);
+            if (index == -1)
+            {
+                throw new ArgumentException($"Schedule {addAfter} does not exist");
+            }
+
+            schedules.Insert(index, schedule);
         }
         else
         {
-            schedules.Insert(index + 1, schedule);
+            schedules.Add(schedule);
         }
 
         scheduleDict.Add(name, schedule);

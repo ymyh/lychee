@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace lychee.collections;
 
@@ -250,8 +249,6 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     internal volatile int Reservation;
 
-    private ConcurrentStack<int> holeIndices = new();
-
     public bool IsFull => Size + Reservation == Capacity;
 
     public unsafe void* Data => Chunk.Data;
@@ -279,17 +276,6 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
     {
         Size += Reservation;
         Reservation = 0;
-    }
-
-    public void MarkRemove(int idx)
-    {
-        Debug.Assert(idx >= 0 && idx < Size);
-        holeIndices.Push(idx);
-    }
-
-    public void CommitRemove()
-    {
-        holeIndices.Clear();
     }
 
 #endregion

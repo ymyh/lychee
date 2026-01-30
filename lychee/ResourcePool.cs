@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using lychee.utils;
 
 namespace lychee;
 
@@ -16,35 +17,19 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// Add a new resource to the pool.
     /// </summary>
     /// <param name="resource">The resource to add.</param>
-    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <typeparam name="T">The type of the resource, must be class.</typeparam>
     /// <returns>The resource just added.</returns>
     /// <exception cref="ArgumentException">Resource already exists.</exception>
-    public T AddResource<T>(T resource)
+    public T AddResource<T>(T resource) where T : class
     {
         Debug.Assert(resource != null);
         typeRegistrar.Register<T>();
 
         var type = typeof(T);
 
-        if (type.IsValueType)
+        if (!dataMap.TryAdd(type, resource))
         {
-            unsafe
-            {
-                var arr = GC.AllocateArray<byte>(sizeof(T), true);
-                Marshal.Copy((nint)(&resource), arr, 0, arr.Length);
-
-                if (!dataMap.TryAdd(type, arr))
-                {
-                    throw new ArgumentException($"Resource {typeof(T).Name} already exists");
-                }
-            }
-        }
-        else
-        {
-            if (!dataMap.TryAdd(type, resource))
-            {
-                throw new ArgumentException($"Resource {typeof(T).Name} already exists");
-            }
+            throw new ArgumentException($"Resource {typeof(T).Name} already exists");
         }
 
         return resource;
@@ -53,18 +38,53 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// <summary>
     /// Add a new resource to the pool.
     /// </summary>
-    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <typeparam name="T">The type of the resource, must be class.</typeparam>
     /// <returns>The resource just added.</returns>
     /// <exception cref="ArgumentException">Resource already exists.</exception>
-    public T AddResource<T>() where T : new()
+    public T AddResource<T>() where T : class, new()
     {
         return AddResource<T>(new());
     }
 
     /// <summary>
+    /// Add a new resource to the pool.
+    /// </summary>
+    /// <param name="resource">The resource to add.</param>
+    /// <typeparam name="T">The type of the resource, must be unmanaged.</typeparam>
+    /// <exception cref="ArgumentException">Resource already exists.</exception>
+    public void AddResourceStruct<T>(T resource) where T : unmanaged
+    {
+        typeRegistrar.Register<T>();
+
+        unsafe
+        {
+            var size = (nuint)sizeof(T);
+            var ptr = NativeMemory.AlignedAlloc(size, (nuint)TypeUtils.GetOrGuessAlignment(typeof(T), (int)size));
+            // var arr = GC.AllocateArray<byte>(sizeof(T), true);
+            NativeMemory.Copy(&resource, ptr, size);
+            // Marshal.Copy((nint)(&resource), arr, 0, arr.Length);
+
+            if (!dataMap.TryAdd(typeof(T), (nint)ptr))
+            {
+                throw new ArgumentException($"Resource {typeof(T).Name} already exists");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Add a new resource to the pool.
+    /// </summary>
+    /// <typeparam name="T">The type of the resource, must be unmanaged.</typeparam>
+    /// <exception cref="ArgumentException">Resource already exists.</exception>
+    public void AddResourceStruct<T>() where T : unmanaged
+    {
+        AddResourceStruct<T>(new());
+    }
+
+    /// <summary>
     /// Gets the resource from the pool by given type.
     /// </summary>
-    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <typeparam name="T">The type of the resource, must be class.</typeparam>
     /// <returns>The resource.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
     public T GetResource<T>() where T : class
@@ -93,15 +113,18 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// <summary>
     /// Gets a resource from the pool.
     /// </summary>
-    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <typeparam name="T">The type of the resource, must be unmanaged.</typeparam>
     /// <returns>The resource.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
     public ref T GetResourceStructRef<T>() where T : unmanaged
     {
         try
         {
-            var arr = (byte[])dataMap[typeof(T)];
-            return ref MemoryMarshal.AsRef<T>(new Span<byte>(arr));
+            unsafe
+            {
+                var ptr = (T*)(nint)dataMap[typeof(T)];
+                return ref *ptr;
+            }
         }
         catch (KeyNotFoundException)
         {
@@ -112,7 +135,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// <summary>
     /// Gets a class type resource from the pool.
     /// </summary>
-    /// <typeparam name="T">The type of the resource.</typeparam>
+    /// <typeparam name="T">The type of the resource, must be class.</typeparam>
     /// <returns>The resource.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
     public ref T GetResourceClassRef<T>() where T : class
@@ -132,11 +155,11 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar)
     /// <typeparam name="T">The type of the resource.</typeparam>
     /// <returns>The resource pointer.</returns>
     /// <exception cref="ArgumentException">Resource does not exist.</exception>
-    public byte[] GetResourcePtr<T>() where T : unmanaged
+    public unsafe T* GetResourcePtr<T>() where T : unmanaged
     {
         try
         {
-            return (byte[])dataMap[typeof(T)];
+            return (T*)(nint)dataMap[typeof(T)];
         }
         catch (KeyNotFoundException)
         {

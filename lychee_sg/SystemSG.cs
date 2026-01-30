@@ -85,6 +85,7 @@ namespace lychee_sg
                 var sb = new StringBuilder($@"
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using lychee;
 using lychee.interfaces;
 using ThreadPool = lychee.threading.ThreadPool;
@@ -253,7 +254,7 @@ partial class {sysInfo.Name} : ISystem
             }));
 
             return $@"
-    public void InitializeAG(App app)
+    public unsafe void InitializeAG(App app)
     {{
         SystemDataAG.Pool = app.ResourcePool;{(threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool({threadCount});" : "")}
         SystemDataAG.TypeIdList = [{registerTypes}];
@@ -283,7 +284,7 @@ partial class {sysInfo.Name} : ISystem
                     }
                     else
                     {
-                        declResourceCode.AppendLine($"        public static byte[] {paramName};");
+                        declResourceCode.AppendLine($"        public static unsafe {resourceParam.Type}* {paramName};");
                     }
 
                     if (i != resourceParams.Length - 1)
@@ -343,7 +344,7 @@ partial class {sysInfo.Name} : ISystem
                     if (resourceParam.ParamKind == ParamKind.StructResource)
                     {
                         declResourceCode.AppendLine(
-                            $"        ref var {paramName} = ref MemoryMarshal.AsRef<{resourceParam.Type}>(new Span<byte>(ResourceDataAG.{paramName}));");
+                            $"        ref var {paramName} = ref Unsafe.AsRef<{resourceParam.Type}>(ResourceDataAG.{paramName});");
                     }
                     else if (resourceParam.ParamKind == ParamKind.ClassResource &&
                              resourceParam.RefKind != RefKind.None)

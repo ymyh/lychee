@@ -62,7 +62,7 @@ public sealed class App : IDisposable
     /// <param name="resource">The resource to add.</param>
     /// <typeparam name="T">The resource type.</typeparam>
     /// <returns>The resource just added.</returns>
-    public T AddResource<T>(T resource)
+    public T AddResource<T>(T resource) where T : class
     {
         return ResourcePool.AddResource(resource);
     }
@@ -72,29 +72,39 @@ public sealed class App : IDisposable
     /// </summary>
     /// <typeparam name="T">The resource type.</typeparam>
     /// <returns>The resource just added.</returns>
-    public T AddResource<T>() where T : new()
+    public T AddResource<T>() where T : class, new()
     {
         return ResourcePool.AddResource<T>();
     }
 
     /// <summary>
+    /// Add a new resource with given value. Each type of resource can be added only once.
+    /// </summary>
+    /// <param name="resource">The resource to add.</param>
+    /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
+    public void AddResourceStruct<T>(T resource) where T : unmanaged
+    {
+        ResourcePool.AddResourceStruct(resource);
+    }
+
+    /// <summary>
+    /// Add a new resource with given value. Each type of resource can be added only once.
+    /// </summary>
+    /// <param name="resource">The resource to add.</param>
+    /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
+    public void AddResourceStruct<T>() where T : unmanaged
+    {
+        ResourcePool.AddResourceStruct<T>(new());
+    }
+
+    /// <summary>
     /// Gets the resource added before, target resource must be class.
     /// </summary>
-    /// <typeparam name="T">The resource type.</typeparam>
+    /// <typeparam name="T">The resource type, must be class.</typeparam>
     /// <returns></returns>
     public T GetResource<T>() where T : class
     {
         return ResourcePool.GetResource<T>();
-    }
-
-    /// <summary>
-    /// Gets the reference of the resource added before, target resource must be unmanaged.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <returns></returns>
-    public ref T GetResourceStructRef<T>() where T : unmanaged
-    {
-        return ref ResourcePool.GetResourceStructRef<T>();
     }
 
     /// <summary>
@@ -108,11 +118,21 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
+    /// Gets the reference of the resource added before, target resource must be unmanaged.
+    /// </summary>
+    /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
+    /// <returns></returns>
+    public ref T GetResourceStructRef<T>() where T : unmanaged
+    {
+        return ref ResourcePool.GetResourceStructRef<T>();
+    }
+
+    /// <summary>
     /// Gets the pointer of an unmanaged resource type.
     /// </summary>
     /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
     /// <returns></returns>
-    public byte[] GetResourcePtr<T>() where T : unmanaged
+    public unsafe T* GetResourcePtr<T>() where T : unmanaged
     {
         return ResourcePool.GetResourcePtr<T>();
     }

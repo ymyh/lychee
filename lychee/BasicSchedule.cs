@@ -134,12 +134,47 @@ public abstract class BasicSchedule : ISchedule
         return system;
     }
 
+    /// <summary>
+    /// Add systems into schedule in given order.
+    /// </summary>
+    /// <param name="systems"></param>
     public void AddSystems(params ISystem[] systems)
     {
         ISystem addAfter = null!;
         foreach (var system in systems)
         {
-            DoAddSystem(system, new SystemDescriptor { AddAfter = addAfter });
+            DoAddSystem(system, new() { AddAfter = addAfter });
+            addAfter = system;
+        }
+    }
+
+    /// <summary>
+    /// Add systems into schedule in given order. Generic parameter T must be a value tuple containing systems.
+    /// These target systems must have a default constructor.
+    /// </summary>
+    /// <typeparam name="T">Systems in a value tuple.</typeparam>
+    /// <exception cref="ArgumentException">T is not a value tuple</exception>
+    public void AddSystems<T>()
+    {
+        if (!TypeUtils.IsValueTuple<T>())
+        {
+            throw new ArgumentException($"Type {typeof(T).Name} is not a value tuple");
+        }
+
+        var types = TypeUtils.GetTupleTypes<T>();
+
+        ISystem addAfter = null!;
+        foreach (var type in types)
+        {
+            if (type.GetInterface("lychee.interfaces.ISystem") == null)
+            {
+                throw new ArgumentException($"Type {typeof(T).Name} is not a system type");
+            }
+
+            var ctor = type.GetConstructor([])!;
+            var system = (ctor.Invoke([]) as ISystem)!;
+
+            DoAddSystem(system, new() { AddAfter = addAfter });
             addAfter = system;
         }
     }
@@ -417,7 +452,6 @@ public abstract class BasicSchedule : ISchedule
 /// Execute with no condition.
 /// </summary>
 /// <param name="app">The ECS application.</param>
-/// <param name="name">The schedule name.</param>
 /// <param name="executionMode">The execution mode, default is SingleThread.</param>
 /// <param name="commitPoint">The commit point, default is Synchronization.</param>
 public sealed class DefaultSchedule(

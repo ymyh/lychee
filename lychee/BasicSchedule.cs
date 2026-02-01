@@ -143,7 +143,7 @@ public abstract class BasicSchedule : ISchedule
         ISystem addAfter = null!;
         foreach (var system in systems)
         {
-            DoAddSystem(system, new() { AddAfter = addAfter });
+            DoAddSystem(system, new SystemDescriptor().After(addAfter));
             addAfter = system;
         }
     }
@@ -174,7 +174,7 @@ public abstract class BasicSchedule : ISchedule
             var ctor = type.GetConstructor([])!;
             var system = (ctor.Invoke([]) as ISystem)!;
 
-            DoAddSystem(system, new() { AddAfter = addAfter });
+            DoAddSystem(system, new SystemDescriptor().After(addAfter));
             addAfter = system;
         }
     }

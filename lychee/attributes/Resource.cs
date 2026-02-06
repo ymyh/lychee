@@ -1,14 +1,16 @@
 ﻿namespace lychee.attributes;
 
 /// <summary>
-/// Mark a system parameter is supplied from resource.
+/// Marks a system parameter as being supplied from the resource pool.
 /// </summary>
-/// <param name="readOnly">Only apply on class types. If true, we assume the parameter will be read-only.
-/// If this assumption is violated, it may cause race conditions. <br/>
-/// struct types are determined by the parameter modifier (i.e. `in`, `out`, `ref`).
-/// </param>
+/// <param name="readOnly">For class types only. If true, the parameter is treated as read-only.
+/// Violating this assumption may cause race conditions. For struct types, read-only behavior
+/// is determined by the parameter modifier (e.g., <c>in</c>, <c>ref</c>, <c>out</c>).</param>
 [AttributeUsage(AttributeTargets.Parameter)]
 public sealed class Resource(bool readOnly = false) : Attribute
 {
+    /// <summary>
+    /// Gets a value indicating whether the resource is treated as read-only.
+    /// </summary>
     public readonly bool ReadOnly = readOnly;
 }

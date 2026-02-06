@@ -28,6 +28,11 @@ internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, in
     public readonly (TypeInfo info, int typeId)[] BundleInfo = bundleInfo;
 }
 
+/// <summary>
+/// Provides deferred entity modification operations for ECS systems.
+/// Changes are buffered and applied atomically when Commit is called.
+/// This ensures safe concurrent access to entity data during system execution.
+/// </summary>
 public sealed class Commands : IDisposable
 {
 #region Fields
@@ -73,9 +78,10 @@ public sealed class Commands : IDisposable
 #region Public Methods
 
     /// <summary>
-    /// Creates a new entity in uncommitted state.
+    /// Creates a new entity in an uncommitted state.
+    /// The entity will be fully registered when Commit is called.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>The newly created entity.</returns>
     public Entity CreateEntity()
     {
         var entity = entityPool.ReserveEntity();
@@ -85,7 +91,7 @@ public sealed class Commands : IDisposable
     }
 
     /// <summary>
-    /// Removes an existing entity. If the entity is in uncommitted state or already removed, this method will do nothing.
+    /// Removes an existing entity. Does nothing if the entity is already removed or in uncommitted state.
     /// </summary>
     /// <param name="entity">The entity to remove.</param>
     public void RemoveEntity(Entity entity)
@@ -120,12 +126,12 @@ public sealed class Commands : IDisposable
     }
 
     /// <summary>
-    /// Adds a component to an entity.
+    /// Adds a component to an entity. The entity will be moved to a new archetype.
     /// </summary>
     /// <param name="entity">The target entity.</param>
-    /// <param name="component">The component to add.</param>
-    /// <typeparam name="T">The component type.</typeparam>
-    /// <returns></returns>
+    /// <param name="component">The component value to add.</param>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was added; false if the entity is invalid or removed.</returns>
     public bool AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -155,18 +161,25 @@ public sealed class Commands : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Adds a component with the default value to an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was added; false if the entity is invalid or removed.</returns>
     public bool AddComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
         return AddComponent(entity, new T());
     }
 
     /// <summary>
-    /// Adds a component bundle to an entity.
+    /// Adds multiple components as a bundle to an entity.
+    /// All components in the bundle will be added in a single operation.
     /// </summary>
     /// <param name="entity">The target entity.</param>
-    /// <param name="bundle">The component bundle to add.</param>
-    /// <typeparam name="T">The component bundle type.</typeparam>
-    /// <returns></returns>
+    /// <param name="bundle">The component bundle containing the components to add.</param>
+    /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <returns>True if the components were added; false if the entity is invalid or removed.</returns>
     public bool AddComponents<T>(Entity entity, in T bundle) where T : unmanaged, IComponentBundle
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -210,11 +223,11 @@ public sealed class Commands : IDisposable
     }
 
     /// <summary>
-    /// Removes a component from an entity.
+    /// Removes a component from an entity. The entity will be moved to a new archetype.
     /// </summary>
     /// <param name="entity">The target entity.</param>
-    /// <typeparam name="T">The component type.</typeparam>
-    /// <returns></returns>
+    /// <typeparam name="T">The component type to remove, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was removed; false if the entity is invalid, removed, or doesn't have this component.</returns>
     public bool RemoveComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -243,11 +256,11 @@ public sealed class Commands : IDisposable
     }
 
     /// <summary>
-    /// Removes all components inside bundle from an entity.
+    /// Removes all components defined in a component bundle from an entity.
     /// </summary>
     /// <param name="entity">The target entity.</param>
-    /// <typeparam name="T">The component bundle type.</typeparam>
-    /// <returns></returns>
+    /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <returns>True if the components were removed; false if the entity is invalid, removed, or doesn't have these components.</returns>
     public bool RemoveComponents<T>(Entity entity) where T : unmanaged, IComponentBundle
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -276,11 +289,11 @@ public sealed class Commands : IDisposable
     }
 
     /// <summary>
-    /// Removes all components inside tuple from an entity.
+    /// Removes all components defined in a tuple from an entity.
     /// </summary>
     /// <param name="entity">The target entity.</param>
-    /// <typeparam name="T">The component tuple type.</typeparam>
-    /// <returns></returns>
+    /// <typeparam name="T">The tuple type containing the component types to remove, must be unmanaged.</typeparam>
+    /// <returns>True if the components were removed; false if the entity is invalid, removed, or doesn't have these components.</returns>
     public bool RemoveComponentsTuple<T>(Entity entity) where T : unmanaged
     {
         if (removedEntityMap.ContainsKey(entity.ID) || entity.Generation != 0 && !entityPool.CheckEntityValid(entity))
@@ -308,6 +321,13 @@ public sealed class Commands : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Sets the current entity context for component access via GetCurrentEntityComponent.
+    /// This enables efficient component access without repeated entity lookups.
+    /// </summary>
+    /// <param name="entity">The entity to set as current.</param>
+    /// <param name="isCurrentArchetype">Whether to update CurrentArchetype. Set to false if you're manually managing archetypes.</param>
+    /// <exception cref="ArgumentException">Thrown when the entity is invalid or in an uncommitted state.</exception>
     public void SetCurrentEntity(Entity entity, bool isCurrentArchetype = true)
     {
         if (modifiedEntityInfoMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity))
@@ -325,6 +345,12 @@ public sealed class Commands : IDisposable
         currentEntitySet = true;
     }
 
+    /// <summary>
+    /// Gets a reference to a component of the current entity.
+    /// Requires SetCurrentEntity to be called first.
+    /// </summary>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>A reference to the component. Returns null-ref if SetCurrentEntity was not called or the entity doesn't have this component.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T GetCurrentEntityComponent<T>() where T : unmanaged, IComponent
     {

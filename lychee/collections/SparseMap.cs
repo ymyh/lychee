@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 namespace lychee.collections;
 
 /// <summary>
-/// Represents a collection of keys and values, which key type is <see cref="int"/>. <br/>
-/// SparseMap has better performance than <see cref="Dictionary&lt;TKey,TValue&gt;"/> but may use more memory,
-/// depends on the greatest key in the map.
+/// A sparse set map that provides O(1) lookup, insertion, and deletion for integer keys.
+/// Uses more memory than <see cref="Dictionary&lt;TKey,TValue&gt;"/> but offers better cache locality
+/// and iteration performance. Memory usage depends on the greatest key value in the map.
 /// </summary>
-/// <typeparam name="T">The type of the values in the dictionary.</typeparam>
+/// <typeparam name="T">The type of values in the map.</typeparam>
 public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)>
 {
 #region Private fields
@@ -23,10 +23,16 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 #region Public properties
 
     /// <summary>
-    /// Gets the number of elements contained in the <see cref="SparseMap&lt;T&gt;"/>
+    /// Gets the number of elements contained in the map.
     /// </summary>
     public int Count => denseArray.Count;
 
+    /// <summary>
+    /// Gets or sets the value associated with the specified key.
+    /// </summary>
+    /// <param name="key">The integer key of the value to get or set.</param>
+    /// <returns>The value associated with the key.</returns>
+    /// <exception cref="KeyNotFoundException">Thrown when the key is not found during get access.</exception>
     public T this[int key]
     {
         get
@@ -46,6 +52,10 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 
 #region Constructors & Destructors
 
+    /// <summary>
+    /// Initializes a new instance and populates it from the specified enumerable.
+    /// </summary>
+    /// <param name="enumerable">The collection of key-value pairs to populate the map.</param>
     public SparseMap(IEnumerable<(int, T)> enumerable) : this()
     {
         foreach (var valueTuple in enumerable)
@@ -64,11 +74,11 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
 #region Public Methods
 
     /// <summary>
-    /// Add an element to the sparse map. Unlike <see cref="Dictionary&lt;TKey,TValue&gt;"/>,
-    /// you can add same key multiple times.
+    /// Adds or updates an element with the specified key and value.
+    /// Unlike <see cref="Dictionary&lt;TKey,TValue&gt;"/>, adding the same key updates the existing entry.
     /// </summary>
-    /// <param name="key">The id of the value</param>
-    /// <param name="value">The value to add</param>
+    /// <param name="key">The integer key of the element.</param>
+    /// <param name="value">The value to add or update.</param>
     public void Add(int key, T value)
     {
         if (key >= sparseArray.Count)
@@ -89,7 +99,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     }
 
     /// <summary>
-    /// Clear all elements in the sparse map
+    /// Removes all elements from the map.
     /// </summary>
     public void Clear()
     {
@@ -98,40 +108,45 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     }
 
     /// <summary>
-    /// Check if the sparse map contains the specified key
+    /// Determines whether the map contains an element with the specified key.
     /// </summary>
-    /// <param name="key">The key of the value</param>
-    /// <returns>Returns true if the value is found, otherwise false</returns>
+    /// <param name="key">The key to locate in the map.</param>
+    /// <returns>true if the map contains an element with the key; otherwise, false.</returns>
     public bool ContainsKey(int key)
     {
         return (uint)key < (uint)sparseArray.Count && sparseArray[key] != -1;
     }
 
     /// <summary>
-    /// Performs the specified action on each element of the sparse map.
+    /// Performs the specified action on each element in the map.
     /// </summary>
-    /// <param name="action">The action to call</param>
+    /// <param name="action">The action to perform on each element.</param>
     public void ForEach(Action<int, T> action)
     {
         denseArray.ForEach(x => { action(x.key, x.value); });
     }
 
+    /// <summary>
+    /// Delegate for performing an action on each element with the value passed by reference.
+    /// </summary>
+    /// <param name="key">The key of the current element.</param>
+    /// <param name="value">A reference to the value of the current element.</param>
     public delegate void ForEachRefDelegate(int key, ref T value);
 
     /// <summary>
-    /// Like <see cref="ForEach"/>, except the action parameter is pass by ref.
+    /// Performs the specified action on each element, passing the value by reference.
     /// </summary>
-    /// <param name="action"></param>
+    /// <param name="action">The action to perform on each element.</param>
     public void ForEachRef(ForEachRefDelegate action)
     {
         denseArray.ForEach(x => { action(x.key, ref x.value); });
     }
 
     /// <summary>
-    /// Get element index in dense array by key.
+    /// Gets the index of an element in the dense array by its key.
     /// </summary>
-    /// <param name="key"></param>
-    /// <returns></returns>
+    /// <param name="key">The key to locate.</param>
+    /// <returns>The index in the dense array, or -1 if the key is not found.</returns>
     public int GetIndex(int key)
     {
         if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
@@ -143,10 +158,10 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     }
 
     /// <summary>
-    /// Remove element by key
+    /// Removes the element with the specified key from the map.
     /// </summary>
-    /// <param name="key">The key of the value</param>
-    /// <returns>Returns true if the value is found, otherwise false</returns>
+    /// <param name="key">The key of the element to remove.</param>
+    /// <returns>true if the element was found and removed; otherwise, false.</returns>
     public bool Remove(int key)
     {
         if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
@@ -186,11 +201,11 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     }
 
     /// <summary>
-    /// Try to get value by key
+    /// Gets the value associated with the specified key.
     /// </summary>
-    /// <param name="key">The key of the value</param>
-    /// <param name="value">The value</param>
-    /// <returns>Returns true if the value is found, otherwise false</returns>
+    /// <param name="key">The key of the value to get.</param>
+    /// <param name="value">When this method returns, contains the value associated with the key if found; otherwise, the default value.</param>
+    /// <returns>true if the map contains an element with the key; otherwise, false.</returns>
     public bool TryGetValue(int key, [MaybeNullWhen(false)] out T value)
     {
         value = default;
@@ -204,9 +219,9 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     }
 
     /// <summary>
-    /// Get dense array as span.
+    /// Gets the dense array as a span for efficient iteration.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>A span containing all key-value pairs in dense storage order.</returns>
     public Span<(int, T)> GetDenseAsSpan()
     {
         return CollectionsMarshal.AsSpan(denseArray);
@@ -219,6 +234,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     public void Dispose()
     {
         sparseArray.Dispose();
+        GC.SuppressFinalize(this);
     }
 
 #endregion

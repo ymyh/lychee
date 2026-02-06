@@ -1,59 +1,81 @@
 ﻿namespace lychee.collections;
 
+/// <summary>
+/// Exception thrown when a graph operation results in an invalid state, such as detecting a cycle.
+/// </summary>
 public sealed class InvalidGraphException(string reason) : Exception(reason);
 
 /// <summary>
-/// Represents a node in DAG
+/// Represents a node in a directed acyclic graph (DAG).
 /// </summary>
-/// <param name="data"></param>
-/// <typeparam name="T">The type of elements in the node.</typeparam>
+/// <typeparam name="T">The type of data stored in the node.</typeparam>
 public sealed class DAGNode<T>(T data)
 {
     public DAGNode() : this(default!)
     {
     }
 
+    /// <summary>
+    /// Gets or sets the data stored in this node.
+    /// </summary>
     public T Data { get; set; } = data;
 
+    /// <summary>
+    /// Gets the list of parent nodes that have edges pointing to this node.
+    /// </summary>
     public List<DAGNode<T>> Parents { get; } = [];
 
+    /// <summary>
+    /// Gets the list of child nodes that this node has edges pointing to.
+    /// </summary>
     public List<DAGNode<T>> Children { get; } = [];
 
     internal int Group { get; set; }
 }
 
 /// <summary>
-/// Frozen DAG node, for better performance
+/// A read-only frozen representation of a DAG node for optimized performance.
 /// </summary>
-/// <param name="node">The node to freeze</param>
-/// <typeparam name="T">The type of elements in the node.</typeparam>
+/// <typeparam name="T">The type of data stored in the node.</typeparam>
 public struct FrozenDAGNode<T>(DAGNode<T> node)
 {
+    /// <summary>
+    /// The data stored in this node.
+    /// </summary>
     public T Data = node.Data;
 
     /// <summary>
-    /// Nodes in same group means they are irrelative to each other
+    /// Gets the execution group ID. Nodes in the same group have no dependencies on each other and can be executed in parallel.
     /// </summary>
     public readonly int Group = node.Group;
 }
 
 /// <summary>
-/// Represents a DAG which technically can have one entry and more than one exit.
+/// Represents a directed acyclic graph (DAG) with a single entry point and multiple possible exit points.
 /// </summary>
-/// <typeparam name="T">The type of elements in the graph.</typeparam>
+/// <typeparam name="T">The type of data stored in the graph nodes.</typeparam>
 public sealed class DirectedAcyclicGraph<T>
 {
+    /// <summary>
+    /// Gets the collection of all nodes in the graph.
+    /// </summary>
     public List<DAGNode<T>> Nodes { get; } = [];
 
+    /// <summary>
+    /// Gets the root node (entry point) of the graph.
+    /// </summary>
     public DAGNode<T> Root => Nodes[0];
 
+    /// <summary>
+    /// Gets the number of nodes in the graph.
+    /// </summary>
     public int Count => Nodes.Count;
 
     /// <summary>
-    /// Add a node into graph without connecting to other node(s)
+    /// Adds a node to the graph without connecting it to any other nodes.
     /// </summary>
-    /// <param name="node">The node to add</param>
-    /// <returns>The added node</returns>
+    /// <param name="node">The node to add to the graph.</param>
+    /// <returns>The added node.</returns>
     public DAGNode<T> AddNode(DAGNode<T> node)
     {
         Nodes.Add(node);
@@ -61,14 +83,14 @@ public sealed class DirectedAcyclicGraph<T>
     }
 
     /// <summary>
-    /// Add an edge between two nodes
+    /// Adds a directed edge from one node to another.
     /// </summary>
-    /// <param name="from">The node to add edge from</param>
-    /// <param name="to">The node to add edge to</param>
+    /// <param name="from">The source node of the edge.</param>
+    /// <param name="to">The destination node of the edge.</param>
     /// <exception cref="ArgumentException">
-    /// If <b>from</b> or <b>to</b> is not in the graph <br/>
-    /// If <b>from</b> is the same as <b>to</b> <br/>
-    /// If <b>from</b> already has a child <b>to</b>
+    /// Thrown when <paramref name="from"/> or <paramref name="to"/> is not in the graph,
+    /// when <paramref name="from"/> equals <paramref name="to"/>, or
+    /// when the edge already exists.
     /// </exception>
     public void AddEdge(DAGNode<T> from, DAGNode<T> to)
     {
@@ -94,10 +116,11 @@ public sealed class DirectedAcyclicGraph<T>
     }
 
     /// <summary>
-    /// Perform topological sorting to make the graph as a list. If you want a more efficient structure, see <see cref="DirectedAcyclicGraphExtensions.Freeze&lt;T&gt;"/>
+    /// Performs topological sorting to return nodes in a valid execution order.
+    /// For a more efficient structure, use <see cref="DirectedAcyclicGraphExtensions.Freeze{T}"/>.
     /// </summary>
-    /// <returns>A sorted list of nodes.</returns>
-    /// <exception cref="InvalidGraphException">If graph contains a cycle or more than one root node.</exception>
+    /// <returns>A topologically sorted list of nodes.</returns>
+    /// <exception cref="InvalidGraphException">Thrown when the graph contains a cycle or more than one root node.</exception>
     public List<DAGNode<T>> AsList()
     {
         if (Nodes.Count(n => n.Parents.Count == 0) > 1)
@@ -140,15 +163,18 @@ public sealed class DirectedAcyclicGraph<T>
         return result;
     }
 
+    /// <summary>
+    /// Removes all nodes from the graph.
+    /// </summary>
     public void Clear()
     {
         Nodes.Clear();
     }
 
     /// <summary>
-    /// Perform a depth-first search to traverse the graph.
+    /// Performs a depth-first traversal of the graph, executing the specified action on each node.
     /// </summary>
-    /// <param name="action">The action call on each node.</param>
+    /// <param name="action">The action to perform on each node.</param>
     public void ForEach(Action<DAGNode<T>> action)
     {
         ForEachInner(Nodes, action);
@@ -165,18 +191,35 @@ public sealed class DirectedAcyclicGraph<T>
     }
 }
 
+/// <summary>
+/// Provides extension methods for working with directed acyclic graphs.
+/// </summary>
 public static class DirectedAcyclicGraphExtensions
 {
+    /// <summary>
+    /// Provides extension methods for collections of DAG nodes.
+    /// </summary>
     extension<T>(IEnumerable<DAGNode<T>> nodes)
     {
+        /// <summary>
+        /// Converts a collection of DAG nodes to their frozen counterparts for optimized performance.
+        /// </summary>
+        /// <returns>A collection of frozen DAG nodes.</returns>
         public IEnumerable<FrozenDAGNode<T>> Freeze()
         {
             return nodes.Select(x => new FrozenDAGNode<T>(x));
         }
     }
 
+    /// <summary>
+    /// Provides extension methods for collections of frozen DAG nodes.
+    /// </summary>
     extension<T>(IEnumerable<FrozenDAGNode<T>> nodes)
     {
+        /// <summary>
+        /// Groups frozen nodes by their execution group ID for parallel execution planning.
+        /// </summary>
+        /// <returns>A 2D array where each inner array contains nodes that can be executed in parallel.</returns>
         public FrozenDAGNode<T>[][] AsExecutionGroup()
         {
             return nodes.GroupBy(x => new { x.Group }).Select(x => x.ToArray()).ToArray();

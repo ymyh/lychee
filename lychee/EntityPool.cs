@@ -5,7 +5,7 @@ using lychee.collections;
 namespace lychee;
 
 /// <summary>
-/// Holds all entities and its info.
+/// Manages entity creation, removal, and reuse with generation tracking for safety.
 /// </summary>
 public sealed class EntityPool : IDisposable
 {
@@ -20,9 +20,8 @@ public sealed class EntityPool : IDisposable
     private readonly ConcurrentStack<int> removedEntitiesId = [];
 
     /// <summary>
-    /// Create a new Entity
+    /// Creates a new entity or reuses a previously removed entity ID.
     /// </summary>
-    /// <returns>The entity just created</returns>
     public Entity CreateEntity()
     {
         if (reusableEntitiesId.TryPop(out var id))
@@ -46,10 +45,8 @@ public sealed class EntityPool : IDisposable
     }
 
     /// <summary>
-    /// Reserve an entity and return its id.<br/>
-    /// Need to call <see cref="CommitReservedEntity"/> to make the entity available.
+    /// Reserves an entity ID without initializing it. Call <see cref="CommitReservedEntity"/> to finalize.
     /// </summary>
-    /// <returns>New entity id</returns>
     public Entity ReserveEntity()
     {
         if (reusableEntitiesId.TryPop(out var id))
@@ -61,12 +58,80 @@ public sealed class EntityPool : IDisposable
     }
 
     /// <summary>
-    /// Commit a reserved entity, make it available to be used.
+    /// Marks an entity for removal. The actual removal happens on commit.
     /// </summary>
-    /// <param name="id">The entity id.</param>
-    /// <param name="archetypeId">The archetype id.</param>
-    /// <param name="chunkIdx">The chunk index.</param>
-    /// <param name="idx">The entity index in the chunk.</param>
+    public void MarkRemoveEntity(Entity entity)
+    {
+        removedEntitiesId.Push(entity.ID);
+    }
+
+    /// <summary>
+    /// Immediately removes an entity, incrementing its generation to invalidate existing references.
+    /// </summary>
+    /// <returns><c>true</c> if the entity was valid and removed; <c>false</c> if the entity reference was stale.</returns>
+    public bool RemoveEntity(Entity entity)
+    {
+        var id = entity.ID;
+        Debug.Assert((uint)id < (uint)entities.Count);
+
+        if (entity.Generation != entities[id].Generation)
+        {
+            return false;
+        }
+
+        var span = entities.AsSpan();
+        span[id].Generation++;
+
+        removedEntitiesId.Push(id);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Verifies whether an entity reference is still valid (generation matches).
+    /// </summary>
+    public bool CheckEntityValid(Entity entity)
+    {
+        if ((uint)entity.ID >= (uint)entities.Count)
+        {
+            return false;
+        }
+
+        return entities[entity.ID].Generation == entity.Generation;
+    }
+
+    /// <summary>
+    /// Retrieves the entity's location metadata (archetype, chunk, and index).
+    /// </summary>
+    public EntityInfo GetEntityInfo(Entity entity)
+    {
+        Debug.Assert((uint)entity.ID < (uint)entityInfoList.Count);
+
+        return entityInfoList[entity.ID];
+    }
+
+#region Internal methods
+
+    internal void CommitRemoveEntity(Entity entity)
+    {
+        var id = entity.ID;
+        Debug.Assert((uint)id < (uint)entities.Count);
+
+        if (entity.Generation == entities[id].Generation)
+        {
+            entity.Generation++;
+            entities[id] = entity;
+        }
+    }
+
+    internal void Commit()
+    {
+        while (removedEntitiesId.TryPop(out var id))
+        {
+            reusableEntitiesId.Push(id);
+        }
+    }
+
     internal void CommitReservedEntity(int id, int archetypeId, int chunkIdx, int idx)
     {
         Debug.Assert(id >= 0);
@@ -95,88 +160,7 @@ public sealed class EntityPool : IDisposable
         }
     }
 
-    /// <summary>
-    /// Mark entity to be removed, need to call <see cref="CommitRemoveEntity"/> to make the entity removed.
-    /// </summary>
-    /// <param name="entity">The entity to mark removed.</param>
-    public void MarkRemoveEntity(Entity entity)
-    {
-        removedEntitiesId.Push(entity.ID);
-    }
-
-    /// <summary>
-    /// Commit a marked entity to be removed.
-    /// </summary>
-    /// <param name="entity">The entity to commit removed.</param>
-    /// <returns></returns>
-    internal void CommitRemoveEntity(Entity entity)
-    {
-        var id = entity.ID;
-        Debug.Assert((uint)id < (uint)entities.Count);
-
-        if (entity.Generation == entities[id].Generation)
-        {
-            entity.Generation++;
-            entities[id] = entity;
-        }
-    }
-
-    internal void Commit()
-    {
-        while (removedEntitiesId.TryPop(out var id))
-        {
-            reusableEntitiesId.Push(id);
-        }
-    }
-
-    /// <summary>
-    /// Remove entity by id
-    /// </summary>
-    /// <param name="entity"></param>
-    public bool RemoveEntity(Entity entity)
-    {
-        var id = entity.ID;
-        Debug.Assert((uint)id < (uint)entities.Count);
-
-        if (entity.Generation != entities[id].Generation)
-        {
-            return false;
-        }
-
-        var span = entities.AsSpan();
-        span[id].Generation++;
-
-        removedEntitiesId.Push(id);
-
-        return true;
-    }
-
-    /// <summary>
-    /// Check if the entity is valid.
-    /// </summary>
-    /// <param name="entity">The entity to check.</param>
-    /// <returns></returns>
-    public bool CheckEntityValid(Entity entity)
-    {
-        if ((uint)entity.ID >= (uint)entities.Count)
-        {
-            return false;
-        }
-
-        return entities[entity.ID].Generation == entity.Generation;
-    }
-
-    /// <summary>
-    /// Get entity info by entity.
-    /// </summary>
-    /// <param name="entity">The target entity.</param>
-    /// <returns>The entity info of the target entity.</returns>
-    public EntityInfo GetEntityInfo(Entity entity)
-    {
-        Debug.Assert((uint)entity.ID < (uint)entityInfoList.Count);
-
-        return entityInfoList[entity.ID];
-    }
+#endregion
 
 #region IDisposable member
 

@@ -7,18 +7,27 @@ using lychee.utils;
 
 namespace lychee;
 
+/// <summary>
+/// Stores type metadata including size, alignment, and offset information.
+/// Used for efficient memory layout calculations in archetype storage.
+/// </summary>
 [StructLayout(LayoutKind.Explicit)]
 public struct TypeInfo(int size, int alignment)
 {
+    /// <summary>The size of the type in bytes.</summary>
     [FieldOffset(0)] public int Size = size;
 
+    /// <summary>The alignment requirement of the type in bytes.</summary>
     [FieldOffset(4)] public int Alignment = alignment;
 
+    /// <summary>The offset of the type within a bundle or memory layout.</summary>
     [FieldOffset(4)] public int Offset;
 }
 
 /// <summary>
-/// A registrar for types.
+/// Centralized type registry for the ECS application.
+/// Assigns unique IDs to component and resource types, tracks type metadata,
+/// and manages thread-safe type registration during system initialization.
 /// </summary>
 public sealed class TypeRegistrar
 {
@@ -38,22 +47,24 @@ public sealed class TypeRegistrar
         typeof(TypeRegistrar).GetMethod("RegisterBundle", BindingFlags.Public | BindingFlags.Instance, [])!;
 
     /// <summary>
-    /// Register a component type.
+    /// Registers a component type and returns its unique type identifier.
+    /// Subsequent registrations of the same type return the existing identifier.
     /// </summary>
-    /// <param name="alignment">The alignment of type, default is 0, which means auto deduction.</param>
-    /// <typeparam name="T">The type to register.</typeparam>
-    /// <returns>Type id</returns>
+    /// <param name="alignment">The alignment requirement in bytes. Default is 0 for automatic detection.</param>
+    /// <typeparam name="T">The component type to register. Must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>The unique type identifier assigned to this component type.</returns>
     public int RegisterComponent<T>(uint alignment = 0) where T : unmanaged, IComponent
     {
         return Register<T>(alignment);
     }
 
     /// <summary>
-    /// Register a component type.
+    /// Registers a component type using reflection and returns its unique type identifier.
+    /// Subsequent registrations of the same type return the existing identifier.
     /// </summary>
-    /// <param name="type">The type to register.</param>
-    /// <param name="alignment">The alignment of type, default is 0, which means auto deduction.</param>
-    /// <returns>Type id</returns>
+    /// <param name="type">The component type to register. Must be unmanaged and implement IComponent.</param>
+    /// <param name="alignment">The alignment requirement in bytes. Default is 0 for automatic detection.</param>
+    /// <returns>The unique type identifier assigned to this component type.</returns>
     public int RegisterComponent(Type type, uint alignment = 0)
     {
         return (int)RegisterComponentMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
@@ -110,10 +121,12 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Register all component type in the bundle.
+    /// Registers all component types contained within a component bundle.
+    /// The bundle must be an unmanaged type with at least one instance field.
+    /// Subsequent registrations of the same bundle type are ignored.
     /// </summary>
-    /// <typeparam name="T">The bundle to register.</typeparam>
-    /// <exception cref="ArgumentException">Thrown when bundle type has no non-static fields</exception>
+    /// <typeparam name="T">The component bundle type. Must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <exception cref="ArgumentException">Thrown when the bundle type has no instance fields.</exception>
     public void RegisterBundle<T>() where T : unmanaged, IComponentBundle
     {
         var type = typeof(T);
@@ -135,21 +148,24 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Register a type bundle.
+    /// Registers a component bundle type using reflection.
+    /// The bundle must be an unmanaged type with at least one instance field.
+    /// Subsequent registrations of the same bundle type are ignored.
     /// </summary>
-    /// <param name="type"></param>
-    /// <exception cref="ArgumentException">Thrown when bundle type has no non-static fields</exception>
+    /// <param name="type">The component bundle type to register. Must be unmanaged and implement IComponentBundle.</param>
+    /// <exception cref="ArgumentException">Thrown when the bundle type has no instance fields.</exception>
     public void RegisterBundle(Type type)
     {
         RegisterBundleMethod.MakeGenericMethod(type).Invoke(this, []);
     }
 
     /// <summary>
-    /// Register all types inside the given tuple.
+    /// Registers all types contained within a value tuple.
+    /// Nested tuples are recursively expanded to register all contained types.
     /// </summary>
-    /// <typeparam name="T">A tuple type.</typeparam>
+    /// <typeparam name="T">A value tuple type. Must be unmanaged.</typeparam>
     /// <exception cref="ArgumentException">Thrown when type T is not a value tuple.</exception>
-    /// <returns>All id of types in the tuple.</returns>
+    /// <returns>An array of type identifiers corresponding to each type in the tuple.</returns>
     public int[] RegisterTypesOfTuple<T>() where T : unmanaged
     {
         return !TypeUtils.IsValueTuple<T>()
@@ -158,10 +174,10 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Gets Type with given id
+    /// Retrieves type metadata by its unique identifier.
     /// </summary>
-    /// <param name="typeId">Type id of a registered type.</param>
-    /// <returns>Type info of the given type id.</returns>
+    /// <param name="typeId">The unique type identifier of a registered type.</param>
+    /// <returns>Type information including size, alignment, and offset for the specified type.</returns>
     public TypeInfo GetTypeInfo(int typeId)
     {
         using var rg = typeListLock.EnterReadLock();
@@ -169,10 +185,10 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Gets type info with given type
+    /// Retrieves type metadata by its Type object.
     /// </summary>
-    /// <param name="type"></param>
-    /// <returns>Type info of the given type.</returns>
+    /// <param name="type">The Type object of a registered type.</param>
+    /// <returns>Type information including size, alignment, and offset for the specified type.</returns>
     public TypeInfo GetTypeInfo(Type type)
     {
         using var rg = typeListLock.EnterReadLock();
@@ -180,20 +196,20 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Gets bundle type info with given type.
+    /// Retrieves bundle metadata including all component types contained within the bundle.
     /// </summary>
-    /// <typeparam name="T">The bundle type.</typeparam>
-    /// <returns>Type info of each component in the bundle.</returns>
+    /// <typeparam name="T">The component bundle type. Must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <returns>An array of tuples containing type information and type IDs for each component in the bundle.</returns>
     public (TypeInfo info, int typeId)[] GetBundleInfo<T>() where T : unmanaged, IComponentBundle
     {
         return bundleToInfoDict[typeof(T)];
     }
 
     /// <summary>
-    /// Gets id by type T
+    /// Retrieves the unique type identifier for a type specified as a generic parameter.
     /// </summary>
-    /// <typeparam name="T">The target type.</typeparam>
-    /// <returns>The id of the target type. Returns -1 if the type is not registered.</returns>
+    /// <typeparam name="T">The type to look up.</typeparam>
+    /// <returns>The unique type identifier, or -1 if the type has not been registered.</returns>
     public int GetTypeId<T>()
     {
         var type = typeof(T);
@@ -201,10 +217,10 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Gets id by type.
+    /// Retrieves the unique type identifier for a type specified as a Type object.
     /// </summary>
-    /// <param name="type">The target type.</param>
-    /// <returns>The id of the target type. Returns -1 if the type is not registered.</returns>
+    /// <param name="type">The Type object to look up.</param>
+    /// <returns>The unique type identifier, or -1 if the type has not been registered.</returns>
     public int GetTypeId(Type type)
     {
         return typeToIdDict.GetValueOrDefault(type, -1);

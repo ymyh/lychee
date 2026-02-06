@@ -10,15 +10,13 @@ public sealed class App : IDisposable
 {
 #region Fields
 
-    public readonly TypeRegistrar TypeRegistrar = new();
+    public TypeRegistrar TypeRegistrar { get; } = new();
 
-    public readonly ResourcePool ResourcePool;
+    public ResourcePool ResourcePool { get; }
 
-    public readonly World World;
+    public World World { get; }
 
     internal readonly ThreadPool ThreadPool;
-
-    private readonly HashSet<Type> pluginInstalled = [];
 
     private readonly List<IDisposable> disposables = [];
 
@@ -48,6 +46,11 @@ public sealed class App : IDisposable
 
 #region Public methods
 
+    /// <summary>
+    /// Registers a new event type and adds it to both the resource pool and world.
+    /// Events enable type-safe, decoupled communication between systems.
+    /// </summary>
+    /// <typeparam name="T">The event type.</typeparam>
     public void AddEvent<T>()
     {
         var ev = new Event<T>();
@@ -57,110 +60,130 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Add a new resource with given value. Each type of resource can be added only once.
+    /// Adds a resource instance to the resource pool. Each resource type can only be added once.
     /// </summary>
-    /// <param name="resource">The resource to add.</param>
-    /// <typeparam name="T">The resource type.</typeparam>
-    /// <returns>The resource just added.</returns>
+    /// <param name="resource">The resource instance to add.</param>
+    /// <typeparam name="T">The resource type, must be a reference type.</typeparam>
+    /// <returns>The resource instance that was added.</returns>
+    /// <exception cref="ArgumentException">Thrown when a resource of this type already exists.</exception>
     public T AddResource<T>(T resource) where T : class
     {
         return ResourcePool.AddResource(resource);
     }
 
     /// <summary>
-    /// Add a new resource with default value. Each type of resource can be added only once.
+    /// Adds a new resource instance with the default constructor to the resource pool.
+    /// Each resource type can only be added once.
     /// </summary>
-    /// <typeparam name="T">The resource type.</typeparam>
-    /// <returns>The resource just added.</returns>
+    /// <typeparam name="T">The resource type, must be a reference type with a default constructor.</typeparam>
+    /// <returns>The newly created resource instance.</returns>
+    /// <exception cref="ArgumentException">Thrown when a resource of this type already exists.</exception>
     public T AddResource<T>() where T : class, new()
     {
         return ResourcePool.AddResource<T>();
     }
 
     /// <summary>
-    /// Add a new resource with given value. Each type of resource can be added only once.
+    /// Adds an unmanaged resource to the resource pool. The resource is stored in aligned native memory.
+    /// Each resource type can only be added once.
     /// </summary>
-    /// <param name="resource">The resource to add.</param>
+    /// <param name="resource">The resource value to copy into native memory.</param>
     /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
+    /// <exception cref="ArgumentException">Thrown when a resource of this type already exists.</exception>
     public void AddResourceStruct<T>(T resource) where T : unmanaged
     {
         ResourcePool.AddResourceStruct(resource);
     }
 
     /// <summary>
-    /// Add a new resource with given value. Each type of resource can be added only once.
+    /// Adds a new unmanaged resource with the default value to the resource pool.
+    /// Each resource type can only be added once.
     /// </summary>
-    /// <param name="resource">The resource to add.</param>
     /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
+    /// <exception cref="ArgumentException">Thrown when a resource of this type already exists.</exception>
     public void AddResourceStruct<T>() where T : unmanaged
     {
         ResourcePool.AddResourceStruct<T>(new());
     }
 
     /// <summary>
-    /// Gets the resource added before, target resource must be class.
+    /// Retrieves a resource from the pool by type.
     /// </summary>
-    /// <typeparam name="T">The resource type, must be class.</typeparam>
-    /// <returns></returns>
+    /// <typeparam name="T">The resource type, must be a reference type.</typeparam>
+    /// <returns>The resource instance.</returns>
+    /// <exception cref="ArgumentException">Thrown when no resource of this type exists.</exception>
     public T GetResource<T>() where T : class
     {
         return ResourcePool.GetResource<T>();
     }
 
     /// <summary>
-    /// Gets the reference of the resource added before, target resource must be class.
+    /// Gets a mutable reference to a reference-type resource in the pool.
     /// </summary>
-    /// <typeparam name="T">The resource type, must be class.</typeparam>
-    /// <returns></returns>
+    /// <typeparam name="T">The resource type, must be a reference type.</typeparam>
+    /// <returns>A reference to the resource.</returns>
+    /// <exception cref="ArgumentException">Thrown when no resource of this type exists.</exception>
     public ref T GetResourceClassRef<T>() where T : class
     {
         return ref ResourcePool.GetResourceClassRef<T>();
     }
 
     /// <summary>
-    /// Gets the reference of the resource added before, target resource must be unmanaged.
+    /// Gets a mutable reference to an unmanaged resource stored in native memory.
     /// </summary>
     /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
-    /// <returns></returns>
+    /// <returns>A reference to the resource.</returns>
+    /// <exception cref="ArgumentException">Thrown when no resource of this type exists.</exception>
     public ref T GetResourceStructRef<T>() where T : unmanaged
     {
         return ref ResourcePool.GetResourceStructRef<T>();
     }
 
     /// <summary>
-    /// Gets the pointer of an unmanaged resource type.
+    /// Gets a pointer to an unmanaged resource stored in native memory.
     /// </summary>
     /// <typeparam name="T">The resource type, must be unmanaged.</typeparam>
-    /// <returns></returns>
+    /// <returns>A pointer to the resource.</returns>
+    /// <exception cref="ArgumentException">Thrown when no resource of this type exists.</exception>
     public unsafe T* GetResourcePtr<T>() where T : unmanaged
     {
         return ResourcePool.GetResourcePtr<T>();
     }
 
     /// <summary>
-    /// Add a system schedule.
+    /// Checks whether a resource of the specified type exists in the pool.
     /// </summary>
-    /// <param name="schedule">The schedule to add.</param>
-    /// <param name="name">The schedule name.</param>
+    /// <typeparam name="T">The resource type to check.</typeparam>
+    /// <returns>True if the resource exists; otherwise, false.</returns>
+    public bool HasResource<T>()
+    {
+        return ResourcePool.HasResource<T>();
+    }
+
+    /// <summary>
+    /// Adds a system schedule with a unique name for execution ordering.
+    /// </summary>
+    /// <param name="schedule">The schedule instance to add.</param>
+    /// <param name="name">A unique name identifying this schedule.</param>
     public void AddSchedule(ISchedule schedule, string name)
     {
         World.SystemSchedules.AddSchedule(schedule, name);
     }
 
     /// <summary>
-    /// Add a system schedule after another system schedule.
+    /// Adds a system schedule, inserting it after an existing schedule in the execution order.
     /// </summary>
-    /// <param name="schedule">The schedule to add.</param>
-    /// <param name="name">The schedule name.</param>
-    /// <param name="addAfter">The schedule name to add after.</param>
-    /// <exception cref="ArgumentException">Thrown when the schedule already exists or the addAfter schedule is not found.</exception>
+    /// <param name="schedule">The schedule instance to add.</param>
+    /// <param name="name">A unique name identifying this schedule.</param>
+    /// <param name="addAfter">The name of the schedule after which this schedule should execute.</param>
+    /// <exception cref="ArgumentException">Thrown when the schedule name already exists or the addAfter schedule is not found.</exception>
     public void AddSchedule(ISchedule schedule, string name, string addAfter)
     {
         World.SystemSchedules.AddSchedule(schedule, name, addAfter);
     }
 
     /// <summary>
-    /// Clear all system schedules.
+    /// Removes all system schedules from the application.
     /// </summary>
     public void ClearSchedules()
     {
@@ -168,9 +191,10 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Creates a <see cref="Commands"/>.
+    /// Creates a new Commands instance for deferred entity operations.
+    /// The created Commands will be automatically disposed when the App is disposed.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>A new Commands instance.</returns>
     public Commands CreateCommands()
     {
         var commands = new Commands(this);
@@ -180,9 +204,11 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Creates a <see cref="ThreadPool"/> that will call Dispose when <see cref="App"/> destoried.
+    /// Creates a new ThreadPool with the specified thread count.
+    /// The created pool will be automatically disposed when the App is disposed.
     /// </summary>
-    /// <returns></returns>
+    /// <param name="threadCount">The number of threads in the pool.</param>
+    /// <returns>A new ThreadPool instance.</returns>
     public ThreadPool CreateThreadPool(int threadCount)
     {
         var pool = new ThreadPool(threadCount);
@@ -192,70 +218,66 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Gets a system schedule by name.
+    /// Retrieves a system schedule by name.
     /// </summary>
     /// <param name="name">The schedule name.</param>
-    /// <returns></returns>
+    /// <returns>The schedule if found; otherwise, null.</returns>
     public ISchedule? GetSchedule(string name)
     {
         return World.SystemSchedules.GetSchedule(name);
     }
 
     /// <summary>
-    /// Gets a system schedule by name.
+    /// Retrieves a system schedule by name and casts it to the specified type.
     /// </summary>
     /// <param name="name">The schedule name.</param>
-    /// <returns></returns>
+    /// <typeparam name="T">The schedule type, must be a reference type implementing ISchedule.</typeparam>
+    /// <returns>The schedule if found and of the correct type; otherwise, null.</returns>
     public T? GetSchedule<T>(string name) where T : class, ISchedule
     {
         return World.SystemSchedules.GetSchedule<T>(name);
     }
 
     /// <summary>
-    /// Install a plugin to the application. Install same plugin takes no effect.
+    /// Installs a plugin into the application. Installing the same plugin type multiple times has no effect.
+    /// The installed plugin is automatically registered as a resource for dependency injection.
     /// </summary>
-    /// <param name="plugin">The plugin to install.</param>
-    /// <typeparam name="T">The plugin type.</typeparam>
-    /// <returns></returns>
-    public T InstallPlugin<T>(T plugin) where T : IPlugin
+    /// <param name="plugin">The plugin instance to install.</param>
+    /// <typeparam name="T">The plugin type, must be a reference type implementing IPlugin.</typeparam>
+    /// <returns>The installed plugin instance.</returns>
+    public T InstallPlugin<T>(T plugin) where T : class, IPlugin
     {
-        var type = plugin.GetType();
-        if (pluginInstalled.Contains(type))
+        if (ResourcePool.HasResource<T>())
         {
             return plugin;
         }
 
         plugin.Install(this);
-        pluginInstalled.Add(plugin.GetType());
+        ResourcePool.AddResource(plugin);
 
         return plugin;
     }
 
     /// <summary>
-    /// Install a plugin to the application. Install same plugin takes no effect.
+    /// Creates and installs a new plugin instance with the default constructor.
+    /// Installing the same plugin type multiple times has no effect.
     /// </summary>
-    /// <typeparam name="T">The plugin type.</typeparam>
-    /// <returns></returns>
-    public T InstallPlugin<T>() where T : IPlugin, new()
+    /// <typeparam name="T">The plugin type, must have a default constructor.</typeparam>
+    /// <returns>The newly created and installed plugin instance.</returns>
+    public T InstallPlugin<T>() where T : class, IPlugin, new()
     {
         return InstallPlugin(new T());
     }
 
     /// <summary>
-    /// Check if a plugin is installed.
+    /// Executes all system schedules up to the specified end point.
+    /// If scheduleEnd is null or not found, all schedules are executed in order.
+    /// Calling this method again continues execution from where it left off,
+    /// looping back to the first schedule after the last one completes.
     /// </summary>
-    /// <typeparam name="T">The plugin type.</typeparam>
-    /// <returns>True if the plugin is installed, otherwise false.</returns>
-    public bool CheckPluginInstalled<T>() where T : IPlugin
-    {
-        return pluginInstalled.Contains(typeof(T));
-    }
-
-    /// <summary>
-    /// Update the application once.
-    /// </summary>
-    /// <param name="scheduleEnd">Trigger schedule execute up to before this schedule. If null or not found, all schedules will be executed.
-    /// Call this method again will continue from the last schedule until all schedules are executed and then begin a new loop.
+    /// <param name="scheduleEnd">
+    /// The schedule at which to stop execution. If null, executes all schedules.
+    /// Subsequent calls will resume from the next schedule in sequence.
     /// </param>
     public void Update(ISchedule? scheduleEnd = null)
     {
@@ -270,6 +292,7 @@ public sealed class App : IDisposable
     {
         ThreadPool.Dispose();
         World.Dispose();
+        ResourcePool.Dispose();
 
         foreach (var disposable in disposables)
         {

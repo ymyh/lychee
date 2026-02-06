@@ -1,7 +1,7 @@
 ﻿namespace lychee;
 
 /// <summary>
-/// Specifies a generic parameter must be sealed.
+/// Marks a generic type parameter as requiring a sealed type.
 /// </summary>
 [AttributeUsage(AttributeTargets.GenericParameter)]
 public sealed class SealedRequired : Attribute;

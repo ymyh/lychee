@@ -1,11 +1,14 @@
 ﻿namespace lychee.attributes;
 
 /// <summary>
-/// Specifies that a type must satisfy the following requirements to conform to the SystemConcept constraint:
+/// Marks a generic type parameter as requiring the system concept constraint.
+/// </summary>
+/// <remarks>
+/// Types conforming to this constraint must:
 /// <list type="number">
 ///   <item>Implement the <see cref="lychee.interfaces.ISystem"/> interface</item>
-///   <item>Contain a method named 'Execute'</item>
+///   <item>Contain a method named <c>Execute</c></item>
 /// </list>
-/// </summary>
+/// </remarks>
 [AttributeUsage(AttributeTargets.GenericParameter)]
 public sealed class SystemConcept : Attribute;

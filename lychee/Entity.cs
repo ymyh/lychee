@@ -40,11 +40,11 @@ public struct Entity : IEquatable<Entity>
 
 public struct EntityInfo
 {
-    internal int ArchetypeId;
+    public int ArchetypeId { get; internal set; }
 
-    internal readonly int ChunkIdx;
+    public int ChunkIdx { get; }
 
-    internal readonly int Idx;
+    public int Idx { get; }
 
     internal EntityInfo(int archetypeId, int chunkIdx, int idx)
     {

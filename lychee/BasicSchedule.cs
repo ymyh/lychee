@@ -1,54 +1,58 @@
 ﻿using System.Reflection;
 using lychee.attributes;
 using lychee.collections;
+using lychee.components;
 using lychee.interfaces;
 using lychee.utils;
 
 namespace lychee;
 
 /// <summary>
-/// A base class for schedule. Providing basic functionality like add and execute system. <br/>
-/// It provides two modes to execute systems, see <see cref="ExecutionModeEnum"/>.
+/// Base class for system schedules, providing core functionality for adding and executing systems.
+/// Systems are organized in a directed acyclic graph (DAG) for automatic parallelization.
+/// Supports both single-threaded and multi-threaded execution modes.
 /// </summary>
 public abstract class BasicSchedule : ISchedule
 {
     /// <summary>
-    /// Indicates when the schedule should commit the changes.
+    /// Defines when entity modifications are committed to the world.
     /// </summary>
     public enum CommitPointEnum
     {
         /// <summary>
-        /// Commits changes at every synchronization point.
-        /// For SingleThread execution mode, it will commit changes after every system execution.
+        /// Commits changes after each synchronization point.
+        /// In SingleThread mode, this means after every system execution.
+        /// In MultiThread mode, this means after each group of parallel systems completes.
         /// </summary>
         Synchronization,
 
         /// <summary>
-        /// Commits changes at the end of the schedule execution.
+        /// Commits all changes once at the end of schedule execution.
         /// </summary>
         ScheduleEnd
     }
 
     /// <summary>
-    /// Indicates how the schedule should execute the systems.
+    /// Defines how systems within the schedule are executed.
     /// </summary>
     public enum ExecutionModeEnum
     {
         /// <summary>
-        /// Executes all systems in a single thread.
+        /// Executes all systems sequentially on a single thread.
         /// </summary>
         SingleThread,
 
         /// <summary>
-        /// Executes all systems in multiple threads.
+        /// Executes independent systems in parallel across multiple threads.
+        /// Systems are automatically grouped based on their access patterns.
         /// </summary>
         MultiThread,
     }
 
     /// <summary>
-    /// The execution graph of systems. You can easily see the execution order of systems through here.
-    /// We don't recommend you modify this graph directly, you should use other APIs to do this.
-    /// Make sure you know what you are doing before modifying this.
+    /// The execution graph representing system dependencies and parallelization opportunities.
+    /// You can inspect this graph to understand the execution order of systems.
+    /// Direct modification is not recommended; use the provided APIs instead.
     /// </summary>
     public DirectedAcyclicGraph<SystemInfo> ExecutionGraph { get; } = new();
 
@@ -58,13 +62,25 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly List<Commands> entityCommanders = [];
 
+    /// <summary>
+    /// Gets or sets when entity modifications are committed.
+    /// </summary>
     public CommitPointEnum CommitPoint { get; set; }
 
+    /// <summary>
+    /// Gets or sets the execution mode for systems in this schedule.
+    /// </summary>
     public ExecutionModeEnum ExecutionMode { get; set; }
 
     private bool isFrozen;
 
     private bool needConfigure = true;
+
+#region Static Members
+
+    private static readonly MethodInfo AddSystemsMethod = typeof(BasicSchedule).GetMethod(nameof(AddSystems), BindingFlags.Public | BindingFlags.Instance, [typeof(ISystem)])!;
+
+#endregion
 
 #region Constructor
 
@@ -90,71 +106,58 @@ public abstract class BasicSchedule : ISchedule
 #region Public methods
 
     /// <summary>
-    /// Add a system to schedule. The added system will call <see cref="ISystem.InitializeAG"/>.
+    /// Adds a new system instance to the schedule and initializes it.
     /// </summary>
-    /// <typeparam name="T">The type of system to add.</typeparam>
-    /// <returns>The system just added.</returns>
+    /// <typeparam name="T">The system type, must implement ISystem and have a default constructor.</typeparam>
+    /// <returns>The newly created and added system instance.</returns>
     public T AddSystem<[SystemConcept] T>() where T : ISystem, new()
     {
-        return AddSystem(new T(), new());
+        return AddSystem(new T());
     }
 
     /// <summary>
-    /// Add a system to schedule, with descriptor. The added system will call <see cref="ISystem.InitializeAG"/>.
+    /// Adds a new system instance to the schedule, positioning it after a specified system.
+    /// The system will be initialized upon addition.
     /// </summary>
-    /// <param name="descriptor">The system descriptor</param>
-    /// <typeparam name="T">The type of system to add.</typeparam>
-    /// <returns>The system just added.</returns>
-    public T AddSystem<[SystemConcept] T>(SystemDescriptor descriptor) where T : ISystem, new()
+    /// <param name="addAfter">The system after which the new system should execute.</param>
+    /// <typeparam name="T">The system type, must implement ISystem and have a default constructor.</typeparam>
+    /// <returns>The newly created and added system instance.</returns>
+    public T AddSystem<[SystemConcept] T>(ISystem addAfter) where T : ISystem, new()
     {
-        return AddSystem(new T(), descriptor);
+        return AddSystem(new T(), addAfter);
     }
 
     /// <summary>
-    /// Add a system to schedule. The added system will call <see cref="ISystem.InitializeAG"/>.
+    /// Adds an existing system instance to the schedule.
+    /// The system will be initialized upon addition.
     /// </summary>
-    /// <param name="system">The system to add.</param>
-    /// <typeparam name="T">The system type.</typeparam>
-    /// <returns>The system just added.</returns>
-    public T AddSystem<[SystemConcept] T>(T system) where T : ISystem
+    /// <param name="system">The system instance to add.</param>
+    /// <param name="addAfter">Optional. The system after which this system should execute.</param>
+    /// <typeparam name="T">The system type, must implement ISystem.</typeparam>
+    /// <returns>The system instance that was added.</returns>
+    public T AddSystem<[SystemConcept] T>(T system, ISystem? addAfter = null) where T : ISystem
     {
-        return AddSystem(system, new());
-    }
-
-    /// <summary>
-    /// Add a system to schedule, with descriptor. The added system will call <see cref="ISystem.InitializeAG"/>.
-    /// </summary>
-    /// <param name="system">The system to add.</param>
-    /// <param name="descriptor">The system descriptor</param>
-    /// <typeparam name="T">The type of system to add.</typeparam>
-    /// <returns>The system just added</returns>
-    public T AddSystem<[SystemConcept] T>(T system, SystemDescriptor descriptor) where T : ISystem
-    {
-        DoAddSystem(system, descriptor);
+        DoAddSystem(system, addAfter);
         return system;
     }
 
     /// <summary>
-    /// Add systems into schedule in given order.
+    /// Adds multiple systems to the schedule in the order specified by a nested value tuple.
+    /// Systems at the same nesting level may execute in parallel if their access patterns allow.
+    /// All systems must have a default constructor.
     /// </summary>
-    /// <param name="systems"></param>
-    public void AddSystems(params ISystem[] systems)
-    {
-        ISystem addAfter = null!;
-        foreach (var system in systems)
-        {
-            DoAddSystem(system, new SystemDescriptor().After(addAfter));
-            addAfter = system;
-        }
-    }
-
-    /// <summary>
-    /// Add systems into schedule in given order. Generic parameter T must be a value tuple containing systems.
-    /// These target systems must have a default constructor.
-    /// </summary>
-    /// <typeparam name="T">Systems in a value tuple.</typeparam>
-    /// <exception cref="ArgumentException">T is not a value tuple</exception>
-    public void AddSystems<T>()
+    /// <typeparam name="T">A value tuple containing system types. Nested tuples create hierarchical ordering.</typeparam>
+    /// <param name="addAfter">Optional. The system after which the first system should execute.</param>
+    /// <exception cref="ArgumentException">Thrown when T is not a value tuple or contains non-system types.</exception>
+    /// <example>
+    /// <code>
+    /// // SysA executes first
+    /// // SysB and SysC execute in parallel (if compatible) after SysA
+    /// // SysD executes after both SysB and SysC complete
+    /// schedule.AddSystems&lt;(SysA, (SysB, SysC), SysD)&gt;();
+    /// </code>
+    /// </example>
+    public void AddSystems<T>(ISystem? addAfter = null)
     {
         if (!TypeUtils.IsValueTuple<T>())
         {
@@ -163,9 +166,14 @@ public abstract class BasicSchedule : ISchedule
 
         var types = TypeUtils.GetTupleTypes<T>();
 
-        ISystem addAfter = null!;
         foreach (var type in types)
         {
+            if (TypeUtils.IsValueTuple(type))
+            {
+                AddSystemsMethod.MakeGenericMethod(type).Invoke(this, [addAfter]);
+                continue;
+            }
+
             if (type.GetInterface("lychee.interfaces.ISystem") == null)
             {
                 throw new ArgumentException($"Type {typeof(T).Name} is not a system type");
@@ -174,11 +182,14 @@ public abstract class BasicSchedule : ISchedule
             var ctor = type.GetConstructor([])!;
             var system = (ctor.Invoke([]) as ISystem)!;
 
-            DoAddSystem(system, new SystemDescriptor().After(addAfter));
+            DoAddSystem(system, addAfter);
             addAfter = system;
         }
     }
 
+    /// <summary>
+    /// Removes all systems from the schedule and resets the execution graph.
+    /// </summary>
     public void ClearSystems()
     {
         ExecutionGraph.Clear();
@@ -189,11 +200,33 @@ public abstract class BasicSchedule : ISchedule
 
 #region Private methods
 
-    private void DoAddSystem(ISystem system, SystemDescriptor descriptor)
+    private (Type[] all, Type[] any, Type[] none) GetSystemFilter(ISystem system)
+    {
+        var filterAttr = system.GetType().GetCustomAttribute<SystemFilter>();
+        if (filterAttr != null)
+        {
+            if (filterAttr.All.Any(x => x == typeof(Disabled)) || filterAttr.Any.Any(x => x == typeof(Disabled)))
+            {
+                return (filterAttr.All, filterAttr.Any, filterAttr.None);
+            }
+
+            return (filterAttr.All, filterAttr.Any, filterAttr.None.Append(typeof(Disabled)).ToArray());
+        }
+
+        return ([], [], [typeof(Disabled)]);
+    }
+
+    private void DoAddSystem(ISystem system, ISystem? addAfter = null)
     {
         system.InitializeAG(app);
+        var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
 
-        var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, descriptor), descriptor));
+        var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
+        {
+            AllFilter = allFilter,
+            AnyFilter = anyFilter,
+            NoneFilter = noneFilter,
+        }));
         DAGNode<SystemInfo> addAfterNode = null!;
 
         isFrozen = false;
@@ -205,12 +238,12 @@ public abstract class BasicSchedule : ISchedule
         {
             addAfterNode = n;
 
-            if (descriptor.AddAfter != null)
+            if (addAfter != null)
             {
-                if (n.Data.System == descriptor.AddAfter)
+                if (n.Data.System == addAfter)
                 {
                     currentGroup = n.Group;
-                    descriptor.AddAfter = null;
+                    addAfter = null;
                 }
 
                 continue;
@@ -229,7 +262,7 @@ public abstract class BasicSchedule : ISchedule
         ExecutionGraph.AddEdge(addAfterNode, node);
     }
 
-    private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, SystemDescriptor descriptor)
+    private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, Type[] allFilter, Type[] anyFilter, Type[] noneFilter)
     {
         var sysType = system.GetType();
         var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
@@ -246,13 +279,13 @@ public abstract class BasicSchedule : ISchedule
         }).ToArray();
 
         CheckAutoImplSystemAttribute(system, sysType);
-        RegisterSystemComponent(parameters, descriptor);
+        RegisterSystemComponent(parameters, allFilter, anyFilter, noneFilter);
         ValidateParameter(system, parameters);
 
         // Check this here because we need to make sure all types in descriptor are valid
-        if (descriptor.NoneFilter.Length > 0)
+        if (noneFilter.Length > 0)
         {
-            if (parameters.Select(p => p.Type).Intersect(descriptor.NoneFilter).Any())
+            if (parameters.Select(p => p.Type).Intersect(noneFilter).Any())
             {
                 throw new ArgumentException($"System {system} has component parameter that also in NoneFilter");
             }
@@ -261,7 +294,7 @@ public abstract class BasicSchedule : ISchedule
         return parameters;
     }
 
-    private void RegisterSystemComponent(SystemParameterInfo[] parameters, SystemDescriptor descriptor)
+    private void RegisterSystemComponent(SystemParameterInfo[] parameters, Type[] allFilter, Type[] anyFilter, Type[] noneFilter)
     {
         foreach (var param in parameters)
         {
@@ -288,7 +321,7 @@ public abstract class BasicSchedule : ISchedule
 
                 if (TypeUtils.IsEmptyStruct(type))
                 {
-                    throw new ArgumentException($"Type {param} as a component parameter is not supported, because it doesn't contains any field");
+                    throw new ArgumentException($"Type {type} as a component parameter is not supported, because it is an emtpy struct");
                 }
             }
             else
@@ -297,17 +330,17 @@ public abstract class BasicSchedule : ISchedule
             }
         }
 
-        foreach (var type in descriptor.AllFilter)
+        foreach (var type in allFilter)
         {
             app.TypeRegistrar.RegisterComponent(type);
         }
 
-        foreach (var type in descriptor.AnyFilter)
+        foreach (var type in anyFilter)
         {
             app.TypeRegistrar.RegisterComponent(type);
         }
 
-        foreach (var type in descriptor.NoneFilter)
+        foreach (var type in noneFilter)
         {
             app.TypeRegistrar.RegisterComponent(type);
         }
@@ -399,8 +432,8 @@ public abstract class BasicSchedule : ISchedule
 #endregion
 
     /// <summary>
-    /// Executes all systems in the schedule.
-    /// Inherited class should call this method in their Execute method.
+    /// Executes all systems in the schedule according to the DAG and execution mode.
+    /// Derived classes should call this method from their Execute implementation.
     /// </summary>
     protected void DoExecute()
     {
@@ -449,11 +482,12 @@ public abstract class BasicSchedule : ISchedule
 }
 
 /// <summary>
-/// Execute with no condition.
+/// A default schedule implementation that executes all systems without any preconditions.
+/// Systems are executed according to the DAG and execution mode settings.
 /// </summary>
-/// <param name="app">The ECS application.</param>
-/// <param name="executionMode">The execution mode, default is SingleThread.</param>
-/// <param name="commitPoint">The commit point, default is Synchronization.</param>
+/// <param name="app">The ECS application instance.</param>
+/// <param name="executionMode">The execution mode for systems (default: SingleThread).</param>
+/// <param name="commitPoint">The commit point for entity modifications (default: Synchronization).</param>
 public sealed class DefaultSchedule(
     App app,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,

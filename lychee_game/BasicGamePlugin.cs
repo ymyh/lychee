@@ -6,9 +6,15 @@ namespace lychee_game;
 
 public sealed class DefaultPluginDescriptor
 {
-    public int FixedUpdateInterval = 20;
+    /// <summary>
+    /// FixedUpdate schedule execution interval, in millisecond, default is 20.
+    /// </summary>
+    public int FixedUpdateInterval { get; set; } = 20;
 
-    public int FixedUpdateCatchUpCount = 5;
+    /// <summary>
+    /// FixedUpdate schedule maximum catch up attempt count, default is 5.
+    /// </summary>
+    public int FixedUpdateCatchUpCount { get; set; } = 5;
 }
 
 /// <summary>
@@ -47,6 +53,16 @@ public sealed class DefaultPluginDescriptor
 ///     </item>
 ///     <item>
 ///         <description>
+///             <see cref="RenderTransparency"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
+///             <see cref="RenderUI"/>
+///         </description>
+///     </item>
+///     <item>
+///         <description>
 ///             <see cref="Last"/>
 ///         </description>
 ///     </item>
@@ -57,15 +73,19 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 {
     public FireOnceSchedule StartUp { get; private set; } = null!;
 
-    public FixedIntervalSchedule FixedUpdate { get; private set; } = null!;
-
     public DefaultSchedule First { get; private set; } = null!;
+
+    public FixedIntervalSchedule FixedUpdate { get; private set; } = null!;
 
     public DefaultSchedule Update { get; private set; } = null!;
 
     public DefaultSchedule PostUpdate { get; private set; } = null!;
 
     public DefaultSchedule Render { get; private set; } = null!;
+
+    public DefaultSchedule RenderTransparency { get; private set; } = null!;
+
+    public DefaultSchedule RenderUI { get; private set; } = null!;
 
     public DefaultSchedule Last { get; private set; } = null!;
 
@@ -96,6 +116,12 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 
         Render = new(app);
         app.AddSchedule(Render, nameof(Render));
+
+        RenderTransparency = new(app);
+        app.AddSchedule(RenderTransparency, nameof(RenderTransparency));
+
+        RenderUI = new(app);
+        app.AddSchedule(RenderUI, nameof(RenderUI));
 
         Last = new(app);
         app.AddSchedule(Last, nameof(Last));

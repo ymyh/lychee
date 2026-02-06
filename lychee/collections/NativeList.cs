@@ -6,10 +6,10 @@ using lychee.utils;
 namespace lychee.collections;
 
 /// <summary>
-/// Like <see cref="List&lt;T&gt;"/>, but manually alloc and free the memory and holds only unmanaged type. <br/>
-/// Probably have better performance than <see cref="List&lt;T&gt;"/>.
+/// A list implementation that manually manages unmanaged memory for unmanaged types.
+/// Similar to <see cref="List&lt;T&gt;"/> but with explicit memory allocation and deallocation for improved performance.
 /// </summary>
-/// <typeparam name="T">The type of elements in the list.</typeparam>
+/// <typeparam name="T">The type of elements in the list. Must be unmanaged.</typeparam>
 public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> where T : unmanaged
 {
     private unsafe T* data;
@@ -22,16 +22,28 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
 
 #region Public properties
 
+    /// <summary>
+    /// Gets a value indicating whether the list has reached its current capacity.
+    /// </summary>
     public bool IsFull => size == capacity;
 
+    /// <summary>
+    /// Gets a value indicating whether the list contains no elements.
+    /// </summary>
     public bool IsEmpty => size == 0;
 
+    /// <summary>
+    /// Gets the number of elements contained in the list.
+    /// </summary>
     public int Count => size;
 
+    /// <summary>
+    /// Gets a value indicating whether the list is read-only. Always returns false.
+    /// </summary>
     public bool IsReadOnly => false;
 
     /// <summary>
-    /// Gets or sets the capacity of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Gets or sets the total number of elements the internal data structure can hold without resizing.
     /// </summary>
     public int Capacity
     {
@@ -39,6 +51,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         set => EnsureCapacity(value);
     }
 
+    /// <summary>
+    /// Gets or sets the element at the specified index.
+    /// </summary>
+    /// <param name="index">The zero-based index of the element.</param>
+    /// <returns>The element at the specified index.</returns>
     public T this[int index]
     {
         get
@@ -62,17 +79,29 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         }
     }
 
+    /// <summary>
+    /// Implicitly converts a <see cref="NativeList&lt;T&gt;"/> to a <see cref="Span&lt;T&gt;"/>.
+    /// </summary>
+    /// <param name="list">The list to convert.</param>
     public static implicit operator Span<T>(NativeList<T> list) => list.AsSpan();
 
 #endregion
 
 #region Constructors & Destructors
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NativeList&lt;T&gt;"/> class with the specified initial capacity.
+    /// </summary>
+    /// <param name="capacity">The initial capacity of the list.</param>
     public NativeList(int capacity) : this()
     {
         EnsureCapacity(capacity);
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NativeList&lt;T&gt;"/> class with elements copied from the specified array.
+    /// </summary>
+    /// <param name="array">The array whose elements are copied to the new list.</param>
     public NativeList(T[] array) : this()
     {
         EnsureCapacity(array.Length);
@@ -90,9 +119,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
 #endregion
 
     /// <summary>
-    /// Like <see cref="Add(T)"/>, except the value parameter is pass by ref.
+    /// Adds an element to the end of the list by reference.
     /// </summary>
-    /// <param name="value"></param>
+    /// <param name="value">The element to add by reference.</param>
     public void Add(in T value)
     {
         if (IsFull)
@@ -114,15 +143,15 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Adds an object to the end of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Adds an element to the end of the list.
     /// </summary>
-    /// <param name="value">The object to be added to the end of the <see cref="NativeList&lt;T&gt;"/>.</param>
+    /// <param name="value">The element to add to the end of the list.</param>
     public void Add(T value) => Add(in value);
 
     /// <summary>
-    /// Adds the elements of the specified collection to the end of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Adds the elements of the specified collection to the end of the list.
     /// </summary>
-    /// <param name="collection"></param>
+    /// <param name="collection">The collection whose elements should be added.</param>
     public void AddRange(IEnumerable<T> collection)
     {
         switch (collection)
@@ -177,9 +206,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Adds the elements of the specified collection to the end of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Adds the elements of the specified read-only span to the end of the list.
     /// </summary>
-    /// <param name="collection"></param>
+    /// <param name="collection">The read-only span whose elements should be added.</param>
     public void AddRange(ReadOnlySpan<T> collection)
     {
         EnsureCapacity(capacity + collection.Length);
@@ -191,17 +220,17 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Returns a span that contains all elements of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Returns a span that contains all elements of the list.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>A span containing all elements of the list.</returns>
     public Span<T> AsSpan() => AsSpan(0, size);
 
 
     /// <summary>
-    /// Returns a span that contains elements from the specified index to the end of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Returns a span that contains elements from the specified index to the end of the list.
     /// </summary>
     /// <param name="begin">The zero-based index at which the range starts.</param>
-    /// <returns></returns>
+    /// <returns>A span containing elements from the specified index to the end.</returns>
     public Span<T> AsSpan(int begin)
     {
         Debug.Assert((uint)begin < (uint)size);
@@ -213,11 +242,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Returns a span that contains elements from the specified index to the end of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Returns a span that contains the specified number of elements starting from the specified index.
     /// </summary>
     /// <param name="begin">The zero-based index at which the range starts.</param>
     /// <param name="count">The number of elements in the range.</param>
-    /// <returns></returns>
+    /// <returns>A span containing the specified range of elements.</returns>
     public Span<T> AsSpan(int begin, int count)
     {
         Debug.Assert((uint)begin < (uint)size);
@@ -230,27 +259,59 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Removes all elements from the <see cref="NativeList&lt;T&gt;"/> and leave memory untouched.
+    /// Removes all elements from the list without releasing the allocated memory.
     /// </summary>
     public void Clear() => size = 0;
 
     /// <summary>
-    /// Determines whether an element is in the <see cref="NativeList&lt;T&gt;"/>.
+    /// Determines whether an element is in the list.
     /// </summary>
-    /// <param name="item"></param>
-    /// <returns></returns>
+    /// <param name="item">The element to locate in the list.</param>
+    /// <returns>true if the element is found; otherwise, false.</returns>
     public bool Contains(T item) => IndexOf(item) != -1;
 
+    /// <summary>
+    /// Copies the entire list to a compatible one-dimensional array, starting at the specified index of the target array.
+    /// </summary>
+    /// <param name="array">The destination array.</param>
+    /// <param name="arrayIndex">The zero-based index in the destination array at which copying begins.</param>
     public void CopyTo(T[] array, int arrayIndex) => AsSpan().CopyTo(array.AsSpan(arrayIndex));
 
+    /// <summary>
+    /// Copies the entire list to the specified span.
+    /// </summary>
+    /// <param name="span">The destination span.</param>
     public void CopyTo(Span<T> span) => AsSpan().CopyTo(span);
 
+    /// <summary>
+    /// Determines whether the list contains elements that match the conditions defined by the specified predicate.
+    /// </summary>
+    /// <param name="match">The predicate that defines the conditions to search for.</param>
+    /// <returns>true if the list contains one or more elements that match; otherwise, false.</returns>
     public bool Exists(Predicate<T> match) => FindIndex(match) != -1;
 
+    /// <summary>
+    /// Searches for an element that matches the conditions defined by the specified predicate, and returns the zero-based index of the first occurrence.
+    /// </summary>
+    /// <param name="match">The predicate that defines the conditions to search for.</param>
+    /// <returns>The zero-based index of the first element that matches; -1 if not found.</returns>
     public int FindIndex(Predicate<T> match) => FindIndex(0, size, match);
 
+    /// <summary>
+    /// Searches for an element that matches the conditions defined by the specified predicate, starting from the specified index.
+    /// </summary>
+    /// <param name="startIndex">The zero-based starting index of the search.</param>
+    /// <param name="match">The predicate that defines the conditions to search for.</param>
+    /// <returns>The zero-based index of the first element that matches; -1 if not found.</returns>
     public int FindIndex(int startIndex, Predicate<T> match) => FindIndex(startIndex, size - startIndex, match);
 
+    /// <summary>
+    /// Searches for an element that matches the conditions defined by the specified predicate within a range of elements.
+    /// </summary>
+    /// <param name="begin">The zero-based starting index of the search.</param>
+    /// <param name="count">The number of elements in the range to search.</param>
+    /// <param name="match">The predicate that defines the conditions to search for.</param>
+    /// <returns>The zero-based index of the first element that matches; -1 if not found.</returns>
     public int FindIndex(int begin, int count, Predicate<T> match)
     {
         if ((uint)begin > (uint)size)
@@ -279,9 +340,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Fills the entire <see cref="NativeList&lt;T&gt;"/> with the specified value.
+    /// Fills the entire list with the specified value.
     /// </summary>
-    /// <param name="item"></param>
+    /// <param name="item">The value to fill the list with.</param>
     public void Fill(in T item)
     {
         unsafe
@@ -292,11 +353,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Fills a range of elements in the <see cref="NativeList&lt;T&gt;"/> with the specified value.
+    /// Fills a range of elements in the list with the specified value.
     /// </summary>
-    /// <param name="begin"></param>
-    /// <param name="end"></param>
-    /// <param name="item"></param>
+    /// <param name="begin">The zero-based starting index of the range.</param>
+    /// <param name="end">The exclusive ending index of the range.</param>
+    /// <param name="item">The value to fill the range with.</param>
     public void Fill(int begin, int end, in T item)
     {
         if ((uint)begin > (uint)end || (uint)end > (uint)size)
@@ -311,11 +372,16 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         }
     }
 
+    /// <summary>
+    /// Delegate for performing an action on each element by reference.
+    /// </summary>
+    /// <param name="item">A reference to the current element.</param>
     public delegate void ForEachRefDelegate(ref T item);
 
     /// <summary>
-    /// Like <see cref="ForEach(Action&lt;T&gt;)"/> but pass element by reference.
+    /// Performs the specified action on each element of the list, passing each element by reference.
     /// </summary>
+    /// <param name="action">The delegate to perform on each element by reference.</param>
     public void ForEach(ForEachRefDelegate action)
     {
         unsafe
@@ -328,9 +394,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Performs the specified action on each element of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Performs the specified action on each element of the list.
     /// </summary>
-    /// <param name="act">The delegate to perform on each element of the <see cref="NativeList&lt;T&gt;"/>.</param>
+    /// <param name="act">The delegate to perform on each element of the list.</param>
     public void ForEach(Action<T> act)
     {
         unsafe
@@ -343,11 +409,11 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Searches for the specified object and returns the zero-based index of the first occurrence within the entire <see cref="NativeList&lt;T&gt;"/>.
+    /// Searches for the specified object and returns the zero-based index of the first occurrence.
     /// </summary>
-    /// <param name="value"></param>
-    /// <param name="comparer"></param>
-    /// <returns></returns>
+    /// <param name="value">The object to locate.</param>
+    /// <param name="comparer">The equality comparer to use; null to use the default.</param>
+    /// <returns>The zero-based index of the first occurrence; -1 if not found.</returns>
     public int IndexOf(in T value, EqualityComparer<T>? comparer)
     {
         comparer ??= EqualityComparer<T>.Default;
@@ -359,25 +425,30 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         }
     }
 
+    /// <summary>
+    /// Searches for the specified object and returns the zero-based index of the first occurrence using the default comparer.
+    /// </summary>
+    /// <param name="value">The object to locate.</param>
+    /// <returns>The zero-based index of the first occurrence; -1 if not found.</returns>
     public int IndexOf(T value)
     {
         return IndexOf(in value, null);
     }
 
     /// <summary>
-    /// Inserts an element into the <see cref="NativeList&lt;T&gt;"/> at the specified index.
+    /// Inserts an element into the list at the specified index.
     /// </summary>
-    /// <param name="index">The zero-based index at which item should be inserted.</param>
-    /// <param name="value">The object to insert.</param>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
+    /// <param name="index">The zero-based index at which the element should be inserted.</param>
+    /// <param name="value">The element to insert.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when index is negative or greater than the list size.</exception>
     public void Insert(int index, T value) => Insert(index, in value);
 
     /// <summary>
-    /// Inserts an element into the <see cref="NativeList&lt;T&gt;"/> at the specified index.
+    /// Inserts an element into the list at the specified index by reference.
     /// </summary>
-    /// <param name="index">The zero-based index at which item should be inserted.</param>
-    /// <param name="value">The object to insert.</param>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
+    /// <param name="index">The zero-based index at which the element should be inserted.</param>
+    /// <param name="value">The element to insert by reference.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when index is negative or greater than the list size.</exception>
     public void Insert(int index, in T value)
     {
         unsafe
@@ -413,17 +484,17 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Removes the first occurrence of a specific object from the <see cref="NativeList&lt;T&gt;"/>.
+    /// Removes the first occurrence of a specific object from the list.
     /// </summary>
-    /// <param name="value">The object to remove from the <see cref="NativeList&lt;T&gt;"/>.</param>
-    /// <returns>true if item is successfully removed; otherwise, false. This method also returns false if item was not found in the <see cref="NativeList&lt;T&gt;"/>.</returns>
+    /// <param name="value">The object to remove from the list.</param>
+    /// <returns>true if the item was successfully removed; otherwise, false.</returns>
     public bool Remove(T value) => Remove(in value);
 
     /// <summary>
-    /// Removes the first occurrence of a specific object from the <see cref="NativeList&lt;T&gt;"/>.
+    /// Removes the first occurrence of a specific object from the list by reference.
     /// </summary>
-    /// <param name="value">The object to remove from the <see cref="NativeList&lt;T&gt;"/>.</param>
-    /// <returns>true if item is successfully removed; otherwise, false. This method also returns false if item was not found in the <see cref="NativeList&lt;T&gt;"/>.</returns>
+    /// <param name="value">The object to remove from the list.</param>
+    /// <returns>true if the item was successfully removed; otherwise, false.</returns>
     public bool Remove(in T value)
     {
         var index = IndexOf(in value, null);
@@ -437,10 +508,10 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Removes the element at the specified index of the <see cref="NativeList&lt;T&gt;"/>.
+    /// Removes the element at the specified index from the list.
     /// </summary>
     /// <param name="index">The zero-based index of the element to remove.</param>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when index is negative or not less than the list size.</exception>
     public void RemoveAt(int index)
     {
         if ((uint)index >= (uint)size)
@@ -465,6 +536,10 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         size--;
     }
 
+    /// <summary>
+    /// Removes the last element from the list.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the list is empty.</exception>
     public void RemoveLast()
     {
         if (size == 0)
@@ -476,19 +551,19 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Resizes the <see cref="NativeList&lt;T&gt;"/> to the specified length and fill with default value.
+    /// Resizes the list to the specified length, filling new elements with default values.
     /// </summary>
-    /// <param name="newLength"></param>
+    /// <param name="newLength">The new size of the list.</param>
     public void Resize(int newLength)
     {
         Resize(newLength, new());
     }
 
     /// <summary>
-    /// Resizes the <see cref="NativeList&lt;T&gt;"/> to the specified length and fill with the specified item.
+    /// Resizes the list to the specified length, filling new elements with the specified value.
     /// </summary>
-    /// <param name="newLength"></param>
-    /// <param name="item"></param>
+    /// <param name="newLength">The new size of the list.</param>
+    /// <param name="item">The value to fill new elements with.</param>
     public void Resize(int newLength, in T item)
     {
         if (newLength < size)
@@ -509,7 +584,7 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     }
 
     /// <summary>
-    /// Shrinks the capacity of the <see cref="NativeList&lt;T&gt;"/> to match the size.
+    /// Reduces the capacity of the list to match its current size.
     /// </summary>
     public void ShirkToFit()
     {
@@ -583,6 +658,8 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
                 capacity = 0;
             }
         }
+
+        GC.SuppressFinalize(this);
     }
 
     public IEnumerator<T> GetEnumerator()
@@ -595,6 +672,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         return ((IEnumerable)this).GetEnumerator();
     }
 
+    /// <summary>
+    /// Enumerates the elements of a <see cref="NativeList&lt;T&gt;"/>.
+    /// </summary>
     private struct Enumerator(NativeList<T> list) : IEnumerator<T>
     {
         private int index = -1;

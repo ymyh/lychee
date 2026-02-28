@@ -174,7 +174,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
 
-    private readonly SparseMap<int[]> dstArchetypeCommCompIndices = new();
+    private readonly SparseMap<(int[] src, int[] dst)> dstArchetypeCommCompIndices = new();
 
     private readonly SparseMap<Entity> entities = [];
 
@@ -297,29 +297,32 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)
     {
-        int[] commCompIndices;
+        int[] srcCommCompIndices;
+        int[] dstCommCompIndices;
 
         if (dstArchetypeCommCompIndices.TryGetValue(archetype.ID, out var compIndices))
         {
-            commCompIndices = compIndices;
+            (srcCommCompIndices, dstCommCompIndices) = compIndices;
         }
         else
         {
             var commCompIds = TypeIdList.Intersect(archetype.TypeIdList).ToArray();
-            commCompIndices = new int[commCompIds.Length];
-            archetype.GetTypeIndices(commCompIds, commCompIndices);
+            srcCommCompIndices = new int[commCompIds.Length];
+            dstCommCompIndices = new int[commCompIds.Length];
+            GetTypeIndices(commCompIds, srcCommCompIndices);
+            archetype.GetTypeIndices(commCompIds, dstCommCompIndices);
 
-            dstArchetypeCommCompIndices.Add(archetype.ID, commCompIndices);
+            dstArchetypeCommCompIndices.Add(archetype.ID, (srcCommCompIndices, dstCommCompIndices));
         }
 
-        foreach (var index in commCompIndices)
+        for (var i = 0; i < srcCommCompIndices.Length; i++)
         {
             unsafe
             {
-                var src = Table.GetPtr(index, srcChunkIdx, srcIdx);
-                var dst = archetype.Table.GetPtr(index, dstChunkIdx, dstIdx);
+                var src = Table.GetPtr(srcCommCompIndices[i], srcChunkIdx, srcIdx);
+                var dst = archetype.Table.GetPtr(dstCommCompIndices[i], dstChunkIdx, dstIdx);
 
-                NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[index].Size);
+                NativeMemory.Copy(src, dst, (nuint)Table.Layout.TypeInfoList[srcCommCompIndices[i]].Size);
             }
         }
 

@@ -63,8 +63,6 @@ public sealed class Commands : IDisposable
 
     private bool currentEntitySet;
 
-    private bool srcArchetypeChanged = true;
-
 #endregion
 
     internal Commands(App app)
@@ -141,12 +139,7 @@ public sealed class Commands : IDisposable
 
         var srcInfo = GetEntityInfo(entity);
         ChangeSrcArchetype(srcInfo.ArchetypeId);
-
-        if (srcArchetypeChanged)
-        {
-            this.AddComponentTransferInfo<T>();
-            srcArchetypeChanged = false;
-        }
+        this.AddComponentTransferInfo<T>();
 
         Debug.Assert(TransferDstInfo != null);
 
@@ -189,12 +182,7 @@ public sealed class Commands : IDisposable
 
         var srcInfo = GetEntityInfo(entity);
         ChangeSrcArchetype(srcInfo.ArchetypeId);
-
-        if (srcArchetypeChanged)
-        {
-            this.AddComponentsTransferInfo<T>();
-            srcArchetypeChanged = false;
-        }
+        this.AddComponentsTransferInfo<T>();
 
         Debug.Assert(TransferDstInfo != null);
 
@@ -237,12 +225,7 @@ public sealed class Commands : IDisposable
 
         var srcInfo = GetEntityInfo(entity);
         ChangeSrcArchetype(srcInfo.ArchetypeId);
-
-        if (srcArchetypeChanged)
-        {
-            this.RemoveComponentTransferInfo<T>();
-            srcArchetypeChanged = false;
-        }
+        this.RemoveComponentTransferInfo<T>();
 
         Debug.Assert(TransferDstInfo != null);
 
@@ -270,12 +253,7 @@ public sealed class Commands : IDisposable
 
         var srcInfo = GetEntityInfo(entity);
         ChangeSrcArchetype(srcInfo.ArchetypeId);
-
-        if (srcArchetypeChanged)
-        {
-            this.RemoveComponentsTransferInfo<T>();
-            srcArchetypeChanged = false;
-        }
+        this.RemoveComponentsTransferInfo<T>();
 
         Debug.Assert(TransferDstInfo != null);
 
@@ -303,12 +281,7 @@ public sealed class Commands : IDisposable
 
         var srcInfo = GetEntityInfo(entity);
         ChangeSrcArchetype(srcInfo.ArchetypeId);
-
-        if (srcArchetypeChanged)
-        {
-            this.RemoveComponentsTupleTransferInfo<T>();
-            srcArchetypeChanged = false;
-        }
+        this.RemoveComponentsTupleTransferInfo<T>();
 
         Debug.Assert(TransferDstInfo != null);
 
@@ -430,22 +403,14 @@ public sealed class Commands : IDisposable
             }
         }
 
-        if (SrcArchetype != oldSrcArchetype)
-        {
-            srcArchetypeChanged = true;
-        }
-
         return (srcChunkIdx, srcIdx);
     }
 
     private void ChangeSrcArchetype(int archetypeId)
     {
-        var oldSrcArchetype = SrcArchetype;
-        SrcArchetype = ArchetypeManager.GetArchetype(archetypeId);
-
-        if (oldSrcArchetype != SrcArchetype)
+        if (SrcArchetype.ID != archetypeId)
         {
-            srcArchetypeChanged = true;
+            SrcArchetype = ArchetypeManager.GetArchetype(archetypeId);
         }
     }
 

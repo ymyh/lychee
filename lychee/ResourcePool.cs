@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using lychee.utils;
@@ -14,6 +15,8 @@ namespace lychee;
 public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 {
     private readonly Dictionary<Type, object> dataMap = new();
+
+    private static MethodInfo UnsafeAsRef = typeof(Unsafe).GetMethod("AsRef", BindingFlags.Static | BindingFlags.Public, [typeof(void*)])!;
 
     /// <summary>
     /// Adds a reference-type resource to the pool.
@@ -194,8 +197,19 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
             {
                 unsafe
                 {
-                    NativeMemory.AlignedFree((void*)(nint)value);
+                    var ptr = (void*)(nint)value;
+
+                    if (typeof(IDisposable).IsAssignableFrom(type))
+                    {
+                        (UnsafeAsRef.MakeGenericMethod(type).Invoke(null, [value]) as IDisposable)!.Dispose();
+                    }
+
+                    NativeMemory.AlignedFree(ptr);
                 }
+            }
+            else if (value is IDisposable disposable)
+            {
+                disposable.Dispose();
             }
         }
 

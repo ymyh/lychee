@@ -12,6 +12,12 @@ public struct Entity : IEquatable<Entity>
         Generation = generation;
     }
 
+    internal Entity(UncommittedEntity entity)
+    {
+        ID = entity.ID;
+        Generation = entity.Generation;
+    }
+
     public bool Equals(Entity other)
     {
         return ID == other.ID && Generation == other.Generation;
@@ -35,6 +41,19 @@ public struct Entity : IEquatable<Entity>
     public override int GetHashCode()
     {
         return HashCode.Combine(Generation, ID);
+    }
+}
+
+public struct UncommittedEntity
+{
+    internal int ID;
+
+    internal int Generation;
+
+    internal UncommittedEntity(int id, int generation)
+    {
+        ID = id;
+        Generation = generation;
     }
 }
 

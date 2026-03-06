@@ -308,7 +308,7 @@ partial class {sysInfo.Name} : ISystem
 
             if (componentParams.Length > 0)
             {
-                body = $@"{(systemInfo.HasBeforeExecute ? "        BeforeExecute();" : "")}
+                body = $@"{(systemInfo.HasBeforeExecute ? "\n        BeforeExecute();" : "")}
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
         {{

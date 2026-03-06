@@ -178,7 +178,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<Entity> entities = [];
 
-    private readonly Stack<(int id, int chunkIdx, int idx)> holesInTable = new();
+    private readonly Stack<(int chunkIdx, int idx)> holesInTable = new();
 
     private bool dirty;
 
@@ -289,10 +289,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return typeIdxMap[typeId];
     }
 
-    internal void MarkRemove(int id, int chunkIdx, int idx)
+    internal void MarkRemove(int chunkIdx, int idx)
     {
         dirty = true;
-        holesInTable.Push((id, chunkIdx, idx));
+        holesInTable.Push((chunkIdx, idx));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)

@@ -58,6 +58,19 @@ public sealed class EntityPool : IDisposable
     }
 
     /// <summary>
+    /// Reserves an entity ID without initializing it. Call <see cref="CommitReservedEntity"/> to finalize.
+    /// </summary>
+    public UncommittedEntity ReserveEntity2()
+    {
+        if (reusableEntitiesId.TryPop(out var id))
+        {
+            return new(id, 0);
+        }
+
+        return new(Interlocked.Increment(ref latestEntityId), 0);
+    }
+
+    /// <summary>
     /// Marks an entity for removal. The actual removal happens on commit.
     /// </summary>
     public void MarkRemoveEntity(Entity entity)

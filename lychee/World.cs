@@ -41,14 +41,15 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
 #region Public methods
 
     /// <summary>
-    /// Executes system schedules up to the specified endpoint.
+    /// Executes all system schedules up to the specified end point.
+    /// If scheduleEnd is null or not found, all schedules are executed in order.
+    /// Calling this method again continues execution from where it left off,
+    /// looping back to the first schedule after the last one completes.
     /// </summary>
-    /// <param name="scheduleEnd">The schedule at which to stop execution (exclusive); null to execute all schedules.</param>
-    /// <remarks>
-    /// This method supports resumable execution. If not all schedules are executed in one call,
-    /// subsequent calls will continue from where execution left off. When all schedules complete,
-    /// all registered events swap their front and back buffers.
-    /// </remarks>
+    /// <param name="scheduleEnd">
+    /// The schedule at which to stop execution. If null, executes all schedules.
+    /// Subsequent calls will resume from the next schedule in sequence.
+    /// </param>
     public void Update(ISchedule? scheduleEnd = null)
     {
         if (SystemSchedules.Execute(scheduleEnd))

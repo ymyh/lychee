@@ -8,11 +8,13 @@ namespace lychee;
 
 using TransferInfoMap = SparseMap<Dictionary<nint, EntityTransferInfo>>;
 
-internal struct ModifiedEntityInfo(Archetype archetype, Entity entity, int chunkIdx, int idx)
+internal struct ModifiedEntityInfo(Archetype archetype, int id, int generation, int chunkIdx, int idx)
 {
     public readonly Archetype Archetype = archetype;
 
-    public readonly Entity Entity = entity;
+    public readonly int ID = id;
+
+    public readonly int Generation = generation;
 
     public readonly int ChunkIdx = chunkIdx;
 
@@ -57,11 +59,7 @@ public sealed class Commands : IDisposable
 
     public Archetype CurrentArchetype { get; set; } = null!;
 
-    public Entity CurrentEntity { get; set; }
-
     private EntityInfo currentEntityInfo;
-
-    private bool currentEntitySet;
 
 #endregion
 
@@ -84,8 +82,53 @@ public sealed class Commands : IDisposable
     {
         var entity = entityPool.ReserveEntity();
         removedEntityMap.Remove(entity.ID);
+        modifiedEntityInfoMap.Add(entity.ID, new(ArchetypeManager.EmptyArchetype, entity.ID, entity.Generation, 0, 0));
 
         return entity;
+    }
+
+    /// <summary>
+    /// Creates a new entity in an uncommitted state.
+    /// The entity will be fully registered when Commit is called.
+    /// </summary>
+    /// <returns>The newly created entity.</returns>
+    public UncommittedEntity CreateEntity2()
+    {
+        var entity = entityPool.ReserveEntity2();
+        removedEntityMap.Remove(entity.ID);
+        modifiedEntityInfoMap.Add(entity.ID, new(ArchetypeManager.EmptyArchetype, entity.ID, entity.Generation, 0, 0));
+
+        return entity;
+    }
+
+    /// <summary>
+    /// Removes an existing entity. Does nothing if the entity is already removed or in uncommitted state.
+    /// </summary>
+    /// <param name="entity">The entity to remove.</param>
+    public void RemoveEntity(UncommittedEntity entity)
+    {
+        if (removedEntityMap.ContainsKey(entity.ID))
+        {
+            return;
+        }
+
+        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
+        {
+            info.Archetype.MarkRemove(info.ChunkIdx, info.Idx);
+        }
+
+        var e = new Entity(entity);
+        var entityInfo = entityPool.GetEntityInfo(e);
+        if (entityInfo.ArchetypeId != SrcArchetype.ID)
+        {
+            SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
+        }
+
+        SrcArchetype.MarkRemove(entityInfo.ChunkIdx, entityInfo.Idx);
+
+        modifiedEntityInfoMap.Remove(entity.ID);
+        entityPool.MarkRemoveEntity(e);
+        removedEntityMap.Add(entity.ID, e);
     }
 
     /// <summary>
@@ -101,7 +144,7 @@ public sealed class Commands : IDisposable
 
         if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var info))
         {
-            info.Archetype.MarkRemove(entity.ID, info.ChunkIdx, info.Idx);
+            info.Archetype.MarkRemove(info.ChunkIdx, info.Idx);
             return;
         }
 
@@ -116,11 +159,53 @@ public sealed class Commands : IDisposable
             SrcArchetype = ArchetypeManager.GetArchetype(entityInfo.ArchetypeId);
         }
 
-        SrcArchetype.MarkRemove(entity.ID, entityInfo.ChunkIdx, entityInfo.Idx);
+        SrcArchetype.MarkRemove(entityInfo.ChunkIdx, entityInfo.Idx);
 
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity);
         removedEntityMap.Add(entity.ID, entity);
+    }
+
+    /// <summary>
+    /// Adds a component to an entity. The entity will be moved to a new archetype.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was added; false if the entity is invalid or removed.</returns>
+    public bool AddComponent<T>(UncommittedEntity entity) where T : unmanaged, IComponent
+    {
+        return AddComponent<T>(entity, new());
+    }
+
+    /// <summary>
+    /// Adds a component to an entity. The entity will be moved to a new archetype.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <param name="component">The component value to add.</param>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was added; false if the entity is invalid or removed.</returns>
+    public bool AddComponent<T>(UncommittedEntity entity, in T component) where T : unmanaged, IComponent
+    {
+        if (removedEntityMap.ContainsKey(entity.ID))
+        {
+            return false;
+        }
+
+        var srcInfo = modifiedEntityInfoMap[entity.ID];
+        ChangeSrcArchetype(srcInfo.Archetype.ID);
+        this.AddComponentTransferInfo<T>();
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
+
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
+
+        return true;
     }
 
     /// <summary>
@@ -148,8 +233,8 @@ public sealed class Commands : IDisposable
         TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
 
         return true;
     }
@@ -163,6 +248,51 @@ public sealed class Commands : IDisposable
     public bool AddComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
         return AddComponent(entity, new T());
+    }
+
+    /// <summary>
+    /// Adds multiple components as a bundle to an entity.
+    /// All components in the bundle will be added in a single operation.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <param name="bundle">The component bundle containing the components to add.</param>
+    /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <returns>True if the components were added; false if the entity is invalid or removed.</returns>
+    public bool AddComponents<T>(UncommittedEntity entity, in T bundle) where T : unmanaged, IComponentBundle
+    {
+        if (removedEntityMap.ContainsKey(entity.ID))
+        {
+            return false;
+        }
+
+        var srcInfo = modifiedEntityInfoMap[entity.ID];
+        ChangeSrcArchetype(srcInfo.Archetype.ID);
+        this.AddComponentsTransferInfo<T>();
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo!.Archetype.Reserve();
+
+        for (var i = 0; i < TransferDstInfo!.TypeIndices.Length; i++)
+        {
+            unsafe
+            {
+                var bundleInfo = TransferDstInfo.BundleInfo[i].info;
+                var ptr = TransferDstInfo.Archetype.Table.GetPtr(TransferDstInfo.TypeIndices[i], chunkIdx, idx);
+
+                fixed (T* bundlePtr = &bundle)
+                {
+                    var componentPtr = (byte*)bundlePtr + bundleInfo.Offset;
+                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.Size);
+                }
+            }
+        }
+
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
+
+        return true;
     }
 
     /// <summary>
@@ -204,8 +334,36 @@ public sealed class Commands : IDisposable
         }
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a component from an entity. The entity will be moved to a new archetype.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component type to remove, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was removed; false if the entity is invalid, removed, or doesn't have this component.</returns>
+    public bool RemoveComponent<T>(UncommittedEntity entity) where T : unmanaged, IComponent
+    {
+        if (removedEntityMap.ContainsKey(entity.ID))
+        {
+            return false;
+        }
+
+        var srcInfo = modifiedEntityInfoMap[entity.ID];
+        ChangeSrcArchetype(srcInfo.Archetype.ID);
+        this.RemoveComponentTransferInfo<T>();
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
 
         return true;
     }
@@ -232,8 +390,36 @@ public sealed class Commands : IDisposable
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes all components defined in a component bundle from an entity.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <returns>True if the components were removed; false if the entity is invalid, removed, or doesn't have these components.</returns>
+    public bool RemoveComponents<T>(UncommittedEntity entity) where T : unmanaged, IComponentBundle
+    {
+        if (removedEntityMap.ContainsKey(entity.ID))
+        {
+            return false;
+        }
+
+        var srcInfo = modifiedEntityInfoMap[entity.ID];
+        ChangeSrcArchetype(srcInfo.Archetype.ID);
+        this.RemoveComponentsTransferInfo<T>();
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
 
         return true;
     }
@@ -260,8 +446,8 @@ public sealed class Commands : IDisposable
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
 
         return true;
     }
@@ -288,8 +474,8 @@ public sealed class Commands : IDisposable
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         SrcArchetype.MoveDataTo(TransferDstInfo.Archetype, srcInfo.ChunkIdx, srcInfo.Idx, chunkIdx, idx);
-        SrcArchetype.MarkRemove(entity.ID, srcInfo.ChunkIdx, srcInfo.Idx);
-        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity, chunkIdx, idx));
+        SrcArchetype.MarkRemove(srcInfo.ChunkIdx, srcInfo.Idx);
+        modifiedEntityInfoMap.Add(entity.ID, new(TransferDstInfo.Archetype, entity.ID, entity.Generation, chunkIdx, idx));
 
         return true;
     }
@@ -299,23 +485,31 @@ public sealed class Commands : IDisposable
     /// This enables efficient component access without repeated entity lookups.
     /// </summary>
     /// <param name="entity">The entity to set as current.</param>
-    /// <param name="isCurrentArchetype">Whether to update CurrentArchetype. Set to false if you're manually managing archetypes.</param>
     /// <exception cref="ArgumentException">Thrown when the entity is invalid or in an uncommitted state.</exception>
-    public void SetCurrentEntity(Entity entity, bool isCurrentArchetype = true)
+    public Entity CurrentEntity
     {
-        if (modifiedEntityInfoMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity))
+        set
         {
-            throw new ArgumentException($"Entity {entity.ID} is invalid or in uncommitted state");
+#if DEBUG
+
+            if (modifiedEntityInfoMap.ContainsKey(value.ID) || !entityPool.CheckEntityValid(value))
+            {
+                throw new ArgumentException($"Entity {value.ID} is invalid or in uncommitted state");
+            }
+
+#endif
+
+            currentEntityInfo = entityPool.GetEntityInfo(value);
+
+            if (currentEntityInfo.ArchetypeId != CurrentArchetype.ID)
+            {
+                CurrentArchetype = ArchetypeManager.GetArchetype(currentEntityInfo.ArchetypeId);
+            }
+
+            field = value;
         }
 
-        currentEntityInfo = entityPool.GetEntityInfo(entity);
-
-        if (!isCurrentArchetype || currentEntityInfo.ArchetypeId != CurrentArchetype.ID)
-        {
-            CurrentArchetype = ArchetypeManager.GetArchetype(currentEntityInfo.ArchetypeId);
-        }
-
-        currentEntitySet = true;
+        get;
     }
 
     /// <summary>
@@ -327,11 +521,6 @@ public sealed class Commands : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T GetCurrentEntityComponent<T>() where T : unmanaged, IComponent
     {
-        if (!currentEntitySet)
-        {
-            return ref Unsafe.NullRef<T>();
-        }
-
         var (ptr, size) = CurrentArchetype.GetChunkData(TypeRegistrar.GetTypeId<T>(), currentEntityInfo.ChunkIdx);
 
         Debug.Assert((uint)currentEntityInfo.Idx < (uint)size);
@@ -348,13 +537,11 @@ public sealed class Commands : IDisposable
 
     internal void Commit()
     {
-        currentEntitySet = false;
-
         foreach (var (id, info) in modifiedEntityInfoMap)
         {
             entityPool.CommitReservedEntity(id, info.Archetype.ID, info.ChunkIdx, info.Idx);
             var archetype = ArchetypeManager.GetArchetypeUnsafe(info.Archetype.ID);
-            archetype.CommitAddEntity(info.Entity);
+            archetype.CommitAddEntity(new(info.ID, info.Generation));
         }
 
         foreach (var (_, entity) in removedEntityMap)

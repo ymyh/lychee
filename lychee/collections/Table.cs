@@ -17,6 +17,8 @@ public sealed class TableLayout
 
             if (info.Alignment == 0)
             {
+                info.Offset = offset;
+                typeInfoList[i] = info;
                 continue;
             }
 

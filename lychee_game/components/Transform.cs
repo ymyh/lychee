@@ -22,14 +22,17 @@ public struct Scale : IComponent
     public Vector3 Value;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 64)]
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
 public struct Transform : IComponent
 {
-    public Matrix4x4 Matrix;
-
     public Position Position;
 
     public Rotation Rotation;
 
     public Scale Scale;
+
+    public void CalculateTransform(out Matrix4x4 result)
+    {
+        result = Matrix4x4.CreateScale(Scale.Value) * Matrix4x4.CreateFromYawPitchRoll(Rotation.Value.Y, Rotation.Value.X, Rotation.Value.Z) * Matrix4x4.CreateTranslation(Position.Value);
+    }
 }

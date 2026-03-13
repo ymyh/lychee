@@ -4,5 +4,5 @@ namespace lychee.components;
 
 public struct ChildOf : IComponent
 {
-    public Entity Parent;
+    public EntityRef Parent;
 }

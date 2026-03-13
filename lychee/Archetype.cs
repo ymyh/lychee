@@ -176,7 +176,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<(int[] src, int[] dst)> dstArchetypeCommCompIndices = new();
 
-    private readonly SparseMap<Entity> entities = [];
+    private readonly SparseMap<EntityRef> entities = [];
 
     private readonly Stack<(int chunkIdx, int idx)> holesInTable = new();
 
@@ -233,7 +233,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
-    public Span<(int, Entity)> GetEntitiesSpan()
+    public Span<(int, EntityRef)> GetEntitiesSpan()
     {
         return entities.GetDenseAsSpan();
     }
@@ -274,14 +274,14 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         dirty = false;
     }
 
-    internal void CommitAddEntity(Entity entity)
+    internal void CommitAddEntity(EntityRef entityRef)
     {
-        entities[entity.ID] = entity;
+        entities[entityRef.ID] = entityRef;
     }
 
-    internal void CommitRemoveEntity(Entity entity)
+    internal void CommitRemoveEntity(EntityRef entityRef)
     {
-        entities.Remove(entity.ID);
+        entities.Remove(entityRef.ID);
     }
 
     internal int GetTypeIndex(int typeId)
@@ -289,10 +289,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         return typeIdxMap[typeId];
     }
 
-    internal void MarkRemove(int chunkIdx, int idx)
+    internal void MarkRemove(EntityPos entityPos)
     {
         dirty = true;
-        holesInTable.Push((chunkIdx, idx));
+        holesInTable.Push((entityPos.ChunkIdx, entityPos.Idx));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)

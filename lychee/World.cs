@@ -68,7 +68,6 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
     public void Dispose()
     {
         ArchetypeManager.Dispose();
-        EntityPool.Dispose();
     }
 
 #endregion

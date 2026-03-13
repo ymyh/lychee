@@ -387,7 +387,6 @@ partial class {sysInfo.Name} : ISystem
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{
-                    SystemDataAG.Commands[threadIdx].CurrentArchetype = archetype;
                     var beginIndex = 0;
 
                     for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
@@ -407,7 +406,7 @@ partial class {sysInfo.Name} : ISystem
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{
-                    SystemDataAG.Commands[threadIdx].CurrentArchetype = archetype;
+                    var entity = new Entity(SystemDataAG.Commands[threadIdx], archetype);
                     var beginIndex = 0;
 
                     for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
@@ -459,6 +458,7 @@ partial class {sysInfo.Name} : ISystem
 
             return $@"{declIterCode}
             var beginIndex = 0;
+            var entity = new Entity(SystemDataAG.Commands[0], archetype);
 
             while ({string.Join(" & ", iterMoveNextCode)})
             {{
@@ -467,6 +467,7 @@ partial class {sysInfo.Name} : ISystem
 
                 for (var i = 0; i < size; i++)
                 {{
+                    entity.Ref = entitySpan[i].Item2;
                     Execute({execParams});
                 }}
                 beginIndex += size;
@@ -538,7 +539,26 @@ partial class {sysInfo.Name} : ISystem
                         return multiThread ? "SystemDataAG.Commands[threadIdx]" : "SystemDataAG.Commands[0]";
 
                     case ParamKind.Entity:
-                        return hasComponentSpan ? "entitySpan" : "entitySpan[i].Item2";
+                        if (hasComponentSpan)
+                        {
+                            return "entitySpan";
+                        }
+
+                        switch (param.RefKind)
+                        {
+                            case RefKind.In:
+                            case RefKind.RefReadOnlyParameter:
+                                return "in entity";
+                            case RefKind.Out:
+                                return "out entity";
+                            case RefKind.Ref:
+                                return "ref entity";
+                            case RefKind.None:
+                                return "entity";
+
+                            default:
+                                return "";
+                        }
                 }
 
                 return "";

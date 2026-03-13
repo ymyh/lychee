@@ -1,66 +1,28 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using lychee.collections;
+using System.Runtime.InteropServices;
 
 namespace lychee;
 
 /// <summary>
 /// Manages entity creation, removal, and reuse with generation tracking for safety.
 /// </summary>
-public sealed class EntityPool : IDisposable
+public sealed class EntityPool
 {
     private int latestEntityId = -1;
 
-    private readonly NativeList<Entity> entities = [];
+    private readonly List<EntityRef> entities = [];
 
-    private readonly NativeList<EntityInfo> entityInfoList = [];
+    private readonly List<EntityInfo> entityInfoList = [];
 
     private readonly Stack<int> reusableEntitiesId = [];
 
     private readonly ConcurrentStack<int> removedEntitiesId = [];
 
     /// <summary>
-    /// Creates a new entity or reuses a previously removed entity ID.
-    /// </summary>
-    public Entity CreateEntity()
-    {
-        if (reusableEntitiesId.TryPop(out var id))
-        {
-            var info = entityInfoList[id];
-
-            // a new entity always belongs to default archetype, thus archetypeIdx also meaningless
-            info.ArchetypeId = 0;
-
-            entityInfoList[id] = info;
-
-            return entities[id];
-        }
-
-        id = Interlocked.Increment(ref latestEntityId);
-
-        entities.Add(new(id, 0));
-        entityInfoList.Add(new());
-
-        return entities[^1];
-    }
-
-    /// <summary>
     /// Reserves an entity ID without initializing it. Call <see cref="CommitReservedEntity"/> to finalize.
     /// </summary>
-    public Entity ReserveEntity()
-    {
-        if (reusableEntitiesId.TryPop(out var id))
-        {
-            return new(id, 0);
-        }
-
-        return new(Interlocked.Increment(ref latestEntityId), 0);
-    }
-
-    /// <summary>
-    /// Reserves an entity ID without initializing it. Call <see cref="CommitReservedEntity"/> to finalize.
-    /// </summary>
-    public UncommittedEntity ReserveEntity2()
+    public EntityRef ReserveEntity()
     {
         if (reusableEntitiesId.TryPop(out var id))
         {
@@ -73,26 +35,26 @@ public sealed class EntityPool : IDisposable
     /// <summary>
     /// Marks an entity for removal. The actual removal happens on commit.
     /// </summary>
-    public void MarkRemoveEntity(Entity entity)
+    public void MarkRemoveEntity(EntityRef entityRef)
     {
-        removedEntitiesId.Push(entity.ID);
+        removedEntitiesId.Push(entityRef.ID);
     }
 
     /// <summary>
     /// Immediately removes an entity, incrementing its generation to invalidate existing references.
     /// </summary>
     /// <returns><c>true</c> if the entity was valid and removed; <c>false</c> if the entity reference was stale.</returns>
-    public bool RemoveEntity(Entity entity)
+    public bool RemoveEntity(EntityRef entityRef)
     {
-        var id = entity.ID;
+        var id = entityRef.ID;
         Debug.Assert((uint)id < (uint)entities.Count);
 
-        if (entity.Generation != entities[id].Generation)
+        if (entityRef.Generation != entities[id].Generation)
         {
             return false;
         }
 
-        var span = entities.AsSpan();
+        var span = CollectionsMarshal.AsSpan(entities);
         span[id].Generation++;
 
         removedEntitiesId.Push(id);
@@ -103,37 +65,42 @@ public sealed class EntityPool : IDisposable
     /// <summary>
     /// Verifies whether an entity reference is still valid (generation matches).
     /// </summary>
-    public bool CheckEntityValid(Entity entity)
+    public bool CheckEntityValid(EntityRef entityRef)
     {
-        if ((uint)entity.ID >= (uint)entities.Count)
+        if (entityRef.Generation == 0)
+        {
+            return true;
+        }
+
+        if ((uint)entityRef.ID >= (uint)entities.Count)
         {
             return false;
         }
 
-        return entities[entity.ID].Generation == entity.Generation;
+        return entities[entityRef.ID].Generation == entityRef.Generation;
     }
 
     /// <summary>
     /// Retrieves the entity's location metadata (archetype, chunk, and index).
     /// </summary>
-    public EntityInfo GetEntityInfo(Entity entity)
+    public EntityInfo GetEntityInfo(EntityRef entityRef)
     {
-        Debug.Assert((uint)entity.ID < (uint)entityInfoList.Count);
+        Debug.Assert((uint)entityRef.ID < (uint)entityInfoList.Count);
 
-        return entityInfoList[entity.ID];
+        return entityInfoList[entityRef.ID];
     }
 
 #region Internal methods
 
-    internal void CommitRemoveEntity(Entity entity)
+    internal void CommitRemoveEntity(EntityRef entityRef)
     {
-        var id = entity.ID;
+        var id = entityRef.ID;
         Debug.Assert((uint)id < (uint)entities.Count);
 
-        if (entity.Generation == entities[id].Generation)
+        if (entityRef.Generation == entities[id].Generation)
         {
-            entity.Generation++;
-            entities[id] = entity;
+            entityRef.Generation++;
+            entities[id] = entityRef;
         }
     }
 
@@ -145,7 +112,7 @@ public sealed class EntityPool : IDisposable
         }
     }
 
-    internal void CommitReservedEntity(int id, int archetypeId, int chunkIdx, int idx)
+    internal void CommitReservedEntity(int id, Archetype archetype, int chunkIdx, int idx)
     {
         Debug.Assert(id >= 0);
 
@@ -153,34 +120,27 @@ public sealed class EntityPool : IDisposable
         {
             // Set generation to 0 when reuse entity
             entities[id] = new(id, 0);
-            entityInfoList[id] = new(archetypeId, chunkIdx, idx);
+            entityInfoList[id] = new(archetype, new(chunkIdx, idx));
         }
         else
         {
             if (id == entities.Count)
             {
                 entities.Add(new(id, 0));
-                entityInfoList.Add(new(archetypeId, chunkIdx, idx));
+                entityInfoList.Add(new(archetype, new(chunkIdx, idx)));
             }
             else
             {
-                entities.Resize(id + 1);
-                entities.AsSpan()[id].ID = id;
+                CollectionsMarshal.SetCount(entities, id + 1);
+                // entities.Resize(id + 1);
+                entities[id] = new(id, 0);
 
-                entityInfoList.Resize(id + 1);
-                entityInfoList[id] = new(archetypeId, chunkIdx, idx);
+                CollectionsMarshal.SetCount(entityInfoList, id + 1);
+
+                // entityInfoList.Resize(id + 1);
+                entityInfoList[id] = new(archetype, new(chunkIdx, idx));
             }
         }
-    }
-
-#endregion
-
-#region IDisposable member
-
-    public void Dispose()
-    {
-        entities.Dispose();
-        entityInfoList.Dispose();
     }
 
 #endregion

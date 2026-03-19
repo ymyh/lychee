@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
 using lychee.utils;
@@ -13,6 +14,8 @@ public sealed class ArchetypeManager : IDisposable
 
     internal static Archetype EmptyArchetype { get; }
 
+    public bool IsCoherent => archetypes.All(x => x.IsCoherent);
+
     public delegate void ArchetypeCreatedHandler();
 
     /// <summary>
@@ -22,7 +25,7 @@ public sealed class ArchetypeManager : IDisposable
 
     static ArchetypeManager()
     {
-        EmptyArchetype = new(0, [], []);
+        EmptyArchetype = new(0, [], [], null!);
     }
 
     public ArchetypeManager(TypeRegistrar typeRegistrar)
@@ -50,7 +53,7 @@ public sealed class ArchetypeManager : IDisposable
 
             var id = archetypes.Count;
             var typeInfoList = array.Select(id => typeRegistrar.GetTypeInfo(id)).ToArray();
-            archetypes.Add(new(id, array, typeInfoList));
+            archetypes.Add(new(id, array, typeInfoList, typeRegistrar));
 
             ArchetypeCreated?.Invoke();
 
@@ -134,11 +137,11 @@ public sealed class ArchetypeManager : IDisposable
 
 #region Internal methods
 
-    internal void Commit()
+    internal void Commit(EntityPool entityPool)
     {
         foreach (var archetype in archetypes)
         {
-            archetype.Commit();
+            archetype.Commit(entityPool);
         }
     }
 
@@ -162,13 +165,13 @@ public sealed class ArchetypeManager : IDisposable
 #endregion
 }
 
-public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList) : IDisposable
+public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistrar typeRegistrar) : IDisposable
 {
 #region Fields
 
     public readonly int ID = id;
 
-    public readonly int[] TypeIdList = typeIdList;
+    public readonly int[] TypeIdList = typeIdList.Distinct().Count() != typeIdList.Length ? throw new ArgumentException("Duplicate type id in archetype.") : typeIdList;
 
     internal readonly Table Table = new(new(typeInfoList));
 
@@ -178,9 +181,17 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     private readonly SparseMap<EntityRef> entities = [];
 
-    private readonly Stack<(int chunkIdx, int idx)> holesInTable = new();
+    private readonly Stack<(int id, int chunkIdx, int idx)> holesInTable = new();
 
     private bool dirty;
+
+#region Public Properties
+
+    public Type[] Types => typeIdList.Select(typeRegistrar.GetTypeById).ToArray();
+
+    public bool IsCoherent => Table.TotalCount == entities.Count;
+
+#endregion
 
 #endregion
 
@@ -227,10 +238,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         }
     }
 
-    public (nint ptr, int size) GetChunkData(int typeId, int chunkIdx)
+    internal (nint ptr, int size) GetChunkDataWithReservation(int typeId, int chunkIdx)
     {
         var typeIdx = GetTypeIndex(typeId);
-        return Table.GetChunkData(typeIdx, chunkIdx);
+        return Table.GetChunkDataWithReservation(typeIdx, chunkIdx);
     }
 
     public Span<(int, EntityRef)> GetEntitiesSpan()
@@ -242,7 +253,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
 #region Internal Methods
 
-    internal void Commit()
+    internal void Commit(EntityPool entityPool)
     {
         if (!dirty || Table.Chunks.Count == 0)
         {
@@ -257,6 +268,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             if (from > hole.idx)
             {
                 FillHole(hole.chunkIdx, from, hole.idx);
+                entityPool.UpdateEntityInfo(entities.GetDenseAsSpan()[^1].Item2.ID, hole.idx);
             }
 
             if (chunk.Reservation > 0)
@@ -266,6 +278,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             else
             {
                 chunk.Size--;
+
+#if DEBUG
+                Debug.Assert(entities.Remove(hole.id));
+#else
+                entities.Remove(hole.id)
+#endif
             }
         }
 
@@ -279,20 +297,17 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
         entities[entityRef.ID] = entityRef;
     }
 
-    internal void CommitRemoveEntity(EntityRef entityRef)
-    {
-        entities.Remove(entityRef.ID);
-    }
-
     internal int GetTypeIndex(int typeId)
     {
         return typeIdxMap[typeId];
     }
 
-    internal void MarkRemove(EntityPos entityPos)
+    internal void MarkRemove(int entityId, EntityPos entityPos)
     {
         dirty = true;
-        holesInTable.Push((entityPos.ChunkIdx, entityPos.Idx));
+        holesInTable.Push((entityId, entityPos.ChunkIdx, entityPos.Idx));
+
+        Debug.Assert(ID == 0 || (ID != 0 && holesInTable.Distinct().Count() == holesInTable.Count));
     }
 
     internal void MoveDataTo(Archetype archetype, int srcChunkIdx, int srcIdx, int dstChunkIdx, int dstIdx)
@@ -312,7 +327,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
             GetTypeIndices(commCompIds, srcCommCompIndices);
             archetype.GetTypeIndices(commCompIds, dstCommCompIndices);
 
-            dstArchetypeCommCompIndices.Add(archetype.ID, (srcCommCompIndices, dstCommCompIndices));
+            dstArchetypeCommCompIndices.AddOrUpdate(archetype.ID, (srcCommCompIndices, dstCommCompIndices));
         }
 
         for (var i = 0; i < srcCommCompIndices.Length; i++)
@@ -343,6 +358,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     internal (int chunkIdx, int idx) Reserve()
     {
+        if (Table.Layout.MaxAlignment == 0)
+        {
+            return (0, 0);
+        }
+
         dirty = true;
         return Table.Reserve();
     }
@@ -410,9 +430,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList)
 
     public void Dispose()
     {
-        dstArchetypeCommCompIndices.Dispose();
-        typeIdxMap.Dispose();
-
         Table.Dispose();
     }
 

@@ -56,6 +56,8 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     public DirectedAcyclicGraph<SystemInfo> ExecutionGraph { get; } = new();
 
+    public string Name { get; }
+
     private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
 
     private readonly App app;
@@ -84,9 +86,10 @@ public abstract class BasicSchedule : ISchedule
 
 #region Constructor
 
-    protected BasicSchedule(App app, ExecutionModeEnum executionMode = ExecutionModeEnum.SingleThread, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
+    protected BasicSchedule(App app, string name, ExecutionModeEnum executionMode = ExecutionModeEnum.SingleThread, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
     {
         this.app = app;
+        Name = name;
         CommitPoint = commitPoint;
         ExecutionMode = executionMode;
 
@@ -412,6 +415,12 @@ public abstract class BasicSchedule : ISchedule
     {
         entityCommanders.ForEach(x => x.Commit());
         entityCommanders.Clear();
+
+        if (needConfigure)
+        {
+            Configure();
+            needConfigure = false;
+        }
     }
 
     private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
@@ -441,21 +450,26 @@ public abstract class BasicSchedule : ISchedule
         {
             frozenDagNodes = ExecutionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
             isFrozen = true;
-        }
 
-        foreach (var group in frozenDagNodes)
-        {
             if (needConfigure)
             {
                 Configure();
                 needConfigure = false;
             }
+        }
 
+        foreach (var group in frozenDagNodes)
+        {
             foreach (var frozenDagNode in group)
             {
                 if (ExecutionMode == ExecutionModeEnum.SingleThread)
                 {
                     entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG());
+
+                    if (CommitPoint == CommitPointEnum.Synchronization)
+                    {
+                        Commit();
+                    }
                 }
                 else
                 {
@@ -466,11 +480,11 @@ public abstract class BasicSchedule : ISchedule
             if (ExecutionMode == ExecutionModeEnum.MultiThread)
             {
                 app.ThreadPool.AsTask().Wait();
-            }
 
-            if (CommitPoint == CommitPointEnum.Synchronization)
-            {
-                Commit();
+                if (CommitPoint == CommitPointEnum.Synchronization)
+                {
+                    Commit();
+                }
             }
         }
 
@@ -490,9 +504,10 @@ public abstract class BasicSchedule : ISchedule
 /// <param name="commitPoint">The commit point for entity modifications (default: Synchronization).</param>
 public sealed class DefaultSchedule(
     App app,
+    string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, executionMode, commitPoint)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     public override void Execute()
     {

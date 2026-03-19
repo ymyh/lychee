@@ -35,6 +35,8 @@ public sealed class TypeRegistrar
 
     private readonly ConcurrentDictionary<Type, int> typeToIdDict = new();
 
+    private readonly ConcurrentDictionary<int, Type> idToTypeDict = new();
+
     private readonly ConcurrentDictionary<Type, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
 
     private static readonly MethodInfo RegisterMethod =
@@ -100,6 +102,8 @@ public sealed class TypeRegistrar
         }
 
         typeToIdDict.TryAdd(type, typeList.Count);
+        idToTypeDict.TryAdd(typeList.Count, type);
+
         unsafe
         {
             var size = typeof(T).IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
@@ -224,5 +228,10 @@ public sealed class TypeRegistrar
     public int GetTypeId(Type type)
     {
         return typeToIdDict.GetValueOrDefault(type, -1);
+    }
+
+    public Type GetTypeById(int typeId)
+    {
+        return idToTypeDict[typeId];
     }
 }

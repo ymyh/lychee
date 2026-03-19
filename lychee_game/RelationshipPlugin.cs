@@ -13,7 +13,7 @@ public sealed class ManyToOne
         if (!relationships.TryGetValue(parent.ID, out var relation))
         {
             relation.children = [];
-            relationships.Add(parent.ID, relation);
+            relationships.AddOrUpdate(parent.ID, relation);
         }
 
         relation.children.Add(child);
@@ -29,7 +29,7 @@ public sealed class OneToOne
         if (!relationships.TryGetValue(head.ID, out var relation))
         {
             relation.Item2 = tail;
-            relationships.Add(head.ID, relation);
+            relationships.AddOrUpdate(head.ID, relation);
         }
 
         relation.Item2 = tail;

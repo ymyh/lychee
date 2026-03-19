@@ -6,4 +6,6 @@ public interface ISchedule
     /// Executes the schedule.
     /// </summary>
     public void Execute();
+
+    public string Name { get; }
 }

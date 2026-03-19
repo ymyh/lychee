@@ -11,9 +11,10 @@ namespace lychee_game.schedules;
 public sealed class ConditionalSchedule(
     App app,
     Func<bool> predicate,
+    string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, executionMode, commitPoint)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     public override void Execute()
     {

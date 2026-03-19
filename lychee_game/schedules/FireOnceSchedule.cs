@@ -9,9 +9,10 @@ namespace lychee_game.schedules;
 /// <param name="commitPoint">The commit point.</param>
 public sealed class FireOnceSchedule(
     App app,
+    string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
-    : BasicSchedule(app, executionMode, commitPoint)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     private bool fired;
 

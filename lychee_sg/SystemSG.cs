@@ -258,7 +258,7 @@ partial class {sysInfo.Name} : ISystem
     {{
         SystemDataAG.Pool = app.ResourcePool;{(threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool({threadCount});" : "")}
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("app.CreateCommands()", (int)Math.Max(1, threadCount)))}];
+        SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("new(app)", (int)Math.Max(1, threadCount)))}];
 
 {resourceDecl}
     }}";
@@ -406,7 +406,6 @@ partial class {sysInfo.Name} : ISystem
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{
-                    var entity = new Entity(SystemDataAG.Commands[threadIdx], archetype);
                     var beginIndex = 0;
 
                     for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
@@ -415,6 +414,7 @@ partial class {sysInfo.Name} : ISystem
                         var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
                         for (var i = 0; i < size; i++)
                         {{
+                            var entity = new Entity(SystemDataAG.Commands[threadIdx], archetype, entitySpan[i].Item2, new(j, i));
                             Execute({execParams});
                         }}
                         beginIndex += size;
@@ -458,7 +458,7 @@ partial class {sysInfo.Name} : ISystem
 
             return $@"{declIterCode}
             var beginIndex = 0;
-            var entity = new Entity(SystemDataAG.Commands[0], archetype);
+            var chunkIdx = 0;
 
             while ({string.Join(" & ", iterMoveNextCode)})
             {{
@@ -467,10 +467,11 @@ partial class {sysInfo.Name} : ISystem
 
                 for (var i = 0; i < size; i++)
                 {{
-                    entity.Ref = entitySpan[i].Item2;
+                    var entity = new Entity(SystemDataAG.Commands[0], archetype, entitySpan[i].Item2, new(chunkIdx, i));
                     Execute({execParams});
                 }}
                 beginIndex += size;
+                chunkIdx++;
             }}";
         }
 

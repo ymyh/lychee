@@ -165,7 +165,7 @@ partial class InitSystem
         for (var i = 0; i < 1000; i++)
         {
             var entity = commands.CreateEntity();
-            commands.AddComponents(entity, new Movement
+            entity.AddComponents(new Movement
             {
                 Velocity = new() { X = 1.0f, Y = 0.5f },
                 Position = new()
@@ -177,7 +177,7 @@ partial class InitSystem
 [AutoImplSystem]
 partial class DespawnSystem
 {
-    private static void Execute(Commands commands, ref Health health, Entity entity)
+    private static void Execute(Commands commands, ref Health health, ref Entity entity)
     {
         if (health.Value <= 0)
         {
@@ -191,9 +191,9 @@ partial class DespawnSystem
 
 - `CreateEntity()` - Create a new entity
 - `RemoveEntity(Entity)` - Remove an entity
-- `AddComponent<T>(Entity, in T)` - Add a component
-- `RemoveComponent<T>(Entity)` - Remove a component
-- `AddComponents<T>(Entity, in T)` - Add a component bundle
+- `AddComponent<T>(ref Entity, in T)` or `entity.AddComponent<T>(in T)` - Add a component
+- `RemoveComponent<T>(ref Entity)` or `entity.RemoveComponent<T>()` - Remove a component
+- `AddComponents<T>(ref Entity, in T)` or `entity.AddComponents<T>(in T)` - Add a component bundle
 
 ## Resource System
 
@@ -315,7 +315,6 @@ using lychee.attributes;
 using lychee.components;
 using lychee.interfaces;
 using lychee_game;
-using System.Runtime.InteropServices;
 
 // Define components
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -345,7 +344,7 @@ partial class InitSystem
         for (var i = 0; i < 1000; i++)
         {
             var entity = commands.CreateEntity();
-            commands.AddComponents(entity, new Movement
+            entity.AddComponents(new Movement
             {
                 Velocity = new() { X = 1.0f, Y = 0.5f },
                 Position = new()

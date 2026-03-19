@@ -12,11 +12,12 @@ namespace lychee_game.schedules;
 /// <param name="catchUpCount">The catch-up attempt count in each execute, default is 5.</param>
 public sealed class FixedIntervalSchedule(
     App app,
+    string name,
     BasicSchedule.ExecutionModeEnum executionMode = BasicSchedule.ExecutionModeEnum.SingleThread,
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization,
     int fixedUpdateInterval = 20,
     int catchUpCount = 5)
-    : BasicSchedule(app, executionMode, commitPoint)
+    : BasicSchedule(app, name, executionMode, commitPoint)
 {
     private long accErr = fixedUpdateInterval;
 

@@ -24,7 +24,7 @@ public sealed class SystemSchedules
     /// <param name="addAfter">The schedule after which to insert the new schedule; null to append to the end.</param>
     /// <exception cref="ArgumentException">Thrown when a schedule with the same name or instance already exists,
     /// or when the specified addAfter schedule is not found.</exception>
-    public void AddSchedule(ISchedule schedule, string name, ISchedule? addAfter = null)
+    public void AddSchedule(ISchedule schedule, ISchedule? addAfter = null)
     {
         var index = schedules.IndexOf(schedule);
         if (index != -1)
@@ -32,9 +32,9 @@ public sealed class SystemSchedules
             throw new ArgumentException($"Schedule {schedule} already exists");
         }
 
-        if (scheduleDict.ContainsKey(name))
+        if (scheduleDict.ContainsKey(schedule.Name))
         {
-            throw new ArgumentException($"Schedule {name} already exists");
+            throw new ArgumentException($"Schedule {schedule.Name} already exists");
         }
 
         if (addAfter != null && schedules.IndexOf(addAfter) == -1)
@@ -52,7 +52,7 @@ public sealed class SystemSchedules
             schedules.Add(schedule);
         }
 
-        scheduleDict.Add(name, schedule);
+        scheduleDict.Add(schedule.Name, schedule);
     }
 
     /// <summary>
@@ -63,7 +63,7 @@ public sealed class SystemSchedules
     /// <param name="addAfter">The name of the schedule after which to insert the new schedule.</param>
     /// <exception cref="ArgumentException">Thrown when a schedule with the same name already exists,
     /// or when the specified addAfter schedule name is not found.</exception>
-    public void AddSchedule(ISchedule schedule, string name, string addAfter)
+    public void AddSchedule(ISchedule schedule, string addAfter)
     {
         var addAfterSchedule = GetSchedule(addAfter);
         if (addAfterSchedule == null)
@@ -71,7 +71,7 @@ public sealed class SystemSchedules
             throw new ArgumentException($"Schedule {addAfter} not found");
         }
 
-        AddSchedule(schedule, name, addAfterSchedule);
+        AddSchedule(schedule, addAfterSchedule);
     }
 
     /// <summary>
@@ -97,7 +97,8 @@ public sealed class SystemSchedules
     /// </remarks>
     public bool Execute(ISchedule? scheduleEnd = null)
     {
-        for (var i = lastScheduleIndex; i < schedules.Count; i++)
+        var i = lastScheduleIndex;
+        for (; i < schedules.Count; i++)
         {
             if (schedules[i] == scheduleEnd)
             {
@@ -105,10 +106,11 @@ public sealed class SystemSchedules
             }
 
             schedules[i].Execute();
-            lastScheduleIndex = i;
         }
 
-        if (lastScheduleIndex == schedules.Count - 1)
+        lastScheduleIndex = i;
+
+        if (lastScheduleIndex == schedules.Count)
         {
             lastScheduleIndex = 0;
 

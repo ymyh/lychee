@@ -95,35 +95,35 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 
     public void Install(App app)
     {
-        StartUp = new(app);
-        app.AddSchedule(StartUp, nameof(StartUp));
+        StartUp = new(app, nameof(StartUp));
+        app.AddSchedule(StartUp);
 
-        First = new(app);
-        app.AddSchedule(First, nameof(First));
+        First = new(app, nameof(First));
+        app.AddSchedule(First);
 
-        FixedUpdate = new(app)
+        FixedUpdate = new(app, nameof(FixedUpdate))
         {
             FixedUpdateInterval = desc.FixedUpdateInterval,
             CatchUpCount = desc.FixedUpdateCatchUpCount
         };
-        app.AddSchedule(FixedUpdate, nameof(FixedUpdate));
+        app.AddSchedule(FixedUpdate);
 
-        Update = new(app);
-        app.AddSchedule(Update, nameof(Update));
+        Update = new(app, nameof(Update));
+        app.AddSchedule(Update);
 
-        PostUpdate = new(app);
-        app.AddSchedule(PostUpdate, nameof(PostUpdate));
+        PostUpdate = new(app, nameof(PostUpdate));
+        app.AddSchedule(PostUpdate);
 
-        Render = new(app);
-        app.AddSchedule(Render, nameof(Render));
+        Render = new(app, nameof(Render));
+        app.AddSchedule(Render);
 
-        RenderTransparency = new(app);
-        app.AddSchedule(RenderTransparency, nameof(RenderTransparency));
+        RenderTransparency = new(app, nameof(RenderTransparency));
+        app.AddSchedule(RenderTransparency);
 
-        RenderUI = new(app);
-        app.AddSchedule(RenderUI, nameof(RenderUI));
+        RenderUI = new(app, nameof(RenderUI));
+        app.AddSchedule(RenderUI);
 
-        Last = new(app);
-        app.AddSchedule(Last, nameof(Last));
+        Last = new(app, nameof(Last));
+        app.AddSchedule(Last);
     }
 }

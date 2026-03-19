@@ -33,6 +33,10 @@ public sealed class App : IDisposable
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
         ThreadPool = new((int)threadCount);
+
+        disposables.Add(World);
+        disposables.Add(ResourcePool);
+        disposables.Add(ThreadPool);
     }
 
     /// <summary>
@@ -165,9 +169,9 @@ public sealed class App : IDisposable
     /// </summary>
     /// <param name="schedule">The schedule instance to add.</param>
     /// <param name="name">A unique name identifying this schedule.</param>
-    public void AddSchedule(ISchedule schedule, string name)
+    public void AddSchedule(ISchedule schedule)
     {
-        World.SystemSchedules.AddSchedule(schedule, name);
+        World.SystemSchedules.AddSchedule(schedule);
     }
 
     /// <summary>
@@ -177,9 +181,9 @@ public sealed class App : IDisposable
     /// <param name="name">A unique name identifying this schedule.</param>
     /// <param name="addAfter">The name of the schedule after which this schedule should execute.</param>
     /// <exception cref="ArgumentException">Thrown when the schedule name already exists or the addAfter schedule is not found.</exception>
-    public void AddSchedule(ISchedule schedule, string name, string addAfter)
+    public void AddSchedule(ISchedule schedule, string addAfter)
     {
-        World.SystemSchedules.AddSchedule(schedule, name, addAfter);
+        World.SystemSchedules.AddSchedule(schedule, addAfter);
     }
 
     /// <summary>
@@ -188,19 +192,6 @@ public sealed class App : IDisposable
     public void ClearSchedules()
     {
         World.SystemSchedules.ClearSchedules();
-    }
-
-    /// <summary>
-    /// Creates a new Commands instance for deferred entity operations.
-    /// The created Commands will be automatically disposed when the App is disposed.
-    /// </summary>
-    /// <returns>A new Commands instance.</returns>
-    public Commands CreateCommands()
-    {
-        var commands = new Commands(this);
-        disposables.Add(commands);
-
-        return commands;
     }
 
     /// <summary>
@@ -290,10 +281,6 @@ public sealed class App : IDisposable
 
     public void Dispose()
     {
-        ThreadPool.Dispose();
-        World.Dispose();
-        ResourcePool.Dispose();
-
         foreach (var disposable in disposables)
         {
             disposable.Dispose();

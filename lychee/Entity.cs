@@ -8,13 +8,13 @@ public struct Entity(Commands commands, Archetype archetype)
 
     public EntityRef Ref { get; set; }
 
-    internal EntityPos Pos { get; set; }
+    internal EntityPos Pos;
 
     public int ID => Ref.ID;
 
     internal int Generation => Ref.Generation;
 
-    internal Entity(Commands commands, Archetype archetype, EntityRef entityRef, EntityPos pos) : this(commands, archetype)
+    public Entity(Commands commands, Archetype archetype, EntityRef entityRef, EntityPos pos) : this(commands, archetype)
     {
         Ref = entityRef;
         Pos = pos;
@@ -54,11 +54,16 @@ public struct Entity(Commands commands, Archetype archetype)
     {
         return commands.WithComponent<T>(ref this);
     }
+
+    public bool WithoutComponent<T>() where T : unmanaged, IComponent
+    {
+        return commands.WithoutComponent<T>(ref this);
+    }
 }
 
 public struct EntityRef : IEquatable<EntityRef>
 {
-    public int ID { get; internal set; }
+    public int ID { get; }
 
     internal int Generation;
 
@@ -94,18 +99,18 @@ public struct EntityRef : IEquatable<EntityRef>
     }
 }
 
-internal struct EntityPos(int chunkIdx = 0, int idx = 0)
+public struct EntityPos(int chunkIdx = 0, int idx = 0)
 {
     internal readonly int ChunkIdx = chunkIdx;
 
-    internal readonly int Idx = idx;
+    internal int Idx = idx;
 }
 
 public struct EntityInfo
 {
-    public Archetype Archetype { get; internal set; }
+    public readonly Archetype Archetype;
 
-    internal EntityPos Pos { get; set; }
+    internal EntityPos Pos;
 
     internal EntityInfo(Archetype archetype, EntityPos pos)
     {

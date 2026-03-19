@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
+using lychee.extensions;
 
 namespace lychee.collections;
 
@@ -10,11 +11,11 @@ namespace lychee.collections;
 /// and iteration performance. Memory usage depends on the greatest key value in the map.
 /// </summary>
 /// <typeparam name="T">The type of values in the map.</typeparam>
-public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)>
+public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
 {
 #region Private fields
 
-    private readonly NativeList<int> sparseArray = [];
+    private readonly List<int> sparseArray = [];
 
     private readonly List<(int key, T value)> denseArray = [];
 
@@ -45,12 +46,12 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
             return denseArray[sparseArray[key]].value;
         }
 
-        set => Add(key, value);
+        set => AddOrUpdate(key, value);
     }
 
 #endregion
 
-#region Constructors & Destructors
+#region Constructors
 
     /// <summary>
     /// Initializes a new instance and populates it from the specified enumerable.
@@ -60,18 +61,29 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     {
         foreach (var valueTuple in enumerable)
         {
-            Add(valueTuple.Item1, valueTuple.Item2);
+            AddOrUpdate(valueTuple.Item1, valueTuple.Item2);
         }
-    }
-
-    ~SparseMap()
-    {
-        Dispose();
     }
 
 #endregion
 
 #region Public Methods
+
+    public void Add(int key, T value)
+    {
+        if (key >= sparseArray.Count)
+        {
+            sparseArray.Resize(key + 1, -1);
+        }
+
+        if (sparseArray[key] != -1)
+        {
+            throw new ArgumentException("Key already exists");
+        }
+
+        denseArray.Add((key, value));
+        sparseArray[key] = denseArray.Count - 1;
+    }
 
     /// <summary>
     /// Adds or updates an element with the specified key and value.
@@ -79,7 +91,7 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     /// </summary>
     /// <param name="key">The integer key of the element.</param>
     /// <param name="value">The value to add or update.</param>
-    public void Add(int key, T value)
+    public void AddOrUpdate(int key, T value)
     {
         if (key >= sparseArray.Count)
         {
@@ -225,16 +237,6 @@ public sealed class SparseMap<T>() : IDisposable, IEnumerable<(int key, T value)
     public Span<(int, T)> GetDenseAsSpan()
     {
         return CollectionsMarshal.AsSpan(denseArray);
-    }
-
-#endregion
-
-#region IDisposable method
-
-    public void Dispose()
-    {
-        sparseArray.Dispose();
-        GC.SuppressFinalize(this);
     }
 
 #endregion

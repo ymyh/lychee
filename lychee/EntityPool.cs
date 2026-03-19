@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using lychee.extensions;
 
 namespace lychee;
 
@@ -104,7 +105,7 @@ public sealed class EntityPool
         }
     }
 
-    internal void Commit()
+    internal void ReclaimId()
     {
         while (removedEntitiesId.TryPop(out var id))
         {
@@ -131,16 +132,21 @@ public sealed class EntityPool
             }
             else
             {
-                CollectionsMarshal.SetCount(entities, id + 1);
-                // entities.Resize(id + 1);
+                entities.Resize(id + 1, default);
                 entities[id] = new(id, 0);
 
-                CollectionsMarshal.SetCount(entityInfoList, id + 1);
-
-                // entityInfoList.Resize(id + 1);
+                entityInfoList.Resize(id + 1, default);
                 entityInfoList[id] = new(archetype, new(chunkIdx, idx));
             }
         }
+    }
+
+    internal void UpdateEntityInfo(int id, int indexInChunk)
+    {
+        var info = entityInfoList[id];
+        info.Pos.Idx = indexInChunk;
+
+        entityInfoList[id] = info;
     }
 
 #endregion

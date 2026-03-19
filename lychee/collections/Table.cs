@@ -53,6 +53,8 @@ public sealed class Table : IDisposable
 
     private volatile bool isInitialized;
 
+    public int TotalCount => Chunks.Sum(chunk => chunk.Size);
+
 #region Constructors
 
     public Table(TableLayout layout, int chunkSizeBytesHint = 16384)
@@ -141,14 +143,14 @@ public sealed class Table : IDisposable
         }
     }
 
-    public (nint ptr, int size) GetChunkData(int typeIdx, int chunkIdx)
+    public (nint ptr, int size) GetChunkDataWithReservation(int typeIdx, int chunkIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
 
         unsafe
         {
             var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * chunkCapacity;
-            return (ptr, Chunks[chunkIdx].Size);
+            return (ptr, Chunks[chunkIdx].Size + Chunks[chunkIdx].Reservation);
         }
     }
 

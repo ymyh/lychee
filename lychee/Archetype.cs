@@ -14,7 +14,7 @@ public sealed class ArchetypeManager : IDisposable
 
     internal static Archetype EmptyArchetype { get; }
 
-    public bool IsCoherent => archetypes.All(x => x.IsCoherent);
+    public bool IsCoherent => archetypes.Skip(1).All(x => x.IsCoherent);
 
     public delegate void ArchetypeCreatedHandler();
 
@@ -169,10 +169,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 {
 #region Fields
 
-    public readonly int ID = id;
-
-    public readonly int[] TypeIdList = typeIdList.Distinct().Count() != typeIdList.Length ? throw new ArgumentException("Duplicate type id in archetype.") : typeIdList;
-
     internal readonly Table Table = new(new(typeInfoList));
 
     private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
@@ -186,6 +182,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     private bool dirty;
 
 #region Public Properties
+
+    public int ID { get; } = id;
+
+    public int[] TypeIdList { get; } = typeIdList.Distinct().Count() != typeIdList.Length ? throw new ArgumentException("Duplicate type id in archetype.") : typeIdList;
 
     public Type[] Types => typeIdList.Select(typeRegistrar.GetTypeById).ToArray();
 
@@ -282,7 +282,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 #if DEBUG
                 Debug.Assert(entities.Remove(hole.id));
 #else
-                entities.Remove(hole.id)
+                entities.Remove(hole.id);
 #endif
             }
         }

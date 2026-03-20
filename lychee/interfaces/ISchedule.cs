@@ -7,5 +7,8 @@ public interface ISchedule
     /// </summary>
     public void Execute();
 
+    /// <summary>
+    /// The schedule name.
+    /// </summary>
     public string Name { get; }
 }

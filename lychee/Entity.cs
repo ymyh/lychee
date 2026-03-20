@@ -20,6 +20,11 @@ public struct Entity(Commands commands, Archetype archetype)
         Pos = pos;
     }
 
+    public void Despawn()
+    {
+        commands.RemoveEntity(in this);
+    }
+
     public void AddComponent<T>(in T component) where T : unmanaged, IComponent
     {
         commands.AddComponent(ref this, in component);

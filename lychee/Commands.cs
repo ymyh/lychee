@@ -322,6 +322,11 @@ public sealed class Commands(App app)
         return true;
     }
 
+    public void AlterComponents<Adds, Removes>()
+    {
+        throw new NotImplementedException();
+    }
+
     /// <summary>
     /// Gets a reference to a component of the current entity.
     /// Requires SetCurrentEntity to be called first.
@@ -379,10 +384,10 @@ public sealed class Commands(App app)
 
     internal void Commit()
     {
-        foreach (var (id, entity) in modifiedEntityInfoMap)
+        foreach (var (_, entity) in modifiedEntityInfoMap)
         {
-            entityPool.CommitReservedEntity(id, entity.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx);
-            entity.Archetype.CommitAddEntity(new(entity.ID, entity.Generation));
+            entityPool.CommitReservedEntity(in entity);
+            entity.Archetype.CommitAddEntity(entity.Ref);
         }
 
         foreach (var (_, entity) in removedEntityMap)

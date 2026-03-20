@@ -16,18 +16,18 @@ public sealed class EntityPool
 
     private readonly List<EntityInfo> entityInfoList = [];
 
-    private readonly Stack<int> reusableEntitiesId = [];
+    private readonly Stack<EntityRef> reusableEntitiesId = [];
 
-    private readonly ConcurrentStack<int> removedEntitiesId = [];
+    private readonly ConcurrentStack<EntityRef> removedEntitiesId = [];
 
     /// <summary>
     /// Reserves an entity ID without initializing it. Call <see cref="CommitReservedEntity"/> to finalize.
     /// </summary>
     public EntityRef ReserveEntity()
     {
-        if (reusableEntitiesId.TryPop(out var id))
+        if (reusableEntitiesId.TryPop(out var entityRef))
         {
-            return new(id, 0);
+            return entityRef;
         }
 
         return new(Interlocked.Increment(ref latestEntityId), 0);
@@ -38,7 +38,7 @@ public sealed class EntityPool
     /// </summary>
     public void MarkRemoveEntity(EntityRef entityRef)
     {
-        removedEntitiesId.Push(entityRef.ID);
+        removedEntitiesId.Push(entityRef);
     }
 
     /// <summary>
@@ -58,7 +58,7 @@ public sealed class EntityPool
         var span = CollectionsMarshal.AsSpan(entities);
         span[id].Generation++;
 
-        removedEntitiesId.Push(id);
+        removedEntitiesId.Push(entityRef);
 
         return true;
     }
@@ -113,30 +113,30 @@ public sealed class EntityPool
         }
     }
 
-    internal void CommitReservedEntity(int id, Archetype archetype, int chunkIdx, int idx)
+    internal void CommitReservedEntity(in Entity entity)
     {
-        Debug.Assert(id >= 0);
+        Debug.Assert(entity.ID >= 0);
 
-        if (id < entities.Count)
+        if (entity.ID < entities.Count)
         {
             // Set generation to 0 when reuse entity
-            entities[id] = new(id, 0);
-            entityInfoList[id] = new(archetype, new(chunkIdx, idx));
+            entities[entity.ID] = entity.Ref;
+            entityInfoList[entity.ID] = new(entity.Archetype, new(entity.Pos.ChunkIdx, entity.Pos.Idx));
         }
         else
         {
-            if (id == entities.Count)
+            if (entity.ID == entities.Count)
             {
-                entities.Add(new(id, 0));
-                entityInfoList.Add(new(archetype, new(chunkIdx, idx)));
+                entities.Add(entity.Ref);
+                entityInfoList.Add(new(entity.Archetype, new(entity.Pos.ChunkIdx, entity.Pos.Idx)));
             }
             else
             {
-                entities.Resize(id + 1, default);
-                entities[id] = new(id, 0);
+                entities.Resize(entity.ID + 1, default);
+                entities[entity.ID] = entity.Ref;
 
-                entityInfoList.Resize(id + 1, default);
-                entityInfoList[id] = new(archetype, new(chunkIdx, idx));
+                entityInfoList.Resize(entity.ID + 1, default);
+                entityInfoList[entity.ID] = new(entity.Archetype, new(entity.Pos.ChunkIdx, entity.Pos.Idx));
             }
         }
     }

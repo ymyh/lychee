@@ -87,7 +87,6 @@ public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
 
     /// <summary>
     /// Adds or updates an element with the specified key and value.
-    /// Unlike <see cref="Dictionary&lt;TKey,TValue&gt;"/>, adding the same key updates the existing entry.
     /// </summary>
     /// <param name="key">The integer key of the element.</param>
     /// <param name="value">The value to add or update.</param>

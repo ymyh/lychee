@@ -14,6 +14,8 @@ public struct Entity(Commands commands, Archetype archetype)
 
     internal int Generation => Ref.Generation;
 
+    internal Commands Commands => commands;
+
     public Entity(Commands commands, Archetype archetype, EntityRef entityRef, EntityPos pos) : this(commands, archetype)
     {
         Ref = entityRef;
@@ -48,6 +50,11 @@ public struct Entity(Commands commands, Archetype archetype)
     public void RemoveComponentsTuple<T>() where T : unmanaged
     {
         commands.RemoveComponentsTuple<T>(ref this);
+    }
+
+    public void AlterComponents(Commands.EntityAlterContextDelegate configure)
+    {
+        commands.AlterComponents(ref this, configure);
     }
 
     public ref T GetComponent<T>() where T : unmanaged, IComponent

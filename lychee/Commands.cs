@@ -322,9 +322,33 @@ public sealed class Commands(App app)
         return true;
     }
 
-    public void AlterComponents<Adds, Removes>()
+    public delegate void EntityAlterContextDelegate(ref EntityAlterContext context);
+
+    /// <summary>
+    /// Performs multiple component additions and removals on an entity in a single archetype migration.
+    /// Remove operations must be called before Add operations within the configuration callback.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <param name="configure">A callback that configures the alterations using the EntityAlter builder.</param>
+    /// <returns>True if any alterations were made; false if the entity is invalid or no changes were made.</returns>
+    public bool AlterComponents(ref Entity entity, EntityAlterContextDelegate configure)
     {
-        throw new NotImplementedException();
+        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
+        {
+            return false;
+        }
+
+        var alter = new EntityAlterContext(entity);
+        configure(ref alter);
+
+        if (alter.Commit())
+        {
+            entity = alter.Entity;
+            modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -512,5 +536,219 @@ public static class CommandsExtensions
                 dict.Add(ptr, self.TransferDstInfo);
             }
         }
+    }
+}
+
+/// <summary>
+/// A builder struct for configuring entity alterations in a single archetype migration.
+/// Remove operations must be called before Add operations. Each can only be called once.
+/// </summary>
+public struct EntityAlterContext
+{
+    internal Entity Entity;
+    private readonly Archetype originalArchetype;
+    private bool hasAdded;
+
+    internal EntityAlterContext(Entity entity)
+    {
+        Entity = entity;
+        originalArchetype = entity.Archetype;
+        hasAdded = false;
+    }
+
+    /// <summary>
+    /// Removes a single component from the entity.
+    /// Must be called before any Add operations.
+    /// </summary>
+    /// <typeparam name="T">The component type to remove.</typeparam>
+    /// <returns>This EntityAlter for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
+    public EntityAlterContext Remove<T>() where T : unmanaged, IComponent
+    {
+        if (hasAdded)
+        {
+            throw new InvalidOperationException("Remove operation can only be called before Add operations.");
+        }
+
+        var archetype = Entity.Archetype;
+        Entity.Commands.RemoveComponentTransferInfo<T>(archetype);
+
+        Debug.Assert(Entity.Commands.TransferDstInfo != null);
+
+        Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Removes a single component from the entity.
+    /// Must be called before any Add operations.
+    /// </summary>
+    /// <typeparam name="T">The component type to remove.</typeparam>
+    /// <returns>This EntityAlter for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
+    public EntityAlterContext RemoveBundle<T>() where T : unmanaged, IComponentBundle
+    {
+        if (hasAdded)
+        {
+            throw new InvalidOperationException("Remove operation can only be called before Add operations.");
+        }
+
+        var archetype = Entity.Archetype;
+        Entity.Commands.RemoveComponentsTransferInfo<T>(archetype);
+
+        Debug.Assert(Entity.Commands.TransferDstInfo != null);
+
+        Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Removes all components defined in a tuple from the entity.
+    /// Must be called before any Add operations.
+    /// </summary>
+    /// <typeparam name="T">The tuple type containing component types to remove.</typeparam>
+    /// <returns>This EntityAlter for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
+    public EntityAlterContext RemoveTuple<T>() where T : unmanaged
+    {
+        if (hasAdded)
+        {
+            throw new InvalidOperationException("Remove operation can only be called before Add operations.");
+        }
+
+        var archetype = Entity.Archetype;
+        Entity.Commands.RemoveComponentsTupleTransferInfo<T>(archetype);
+
+        Debug.Assert(Entity.Commands.TransferDstInfo != null);
+
+        Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a single component to the entity.
+    /// Must be called after Remove operations. Can only be called once.
+    /// </summary>
+    /// <typeparam name="T">The component type to add.</typeparam>
+    /// <param name="component">The component value.</param>
+    /// <returns>This EntityAlter for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if called before Remove or called more than once.</exception>
+    public EntityAlterContext Add<T>(in T component) where T : unmanaged, IComponent
+    {
+        if (hasAdded)
+        {
+            throw new InvalidOperationException("Add operation can only be called once.");
+        }
+
+        var archetype = Entity.Archetype;
+        Entity.Commands.AddComponentTransferInfo<T>(archetype);
+
+        Debug.Assert(Entity.Commands.TransferDstInfo != null);
+
+        var dstArchetype = Entity.Commands.TransferDstInfo!.Archetype;
+        var (chunkIdx, idx) = dstArchetype.Reserve();
+
+        // Write component data
+        dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
+
+        // Move common data from current archetype
+        originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
+
+        // Mark current position for removal
+        originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+
+        // Update entity to new position
+        Entity.Archetype = dstArchetype;
+        Entity.Pos = new(chunkIdx, idx);
+
+        hasAdded = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds multiple components as a bundle to the entity.
+    /// Must be called after Remove operations. Can only be called once.
+    /// </summary>
+    /// <typeparam name="T">The component bundle type.</typeparam>
+    /// <param name="bundle">The bundle containing component values.</param>
+    /// <returns>This EntityAlter for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if called before Remove or called more than once.</exception>
+    public EntityAlterContext AddBundle<T>(in T bundle) where T : unmanaged, IComponentBundle
+    {
+        if (hasAdded)
+        {
+            throw new InvalidOperationException("Add operation can only be called once.");
+        }
+
+        var archetype = Entity.Archetype;
+        Entity.Commands.AddComponentsTransferInfo<T>(archetype);
+
+        Debug.Assert(Entity.Commands.TransferDstInfo != null);
+
+        var dstArchetype = Entity.Commands.TransferDstInfo!.Archetype;
+        var (chunkIdx, idx) = dstArchetype.Reserve();
+
+        // Write bundle data
+        for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
+        {
+            unsafe
+            {
+                var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo[i];
+                var ptr = dstArchetype.Table.GetPtr(Entity.Commands.TransferDstInfo.TypeIndices[i], chunkIdx, idx);
+                fixed (T* bundlePtr = &bundle)
+                {
+                    var componentPtr = (byte*)bundlePtr + bundleInfo.info.Offset;
+                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.info.Size);
+                }
+            }
+        }
+
+        // Move common data from current archetype
+        originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
+
+        // Mark current position for removal
+        originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+
+        // Update entity to new position
+        Entity.Archetype = dstArchetype;
+        Entity.Pos = new(chunkIdx, idx);
+
+        hasAdded = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Commits the alterations by performing the actual archetype migration.
+    /// Called automatically when the Alter lambda completes.
+    /// </summary>
+    internal bool Commit()
+    {
+        // If Add was called, migration already happened
+        if (hasAdded)
+        {
+            return true;
+        }
+
+        // Only Remove was called - need to perform migration
+        var dstArchetype = Entity.Commands.TransferDstInfo?.Archetype ?? originalArchetype;
+
+        // No actual change needed (component didn't exist)
+        if (dstArchetype == originalArchetype)
+        {
+            return false;
+        }
+
+        // Reserve space and migrate
+        var (chunkIdx, idx) = dstArchetype.Reserve();
+        originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
+        originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+
+        Entity.Archetype = dstArchetype;
+        Entity.Pos = new(chunkIdx, idx);
+
+        return true;
     }
 }

@@ -177,7 +177,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     private readonly SparseMap<EntityRef> entities = [];
 
-    private readonly Stack<(int id, int chunkIdx, int idx)> holesInTable = new();
+    private readonly Stack<(int id, ushort chunkIdx, ushort idx)> holesInTable = new();
 
     private bool dirty;
 
@@ -268,7 +268,6 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             if (from > hole.idx)
             {
                 FillHole(hole.chunkIdx, from, hole.idx);
-                entityPool.UpdateEntityInfo(entities.GetDenseAsSpan()[^1].Item2.ID, hole.idx);
             }
 
             if (chunk.Reservation > 0)
@@ -278,6 +277,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             else
             {
                 chunk.Size--;
+                entityPool.UpdateEntityInfo(ID, entities.GetDenseAsSpan()[^1].Item2.ID, hole.idx);
 
 #if DEBUG
                 Debug.Assert(entities.Remove(hole.id));
@@ -305,7 +305,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     internal void MarkRemove(int entityId, EntityPos entityPos)
     {
         dirty = true;
-        holesInTable.Push((entityId, entityPos.ChunkIdx, entityPos.Idx));
+        holesInTable.Push((entityId, (ushort)entityPos.ChunkIdx, (ushort)entityPos.Idx));
 
         Debug.Assert(ID == 0 || (ID != 0 && holesInTable.Distinct().Count() == holesInTable.Count));
     }

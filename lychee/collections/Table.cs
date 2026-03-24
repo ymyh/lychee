@@ -79,6 +79,11 @@ public sealed class Table : IDisposable
                 chunkCapacity = chunkSizeBytes / lastByteOffset;
             }
         }
+
+        if (chunkCapacity > ushort.MaxValue)
+        {
+            throw new("Chunk capacity must not greater than 65535");
+        }
     }
 
 #endregion

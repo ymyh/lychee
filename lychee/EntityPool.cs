@@ -141,11 +141,10 @@ public sealed class EntityPool
         }
     }
 
-    internal void UpdateEntityInfo(int id, int indexInChunk)
+    internal void UpdateEntityInfo(int archetypeId, int id, int indexInChunk)
     {
         var info = entityInfoList[id];
-        info.Pos.Idx = indexInChunk;
-
+        info.Pos.Idx = info.Archetype.ID == archetypeId ? indexInChunk : info.Pos.Idx;
         entityInfoList[id] = info;
     }
 

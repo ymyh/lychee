@@ -81,6 +81,11 @@ public sealed class Commands(App app)
         removedEntityMap.AddOrUpdate(entity.ID, entity);
     }
 
+    /// <summary>
+    /// Removes an existing entity.
+    /// Does nothing if the entity is already removed or in uncommitted state.
+    /// </summary>
+    /// <param name="entity">The entity to remove.</param>
     public void RemoveEntity(in Entity entity)
     {
         var e = entity;
@@ -100,6 +105,13 @@ public sealed class Commands(App app)
         removedEntityMap.AddOrUpdate(e.ID, e);
     }
 
+    /// <summary>
+    /// Gets an entity by its reference.
+    /// Returns uncommitted modifications if any exist.
+    /// </summary>
+    /// <param name="entityRef">The entity reference to look up.</param>
+    /// <param name="entity">When this method returns, contains the entity if found; otherwise, the default value.</param>
+    /// <returns>True if the entity was found; false if the entity is invalid or removed.</returns>
     public bool GetEntityByRef(EntityRef entityRef, out Entity entity)
     {
         if (removedEntityMap.ContainsKey(entityRef.ID))
@@ -322,6 +334,10 @@ public sealed class Commands(App app)
         return true;
     }
 
+    /// <summary>
+    /// A delegate for configuring entity alterations in a single archetype migration.
+    /// </summary>
+    /// <param name="context">The entity alteration context builder.</param>
     public delegate void EntityAlterContextDelegate(ref EntityAlterContext context);
 
     /// <summary>
@@ -370,17 +386,35 @@ public sealed class Commands(App app)
         }
     }
 
+    /// <summary>
+    /// Checks whether an entity has a specific component.
+    /// </summary>
+    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns>True if the entity has the component; otherwise, false.</returns>
     public bool WithComponent<T>(ref Entity entity) where T : unmanaged, IComponent
     {
         var typeId = TypeRegistrar.GetTypeId<T>();
         return entity.Archetype.TypeIdList.Any(x => x == typeId);
     }
 
+    /// <summary>
+    /// Checks whether an entity does not have a specific component.
+    /// </summary>
+    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns>True if the entity does not have the component; otherwise, false.</returns>
     public bool WithoutComponent<T>(ref Entity entity) where T : unmanaged, IComponent
     {
         return !WithComponent<T>(ref entity);
     }
 
+    /// <summary>
+    /// Checks whether an entity reference is valid.
+    /// An entity reference is valid if it points to an existing entity that has not been destroyed.
+    /// </summary>
+    /// <param name="entityRef">The entity reference to validate.</param>
+    /// <returns>True if the entity reference is valid; otherwise, false.</returns>
     public bool CheckEntityValid(EntityRef entityRef)
     {
         return entityPool.CheckEntityValid(entityRef);
@@ -431,7 +465,7 @@ public sealed class Commands(App app)
 #endregion
 }
 
-public static class CommandsExtensions
+internal static class CommandsExtensions
 {
     extension(Commands self)
     {

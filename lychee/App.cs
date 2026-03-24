@@ -22,7 +22,7 @@ public sealed class App : IDisposable
 
 #endregion
 
-#region Constructors & Destructors
+#region Constructors
 
     /// <summary>
     /// Creates an App with specified thread count.

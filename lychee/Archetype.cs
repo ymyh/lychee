@@ -12,11 +12,13 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly TypeRegistrar typeRegistrar;
 
-    internal static Archetype EmptyArchetype { get; }
+    private readonly Lock archetypeLock = new();
 
     public bool IsCoherent => archetypes.Skip(1).All(x => x.IsCoherent);
 
     public delegate void ArchetypeCreatedHandler();
+
+    internal static Archetype EmptyArchetype { get; }
 
     /// <summary>
     /// Invoked when a new archetype is created.
@@ -41,7 +43,7 @@ public sealed class ArchetypeManager : IDisposable
         var array = typeIdList.ToArray();
         Array.Sort(array);
 
-        lock (archetypes)
+        lock (archetypeLock)
         {
             foreach (var archetype in archetypes)
             {
@@ -86,7 +88,7 @@ public sealed class ArchetypeManager : IDisposable
     /// <returns></returns>
     public Archetype GetArchetype(int id)
     {
-        lock (archetypes)
+        lock (archetypeLock)
         {
             return archetypes[id];
         }
@@ -100,7 +102,7 @@ public sealed class ArchetypeManager : IDisposable
             return [];
         }
 
-        lock (archetypes)
+        lock (archetypeLock)
         {
             return archetypes.Where(a =>
             {
@@ -260,6 +262,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             return;
         }
 
+        // if (ID == 1)
+        // {
+        //     Debugger.Break();
+        // }
+
         while (holesInTable.TryPop(out var hole))
         {
             var chunk = Table.Chunks[hole.chunkIdx];
@@ -268,6 +275,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             if (from > hole.idx)
             {
                 FillHole(hole.chunkIdx, from, hole.idx);
+                entityPool.UpdateEntityInfo(ID, entities.GetDenseAsSpan()[^1].Item2.ID, hole.idx);
             }
 
             if (chunk.Reservation > 0)
@@ -277,19 +285,19 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
             else
             {
                 chunk.Size--;
-                entityPool.UpdateEntityInfo(ID, entities.GetDenseAsSpan()[^1].Item2.ID, hole.idx);
-
-#if DEBUG
-                Debug.Assert(entities.Remove(hole.id));
-#else
-                entities.Remove(hole.id);
-#endif
             }
+
+            entities.Remove(hole.id);
         }
 
         Table.CommitReserved();
         ShirkTable();
         dirty = false;
+
+        if (!IsCoherent)
+        {
+            Debugger.Break();
+        }
     }
 
     internal void CommitAddEntity(EntityRef entityRef)

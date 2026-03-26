@@ -160,12 +160,22 @@ public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
     /// <returns>The index in the dense array, or -1 if the key is not found.</returns>
     public int GetIndex(int key)
     {
-        if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
+        if ((uint)key >= (uint)sparseArray.Count)
         {
             return -1;
         }
 
         return sparseArray[key];
+    }
+
+    public T GetOrDefault(int key, T defaultValue)
+    {
+        if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)
+        {
+            return defaultValue;
+        }
+
+        return denseArray[sparseArray[key]].value;
     }
 
     /// <summary>

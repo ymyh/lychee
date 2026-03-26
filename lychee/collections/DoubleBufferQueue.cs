@@ -14,6 +14,8 @@ public sealed class DoubleBufferQueue<T>
 
     private List<T> back = [];
 
+    private readonly Lock backBufferLock = new();
+
     /// <summary>
     /// Add an item to the back buffer.
     /// This method is thread-safe.
@@ -21,7 +23,7 @@ public sealed class DoubleBufferQueue<T>
     /// <param name="item">The item to add to the back buffer.</param>
     public void Enqueue(T item)
     {
-        lock (back)
+        lock (backBufferLock)
         {
             back.Add(item);
         }
@@ -38,7 +40,6 @@ public sealed class DoubleBufferQueue<T>
     /// <summary>
     /// Exchange front and back buffer.
     /// </summary>
-    [SuppressMessage("ReSharper", "InconsistentlySynchronizedField")]
     public void Exchange()
     {
         (front, back) = (back, front);

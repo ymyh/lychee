@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using lychee.collections;
 using lychee.interfaces;
@@ -13,8 +14,6 @@ public sealed class ArchetypeManager : IDisposable
     private readonly TypeRegistrar typeRegistrar;
 
     private readonly Lock archetypeLock = new();
-
-    public bool IsCoherent => archetypes.Skip(1).All(x => x.IsCoherent);
 
     public delegate void ArchetypeCreatedHandler();
 
@@ -179,7 +178,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     private readonly SparseMap<EntityRef> entities = [];
 
-    private readonly Stack<(int id, ushort chunkIdx, ushort idx)> holesInTable = new();
+    private readonly ConcurrentStack<(int id, ushort chunkIdx, ushort idx)> holesInTable = new();
 
     private bool dirty;
 
@@ -257,20 +256,20 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     internal void Commit(EntityPool entityPool)
     {
-        if (!dirty || Table.Chunks.Count == 0)
+        if (!dirty || Table.Layout.MaxAlignment == 0)
         {
             return;
         }
-
-        // if (ID == 1)
-        // {
-        //     Debugger.Break();
-        // }
 
         while (holesInTable.TryPop(out var hole))
         {
             var chunk = Table.Chunks[hole.chunkIdx];
             var from = chunk.Size + chunk.Reservation - 1;
+
+            if (entities.ContainsKey(hole.id))
+            {
+                hole.idx = (ushort)entities.GetIndex(hole.id);
+            }
 
             if (from > hole.idx)
             {
@@ -294,10 +293,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         ShirkTable();
         dirty = false;
 
-        if (!IsCoherent)
-        {
-            Debugger.Break();
-        }
+        Debug.Assert(IsCoherent);
     }
 
     internal void CommitAddEntity(EntityRef entityRef)
@@ -312,6 +308,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     internal void MarkRemove(int entityId, EntityPos entityPos)
     {
+        if (Table.Layout.MaxAlignment == 0)
+        {
+            return;
+        }
+
         dirty = true;
         holesInTable.Push((entityId, (ushort)entityPos.ChunkIdx, (ushort)entityPos.Idx));
 
@@ -369,6 +370,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         if (Table.Layout.MaxAlignment == 0)
         {
             return (0, 0);
+        }
+
+        if (holesInTable.TryPop(out var hole))
+        {
+            return (hole.chunkIdx, hole.idx);
         }
 
         dirty = true;

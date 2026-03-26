@@ -456,8 +456,6 @@ public sealed class Commands(App app)
         entityPool.ReclaimId();
         ArchetypeManager.Commit(entityPool);
 
-        Debug.Assert(ArchetypeManager.IsCoherent);
-
         removedEntityMap.Clear();
         modifiedEntityInfoMap.Clear();
     }

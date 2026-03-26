@@ -10,13 +10,13 @@ public interface ISystem
     /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing.<br/>
     /// Initialize the system, called when initializing.
     /// </summary>
-    public void InitializeAG(App app);
+    public void InitializeAG(App app, SystemDescriptor descriptor);
 
     /// <summary>
     /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing.<br/>
     /// Configure the system, called when archetype changed.
     /// </summary>
-    public void ConfigureAG(App app, SystemDescriptor descriptor);
+    public void ConfigureAG(App app, SystemFilterInfo filterInfo);
 
     /// <summary>
     /// AG stands for auto generated. Don't implement this method manually unless you know what are you doing.<br/>

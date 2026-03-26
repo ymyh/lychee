@@ -122,12 +122,12 @@ public abstract class BasicSchedule : ISchedule
     /// Adds a new system instance to the schedule, positioning it after a specified system.
     /// The system will be initialized upon addition.
     /// </summary>
-    /// <param name="addAfter">The system after which the new system should execute.</param>
+    /// <param name="descriptor">The system descriptor.</param>
     /// <typeparam name="T">The system type, must implement ISystem and have a default constructor.</typeparam>
     /// <returns>The newly created and added system instance.</returns>
-    public T AddSystem<[SystemConcept] T>(ISystem addAfter) where T : ISystem, new()
+    public T AddSystem<[SystemConcept] T>(SystemDescriptor descriptor) where T : ISystem, new()
     {
-        return AddSystem(new T(), addAfter);
+        return AddSystem(new T(), descriptor);
     }
 
     /// <summary>
@@ -135,12 +135,12 @@ public abstract class BasicSchedule : ISchedule
     /// The system will be initialized upon addition.
     /// </summary>
     /// <param name="system">The system instance to add.</param>
-    /// <param name="addAfter">Optional. The system after which this system should execute.</param>
+    /// <param name="descriptor">Optional. The system descriptor.</param>
     /// <typeparam name="T">The system type, must implement ISystem.</typeparam>
     /// <returns>The system instance that was added.</returns>
-    public T AddSystem<[SystemConcept] T>(T system, ISystem? addAfter = null) where T : ISystem
+    public T AddSystem<[SystemConcept] T>(T system, SystemDescriptor? descriptor = null) where T : ISystem
     {
-        DoAddSystem(system, addAfter);
+        DoAddSystem(system, descriptor ?? new());
         return system;
     }
 
@@ -185,7 +185,7 @@ public abstract class BasicSchedule : ISchedule
             var ctor = type.GetConstructor([])!;
             var system = (ctor.Invoke([]) as ISystem)!;
 
-            DoAddSystem(system, addAfter);
+            DoAddSystem(system, new() { AddAfter = addAfter});
             addAfter = system;
         }
     }
@@ -219,11 +219,25 @@ public abstract class BasicSchedule : ISchedule
         return ([], [], [typeof(Disabled)]);
     }
 
-    private void DoAddSystem(ISystem system, ISystem? addAfter = null)
+    private bool CheckIfMultiThread(ISystem system)
     {
-        system.InitializeAG(app);
-        var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
+        var attr = system.GetType().GetCustomAttribute<AutoImplSystem>();
+        return attr?.MultiThreaded ?? false;
+    }
 
+    private void DoAddSystem(ISystem system, SystemDescriptor descriptor)
+    {
+        if (CheckIfMultiThread(system))
+        {
+            if (descriptor.ThreadCount == 0 || descriptor.GroupSize == 0)
+            {
+                throw new ArgumentException("SystemDescriptor.ThreadCount and SystemDescriptor.GroupSize must not be 0 when system is multi-threaded mode on");
+            }
+        }
+
+        system.InitializeAG(app, descriptor);
+
+        var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
         var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
         {
             AllFilter = allFilter,
@@ -241,12 +255,12 @@ public abstract class BasicSchedule : ISchedule
         {
             addAfterNode = n;
 
-            if (addAfter != null)
+            if (descriptor.AddAfter != null)
             {
-                if (n.Data.System == addAfter)
+                if (n.Data.System == descriptor.AddAfter)
                 {
                     currentGroup = n.Group;
-                    addAfter = null;
+                    descriptor.AddAfter = null;
                 }
 
                 continue;
@@ -281,7 +295,6 @@ public abstract class BasicSchedule : ISchedule
             return new(p.ParameterType, p.IsIn, false);
         }).ToArray();
 
-        CheckAutoImplSystemAttribute(system, sysType);
         RegisterSystemComponent(parameters, allFilter, anyFilter, noneFilter);
         ValidateParameter(system, parameters);
 
@@ -384,29 +397,13 @@ public abstract class BasicSchedule : ISchedule
         }
     }
 
-    private static void CheckAutoImplSystemAttribute(ISystem system, Type systemType)
-    {
-        var attribute = systemType.GetCustomAttribute<AutoImplSystem>();
-
-        if (attribute != null)
-        {
-            var groupSize = attribute.GroupSize;
-            var threadCount = attribute.ThreadCount;
-
-            if ((groupSize > 0 && threadCount == 0) || (groupSize == 0 && threadCount > 0))
-            {
-                throw new ArgumentException($"System {system} has a invalid AutoImplSystem attribute parameter, they must both be greater than 0 or both be 0");
-            }
-        }
-    }
-
     private void Configure()
     {
         ExecutionGraph.ForEach(x =>
         {
             if (x != ExecutionGraph.Root)
             {
-                x.Data.System.ConfigureAG(app, x.Data.Descriptor);
+                x.Data.System.ConfigureAG(app, x.Data.FilterInfo);
             }
         });
     }

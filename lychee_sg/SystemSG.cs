@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -21,9 +20,7 @@ namespace lychee_sg
 
         public bool HasBeforeExecute;
 
-        public uint GroupSize;
-
-        public uint ThreadCount;
+        public bool MultiThread;
     }
 
     internal enum ParamKind
@@ -96,7 +93,9 @@ partial class {sysInfo.Name} : ISystem
 {{
     private static class SystemDataAG
     {{
-        public static ResourcePool Pool;{(sysInfo.ThreadCount > 1 ? "\n        public static ThreadPool ThreadPool;" : "")}
+        public static ResourcePool Pool;{(sysInfo.MultiThread ? "\n        public static ThreadPool ThreadPool;" : "")}
+
+        public static SystemDescriptor descriptor;
 
         public static int[] TypeIdList;
 
@@ -105,11 +104,11 @@ partial class {sysInfo.Name} : ISystem
         public static Commands[] Commands;
     }}
 {MakeResourceDataAGCode(resourceTypes)}
-{MakeInitializeAGCode(componentTypes, resourceTypes, sysInfo.ThreadCount)}
+{MakeInitializeAGCode(componentTypes, resourceTypes, sysInfo.MultiThread)}
 
-    public void ConfigureAG(App app, SystemDescriptor descriptor)
+    public void ConfigureAG(App app, SystemFilterInfo filterInfo)
     {{
-        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(descriptor.AllFilter, descriptor.AnyFilter, descriptor.NoneFilter, SystemDataAG.TypeIdList);
+        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList);
     }}
 {MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
 }}
@@ -143,8 +142,7 @@ partial class {sysInfo.Name} : ISystem
             var autoImplAttr = classSymbol.GetAttributes()
                 .First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystem");
 
-            var groupSize = (uint)autoImplAttr.ConstructorArguments[0].Value;
-            var threadCount = (uint)autoImplAttr.ConstructorArguments[1].Value;
+            var multiThread = (bool)autoImplAttr.ConstructorArguments[0].Value;
 
             foreach (var memberDecl in classDecl.Members)
             {
@@ -214,13 +212,11 @@ partial class {sysInfo.Name} : ISystem
                 Params = paramList,
                 HasBeforeExecute = hasBeforeExecute,
                 HasAfterExecute = hasAfterExecute,
-                ThreadCount = threadCount,
-                GroupSize = groupSize,
+                MultiThread = multiThread,
             };
         }
 
-        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, ParamInfo[] resourceTypes,
-            uint threadCount)
+        private static string MakeInitializeAGCode(ParamInfo[] componentTypes, ParamInfo[] resourceTypes, bool multiThread)
         {
             var resourceDecl = new StringBuilder();
 
@@ -254,11 +250,14 @@ partial class {sysInfo.Name} : ISystem
             }));
 
             return $@"
-    public unsafe void InitializeAG(App app)
+    public unsafe void InitializeAG(App app, SystemDescriptor descriptor)
     {{
-        SystemDataAG.Pool = app.ResourcePool;{(threadCount > 1 ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool({threadCount});" : "")}
+        SystemDataAG.Pool = app.ResourcePool;{(multiThread ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool(SystemDataAG.descriptor.ThreadCount);" : "")}
+        SystemDataAG.descriptor = descriptor;
         SystemDataAG.TypeIdList = [{registerTypes}];
-        SystemDataAG.Commands = [{string.Join(", ", Enumerable.Repeat("new(app)", (int)Math.Max(1, threadCount)))}];
+        SystemDataAG.Commands = new Commands[Math.Max(1, SystemDataAG.descriptor.ThreadCount)];
+
+        for (var i = 0; i < SystemDataAG.Commands.Length; i++) SystemDataAG.Commands[i] = new(app);
 
 {resourceDecl}
     }}";
@@ -303,7 +302,7 @@ partial class {sysInfo.Name} : ISystem
             ParamInfo[] resourceParams, SystemInfo systemInfo, bool hasComponentSpan)
         {
             string body;
-            var execParams = GenExecuteParams(allParams, systemInfo.GroupSize > 0, hasComponentSpan);
+            var execParams = GenExecuteParams(allParams, systemInfo.MultiThread, hasComponentSpan);
             var declResourceCode = GenResourceCode(resourceParams);
 
             if (componentParams.Length > 0)
@@ -312,7 +311,7 @@ partial class {sysInfo.Name} : ISystem
 {declResourceCode}
         foreach (var archetype in SystemDataAG.Archetypes)
         {{
-{GenIterArchetypeCode(componentParams, execParams, hasComponentSpan, systemInfo.GroupSize)}
+{GenIterArchetypeCode(componentParams, execParams, hasComponentSpan, systemInfo.MultiThread)}
         }}
         {(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
         return SystemDataAG.Commands;";
@@ -360,15 +359,15 @@ partial class {sysInfo.Name} : ISystem
         }
 
         private static string GenIterArchetypeCode(ParamInfo[] componentParams, string execParams,
-            bool hasComponentSpan, uint groupSize)
+            bool hasComponentSpan, bool multiThread)
         {
-            return groupSize > 0
-                ? GenIterArchetypeMultiThreadCode(componentParams, execParams, hasComponentSpan, groupSize)
+            return multiThread
+                ? GenIterArchetypeMultiThreadCode(componentParams, execParams, hasComponentSpan)
                 : GenIterArchetypeSingleThreadCode(componentParams, execParams, hasComponentSpan);
         }
 
         private static string GenIterArchetypeMultiThreadCode(ParamInfo[] componentParams, string execParams,
-            bool hasComponentSpan, uint groupSize)
+            bool hasComponentSpan)
         {
             var declIterCode = new StringBuilder();
 
@@ -383,7 +382,7 @@ partial class {sysInfo.Name} : ISystem
             if (hasComponentSpan)
             {
                 return $@"
-            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType({groupSize}))
+            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupCount))
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{
@@ -402,7 +401,7 @@ partial class {sysInfo.Name} : ISystem
             }
 
             return $@"
-            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType({groupSize}))
+            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupCount))
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{

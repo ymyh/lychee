@@ -16,5 +16,10 @@ public static class ListExtensions
                 CollectionsMarshal.AsSpan(self)[count..].Fill(value);
             }
         }
+
+        public void RemoveLast()
+        {
+            self.RemoveAt(self.Count - 1);
+        }
     }
 }

@@ -19,7 +19,7 @@ public static class StringExtensions
                 }
                 else
                 {
-                    yield return (int)self[i];
+                    yield return self[i];
                 }
             }
         }

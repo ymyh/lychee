@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using lychee.extensions;
 
 namespace lychee;
@@ -39,28 +38,6 @@ public sealed class EntityPool
     public void MarkRemoveEntity(EntityRef entityRef)
     {
         removedEntitiesId.Push(entityRef);
-    }
-
-    /// <summary>
-    /// Immediately removes an entity, incrementing its generation to invalidate existing references.
-    /// </summary>
-    /// <returns><c>true</c> if the entity was valid and removed; <c>false</c> if the entity reference was stale.</returns>
-    public bool RemoveEntity(EntityRef entityRef)
-    {
-        var id = entityRef.ID;
-        Debug.Assert((uint)id < (uint)entities.Count);
-
-        if (entityRef.Generation != entities[id].Generation)
-        {
-            return false;
-        }
-
-        var span = CollectionsMarshal.AsSpan(entities);
-        span[id].Generation++;
-
-        removedEntitiesId.Push(entityRef);
-
-        return true;
     }
 
     /// <summary>

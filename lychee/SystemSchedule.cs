@@ -20,7 +20,6 @@ public sealed class SystemSchedules
     /// Adds a schedule to the collection, optionally inserting it after a specified schedule.
     /// </summary>
     /// <param name="schedule">The schedule to add.</param>
-    /// <param name="name">The unique name identifier for the schedule.</param>
     /// <param name="addAfter">The schedule after which to insert the new schedule; null to append to the end.</param>
     /// <exception cref="ArgumentException">Thrown when a schedule with the same name or instance already exists,
     /// or when the specified addAfter schedule is not found.</exception>
@@ -59,7 +58,6 @@ public sealed class SystemSchedules
     /// Adds a schedule to the collection, inserting it after a schedule specified by name.
     /// </summary>
     /// <param name="schedule">The schedule to add.</param>
-    /// <param name="name">The unique name identifier for the schedule.</param>
     /// <param name="addAfter">The name of the schedule after which to insert the new schedule.</param>
     /// <exception cref="ArgumentException">Thrown when a schedule with the same name already exists,
     /// or when the specified addAfter schedule name is not found.</exception>

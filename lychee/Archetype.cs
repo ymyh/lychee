@@ -9,7 +9,7 @@ namespace lychee;
 
 public sealed class ArchetypeManager : IDisposable
 {
-    private readonly List<Archetype> archetypes = [];
+    public List<Archetype> Archetypes { get; } = [];
 
     private readonly TypeRegistrar typeRegistrar;
 
@@ -32,7 +32,7 @@ public sealed class ArchetypeManager : IDisposable
     public ArchetypeManager(TypeRegistrar typeRegistrar)
     {
         this.typeRegistrar = typeRegistrar;
-        archetypes.Add(EmptyArchetype);
+        Archetypes.Add(EmptyArchetype);
     }
 
 #region Public methods
@@ -44,7 +44,7 @@ public sealed class ArchetypeManager : IDisposable
 
         lock (archetypeLock)
         {
-            foreach (var archetype in archetypes)
+            foreach (var archetype in Archetypes)
             {
                 if (archetype.TypeIdList.SequenceEqual(array))
                 {
@@ -52,13 +52,13 @@ public sealed class ArchetypeManager : IDisposable
                 }
             }
 
-            var id = archetypes.Count;
+            var id = Archetypes.Count;
             var typeInfoList = array.Select(id => typeRegistrar.GetTypeInfo(id)).ToArray();
-            archetypes.Add(new(id, array, typeInfoList, typeRegistrar));
+            Archetypes.Add(new(id, array, typeInfoList, typeRegistrar));
 
             ArchetypeCreated?.Invoke();
 
-            return archetypes[id];
+            return Archetypes[id];
         }
     }
 
@@ -89,7 +89,7 @@ public sealed class ArchetypeManager : IDisposable
     {
         lock (archetypeLock)
         {
-            return archetypes[id];
+            return Archetypes[id];
         }
     }
 
@@ -103,7 +103,7 @@ public sealed class ArchetypeManager : IDisposable
 
         lock (archetypeLock)
         {
-            return archetypes.Where(a =>
+            return Archetypes.Where(a =>
             {
                 var ret = typeRequires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
                 return allFilter.Select(type => typeRegistrar.RegisterComponent(type))
@@ -140,7 +140,7 @@ public sealed class ArchetypeManager : IDisposable
 
     internal void Commit(EntityPool entityPool)
     {
-        foreach (var archetype in archetypes)
+        foreach (var archetype in Archetypes)
         {
             archetype.Commit(entityPool);
         }
@@ -148,7 +148,7 @@ public sealed class ArchetypeManager : IDisposable
 
     internal Archetype GetArchetypeUnsafe(int id)
     {
-        return archetypes[id];
+        return Archetypes[id];
     }
 
 #endregion
@@ -157,7 +157,7 @@ public sealed class ArchetypeManager : IDisposable
 
     public void Dispose()
     {
-        foreach (var archetype in archetypes)
+        foreach (var archetype in Archetypes)
         {
             archetype.Dispose();
         }

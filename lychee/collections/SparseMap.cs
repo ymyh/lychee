@@ -168,6 +168,12 @@ public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
         return sparseArray[key];
     }
 
+    /// <summary>
+    /// Gets the value associated with the specified key, or returns the default value if the key is not found.
+    /// </summary>
+    /// <param name="key">The key of the value to get.</param>
+    /// <param name="defaultValue">The value to return if the key is not found.</param>
+    /// <returns>The value associated with the key if found; otherwise, <paramref name="defaultValue"/>.</returns>
     public T GetOrDefault(int key, T defaultValue)
     {
         if ((uint)key >= (uint)sparseArray.Count || sparseArray[key] == -1)

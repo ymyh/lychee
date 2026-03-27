@@ -45,6 +45,8 @@ public sealed class Table : IDisposable
 
     internal readonly List<TableMemoryChunk> Chunks = [];
 
+    private readonly Lock chunksLock = new();
+
     private readonly int chunkCapacity;
 
     private readonly int chunkSizeBytes;
@@ -94,7 +96,7 @@ public sealed class Table : IDisposable
     {
         if (!isInitialized)
         {
-            lock (this)
+            lock (chunksLock)
             {
                 if (!isInitialized)
                 {
@@ -210,7 +212,7 @@ public sealed class Table : IDisposable
 
     private int GetFirstAvailableViewIdx()
     {
-        lock (this)
+        lock (chunksLock)
         {
             if (!Chunks[lastAvailableViewIndex].IsFull)
             {

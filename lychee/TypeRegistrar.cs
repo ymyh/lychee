@@ -230,6 +230,11 @@ public sealed class TypeRegistrar
         return typeToIdDict.GetValueOrDefault(type, -1);
     }
 
+    /// <summary>
+    /// Retrieves the Type object associated with a unique type identifier.
+    /// </summary>
+    /// <param name="typeId">The unique type identifier to look up.</param>
+    /// <returns>The Type object registered with the specified identifier.</returns>
     public Type GetTypeById(int typeId)
     {
         return idToTypeDict[typeId];

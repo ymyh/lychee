@@ -16,7 +16,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 {
     private readonly Dictionary<Type, object> dataMap = new();
 
-    private static MethodInfo UnsafeAsRef = typeof(Unsafe).GetMethod("AsRef", BindingFlags.Static | BindingFlags.Public, [typeof(void*)])!;
+    private static readonly MethodInfo UnsafeAsRef = typeof(Unsafe).GetMethod("AsRef", BindingFlags.Static | BindingFlags.Public, [typeof(void*)])!;
 
     /// <summary>
     /// Adds a reference-type resource to the pool.

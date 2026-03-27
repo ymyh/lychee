@@ -1,4 +1,4 @@
-﻿namespace lychee;
+﻿namespace lychee.attributes;
 
 /// <summary>
 /// Marks a generic type parameter as requiring a sealed type.

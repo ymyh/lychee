@@ -22,8 +22,6 @@ public struct Entity(Commands commands, Archetype archetype)
     /// </summary>
     public int ID => Ref.ID;
 
-    internal int Generation => Ref.Generation;
-
     internal Commands Commands => commands;
 
     /// <summary>

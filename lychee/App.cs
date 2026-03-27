@@ -168,7 +168,6 @@ public sealed class App : IDisposable
     /// Adds a system schedule with a unique name for execution ordering.
     /// </summary>
     /// <param name="schedule">The schedule instance to add.</param>
-    /// <param name="name">A unique name identifying this schedule.</param>
     public void AddSchedule(ISchedule schedule)
     {
         World.SystemSchedules.AddSchedule(schedule);
@@ -178,7 +177,6 @@ public sealed class App : IDisposable
     /// Adds a system schedule, inserting it after an existing schedule in the execution order.
     /// </summary>
     /// <param name="schedule">The schedule instance to add.</param>
-    /// <param name="name">A unique name identifying this schedule.</param>
     /// <param name="addAfter">The name of the schedule after which this schedule should execute.</param>
     /// <exception cref="ArgumentException">Thrown when the schedule name already exists or the addAfter schedule is not found.</exception>
     public void AddSchedule(ISchedule schedule, string addAfter)

@@ -56,7 +56,7 @@ public sealed class Commands(App app)
         var entityRef = entityPool.ReserveEntity();
         var entity = new Entity(this, ArchetypeManager.EmptyArchetype, entityRef, new());
 
-        modifiedEntityInfoMap.AddOrUpdate(entityRef.ID, entity);
+        modifiedEntityInfoMap[entityRef.ID] = entity;
 
         return entity;
     }
@@ -78,7 +78,7 @@ public sealed class Commands(App app)
         entity.Archetype.MarkRemove(entity.ID, entity.Pos);
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity.Ref);
-        removedEntityMap.AddOrUpdate(entity.ID, entity);
+        removedEntityMap[entity.ID] = entity;
     }
 
     /// <summary>
@@ -102,7 +102,7 @@ public sealed class Commands(App app)
         e.Archetype.MarkRemove(e.ID, e.Pos);
         modifiedEntityInfoMap.Remove(e.ID);
         entityPool.MarkRemoveEntity(e.Ref);
-        removedEntityMap.AddOrUpdate(e.ID, e);
+        removedEntityMap[e.ID] = e;
     }
 
     /// <summary>
@@ -166,7 +166,7 @@ public sealed class Commands(App app)
 
         entity.Archetype = TransferDstInfo.Archetype;
         entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+        modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
     }
@@ -224,7 +224,7 @@ public sealed class Commands(App app)
 
         entity.Archetype = TransferDstInfo.Archetype;
         entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+        modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
     }
@@ -259,7 +259,7 @@ public sealed class Commands(App app)
 
         entity.Archetype = TransferDstInfo.Archetype;
         entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+        modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
     }
@@ -294,7 +294,7 @@ public sealed class Commands(App app)
 
         entity.Archetype = TransferDstInfo.Archetype;
         entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+        modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
     }
@@ -329,7 +329,7 @@ public sealed class Commands(App app)
 
         entity.Archetype = TransferDstInfo.Archetype;
         entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+        modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
     }
@@ -360,7 +360,7 @@ public sealed class Commands(App app)
         if (alter.Commit())
         {
             entity = alter.Entity;
-            modifiedEntityInfoMap.AddOrUpdate(entity.ID, entity);
+            modifiedEntityInfoMap[entity.ID] = entity;
             return true;
         }
 
@@ -434,7 +434,7 @@ public sealed class Commands(App app)
         {
             dict = new();
             TransferDstInfo = null;
-            ArchetypeAddingTypeMap.AddOrUpdate(archetype.ID, dict);
+            map.AddOrUpdate(archetype.ID, dict);
         }
 
         return dict;

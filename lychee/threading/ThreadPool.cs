@@ -11,9 +11,7 @@ public sealed class ThreadPool : IDisposable
 
     private readonly Channel<Action<int>> sendTaskChannel;
 
-    private readonly Channel<int> taskCompleteChannel;
-
-    private int taskCount;
+    private CountdownEvent countdownEvent = new(1);
 
     public ThreadPool(int threadCount)
     {
@@ -29,12 +27,6 @@ public sealed class ThreadPool : IDisposable
             SingleReader = false,
             SingleWriter = true,
         });
-        taskCompleteChannel = Channel.CreateBounded<int>(new BoundedChannelOptions(64)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true,
-            SingleWriter = false,
-        });
 
         for (var i = 0; i < threadCount; i++)
         {
@@ -47,16 +39,14 @@ public sealed class ThreadPool : IDisposable
                     {
                         var act = await sendTaskChannel.Reader.ReadAsync();
                         act(idx);
-                        taskCompleteChannel.Writer.TryWrite(0);
                     }
                     catch (ChannelClosedException)
                     {
                         break;
                     }
-                    catch (Exception e)
+                    finally
                     {
-                        Console.WriteLine(e);
-                        break;
+                        countdownEvent.Signal();
                     }
                 }
             });
@@ -72,41 +62,47 @@ public sealed class ThreadPool : IDisposable
     /// <param name="act">The task to dispatch. The parameter of action is the index of thread.</param>
     public void Dispatch(Action<int> act)
     {
-        taskCount++;
+        countdownEvent.TryAddCount();
         sendTaskChannel.Writer.TryWrite(act);
     }
 
     /// <summary>
     /// Wait until all tasks are completed.
     /// </summary>
-    /// <returns></returns>
-    public async Task AsTask()
+    public void Wait()
     {
-        while (taskCount > 0)
+        countdownEvent.Signal();
+
+        if (countdownEvent.CurrentCount == 0)
         {
-            await taskCompleteChannel.Reader.ReadAsync();
-            taskCount--;
+            countdownEvent.Reset();
+            return;
         }
-    }
 
-    /// <summary>
-    /// Spin wait until all tasks are completed.
-    /// </summary>
-    public void SpinWait()
-    {
-        while (taskCount > 0)
+        try
         {
-            var task = taskCompleteChannel.Reader.ReadAsync();
-            System.Threading.SpinWait.SpinUntil(() => task.IsCompleted);
-
-            taskCount--;
+            countdownEvent.Wait();
+            countdownEvent.Reset();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed, ignore
         }
     }
 
     public void Dispose()
     {
         sendTaskChannel.Writer.Complete();
-        taskCompleteChannel.Writer.Complete();
-        threads.ForEach(x => x.Join());
+
+        foreach (var thread in threads)
+        {
+            if (!thread.Join(1000))
+            {
+                thread.Interrupt();
+            }
+        }
+
+        countdownEvent.Dispose();
+        threads.Clear();
     }
 }

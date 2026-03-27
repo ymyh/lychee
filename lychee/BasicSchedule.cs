@@ -185,7 +185,7 @@ public abstract class BasicSchedule : ISchedule
             var ctor = type.GetConstructor([])!;
             var system = (ctor.Invoke([]) as ISystem)!;
 
-            DoAddSystem(system, new() { AddAfter = addAfter});
+            DoAddSystem(system, new() { AddAfter = addAfter });
             addAfter = system;
         }
     }
@@ -229,7 +229,7 @@ public abstract class BasicSchedule : ISchedule
     {
         if (CheckIfMultiThread(system))
         {
-            if (descriptor.ThreadCount == 0 || descriptor.GroupSize == 0)
+            if (descriptor.ThreadCount <= 0 || descriptor.GroupSize <= 0)
             {
                 throw new ArgumentException("SystemDescriptor.ThreadCount and SystemDescriptor.GroupSize must not be 0 when system is multi-threaded mode on");
             }
@@ -476,7 +476,7 @@ public abstract class BasicSchedule : ISchedule
 
             if (ExecutionMode == ExecutionModeEnum.MultiThread)
             {
-                app.ThreadPool.AsTask().Wait();
+                app.ThreadPool.Wait();
 
                 if (CommitPoint == CommitPointEnum.Synchronization)
                 {

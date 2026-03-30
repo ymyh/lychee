@@ -102,13 +102,15 @@ partial class {sysInfo.Name} : ISystem
         public static Archetype[] Archetypes;
 
         public static Commands[] Commands;
+
+        public static int LastArchetypeIdx = 0;
     }}
 {MakeResourceDataAGCode(resourceTypes)}
 {MakeInitializeAGCode(componentTypes, resourceTypes, sysInfo.MultiThread)}
 
     public void ConfigureAG(App app, SystemFilterInfo filterInfo)
     {{
-        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList);
+        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList, ref SystemDataAG.LastArchetypeIdx);
     }}
 {MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
 }}

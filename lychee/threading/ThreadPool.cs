@@ -11,7 +11,7 @@ public sealed class ThreadPool : IDisposable
 
     private readonly Channel<Action<int>> sendTaskChannel;
 
-    private CountdownEvent countdownEvent = new(1);
+    private readonly CountdownEvent countdownEvent = new(1);
 
     public ThreadPool(int threadCount)
     {
@@ -49,7 +49,7 @@ public sealed class ThreadPool : IDisposable
                         countdownEvent.Signal();
                     }
                 }
-            });
+            }) { IsBackground = true };
 
             threads.Add(thread);
             thread.Start();
@@ -90,6 +90,8 @@ public sealed class ThreadPool : IDisposable
         }
     }
 
+#region IDisposable Member
+
     public void Dispose()
     {
         sendTaskChannel.Writer.Complete();
@@ -105,4 +107,6 @@ public sealed class ThreadPool : IDisposable
         countdownEvent.Dispose();
         threads.Clear();
     }
+
+#endregion
 }

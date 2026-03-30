@@ -94,16 +94,19 @@ public sealed class ArchetypeManager : IDisposable
     }
 
     public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
-        int[] typeRequires)
+        int[] typeRequires, ref int startIndex)
     {
         if (typeRequires.Length == 0)
         {
             return [];
         }
 
+        var idx = startIndex;
+        startIndex = Archetypes.Count;
+
         lock (archetypeLock)
         {
-            return Archetypes.Where(a =>
+            return Archetypes.Skip(idx).Where(a =>
             {
                 var ret = typeRequires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
                 return allFilter.Select(type => typeRegistrar.RegisterComponent(type))

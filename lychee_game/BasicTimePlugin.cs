@@ -1,4 +1,5 @@
-﻿using lychee_game.schedules;
+﻿using lychee_game.resources;
+using lychee_game.schedules;
 using lychee;
 using lychee.attributes;
 using lychee.interfaces;
@@ -39,7 +40,7 @@ public sealed class BasicTimePlugin : IPlugin
     {
         if (!app.HasResource<BasicGamePlugin>())
         {
-            throw new PluginRequirementException("BasicGamePlugin is required");
+            throw new PluginRequirementException(nameof(BasicTimePlugin));
         }
 
         app.AddResource(new Time());

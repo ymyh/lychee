@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace lychee_game;
+namespace lychee_game.resources;
 
 public sealed class Time
 {

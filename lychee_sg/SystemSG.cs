@@ -269,35 +269,39 @@ partial class {sysInfo.Name} : ISystem
         {
             var declResourceCode = new StringBuilder();
 
-            if (resourceParams.Length > 0)
+            if (resourceParams.Length == 0)
             {
-                declResourceCode.AppendLine("    private static class ResourceDataAG");
-                declResourceCode.AppendLine("    {");
-
-                for (var i = 0; i < resourceParams.Length; i++)
-                {
-                    var resourceParam = resourceParams[i];
-                    var paramName = resourceParam.ParamName;
-
-                    if (resourceParam.ParamKind == ParamKind.ClassResource)
-                    {
-                        declResourceCode.AppendLine($"        public static {resourceParam.Type} {paramName};");
-                    }
-                    else
-                    {
-                        declResourceCode.AppendLine($"        public static unsafe {resourceParam.Type}* {paramName};");
-                    }
-
-                    if (i != resourceParams.Length - 1)
-                    {
-                        declResourceCode.AppendLine();
-                    }
-                }
-
-                declResourceCode.Append("    }");
+                return "";
             }
 
-            return declResourceCode.ToString();
+            for (var i = 0; i < resourceParams.Length; i++)
+            {
+                var resourceParam = resourceParams[i];
+                var paramName = resourceParam.ParamName;
+
+                if (resourceParam.ParamKind == ParamKind.ClassResource)
+                {
+                    declResourceCode.AppendLine($"        public static {resourceParam.Type} {paramName};");
+                }
+                else
+                {
+                    declResourceCode.AppendLine($"        public static unsafe {resourceParam.Type}* {paramName};");
+                }
+
+                if (i != resourceParams.Length - 1)
+                {
+                    declResourceCode.AppendLine();
+                }
+            }
+
+            var code = $@"
+    private static class ResourceDataAG
+    {{
+        {declResourceCode}
+    }}
+";
+
+            return code;
         }
 
         private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams,

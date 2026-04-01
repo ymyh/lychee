@@ -319,6 +319,7 @@ partial class {sysInfo.Name} : ISystem
         {{
 {GenIterArchetypeCode(componentParams, execParams, hasComponentSpan, systemInfo.MultiThread)}
         }}
+        {(systemInfo.MultiThread ? "\n        SystemDataAG.ThreadPool.Wait();" : "")}
         {(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
         return SystemDataAG.Commands;";
             }
@@ -331,7 +332,7 @@ partial class {sysInfo.Name} : ISystem
             }
 
             return $@"
-    public unsafe ReadOnlySpan<Commands> ExecuteAG()
+    public unsafe Commands[] ExecuteAG()
     {{{body}
     }}";
         }
@@ -388,7 +389,7 @@ partial class {sysInfo.Name} : ISystem
             if (hasComponentSpan)
             {
                 return $@"
-            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupCount))
+            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupSize))
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{
@@ -407,7 +408,7 @@ partial class {sysInfo.Name} : ISystem
             }
 
             return $@"
-            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupCount))
+            foreach (var (chunkIdx, chunkCount) in archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupSize))
             {{
                 SystemDataAG.ThreadPool.Dispatch(threadIdx =>
                 {{

@@ -60,6 +60,8 @@ public abstract class BasicSchedule : ISchedule
 
     private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
 
+    private Commands[][] multiThreadResults = [];
+
     private readonly App app;
 
     private readonly List<Commands> entityCommanders = [];
@@ -448,6 +450,11 @@ public abstract class BasicSchedule : ISchedule
             frozenDagNodes = ExecutionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
             isFrozen = true;
 
+            var maxGroupSize = frozenDagNodes.Select(x => x.Length).DefaultIfEmpty(0).Max();
+
+            multiThreadResults = new Commands[maxGroupSize][];
+            Array.Clear(multiThreadResults, 0, maxGroupSize);
+
             if (needConfigure)
             {
                 Configure();
@@ -457,9 +464,9 @@ public abstract class BasicSchedule : ISchedule
 
         foreach (var group in frozenDagNodes)
         {
-            foreach (var frozenDagNode in group)
+            if (ExecutionMode == ExecutionModeEnum.SingleThread)
             {
-                if (ExecutionMode == ExecutionModeEnum.SingleThread)
+                foreach (var frozenDagNode in group)
                 {
                     entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG());
 
@@ -468,15 +475,25 @@ public abstract class BasicSchedule : ISchedule
                         Commit();
                     }
                 }
-                else
-                {
-                    app.ThreadPool.Dispatch(_ => { entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG()); });
-                }
             }
-
-            if (ExecutionMode == ExecutionModeEnum.MultiThread)
+            else
             {
+                for (var i = 0; i < group.Length; i++)
+                {
+                    var node = group[i];
+                    var idx = i;
+                    app.ThreadPool.Dispatch(_ => { multiThreadResults[idx] = node.Data.System.ExecuteAG(); });
+                }
+
                 app.ThreadPool.Wait();
+
+                for (var i = 0; i < group.Length; i++)
+                {
+                    if (multiThreadResults[i].Length > 0)
+                    {
+                        entityCommanders.AddRange(multiThreadResults[i]);
+                    }
+                }
 
                 if (CommitPoint == CommitPointEnum.Synchronization)
                 {

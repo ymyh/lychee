@@ -150,6 +150,17 @@ public sealed class Table : IDisposable
         }
     }
 
+    public (nint ptr, int size) GetChunkData(int typeIdx, int chunkIdx)
+    {
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+
+        unsafe
+        {
+            var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * chunkCapacity;
+            return (ptr, Chunks[chunkIdx].Size);
+        }
+    }
+
     public (nint ptr, int size) GetChunkDataWithReservation(int typeIdx, int chunkIdx)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];

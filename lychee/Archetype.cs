@@ -242,10 +242,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
-    internal (nint ptr, int size) GetChunkDataWithReservation(int typeId, int chunkIdx)
+    public (nint ptr, int size) GetChunkData(int typeId, int chunkIdx)
     {
         var typeIdx = GetTypeIndex(typeId);
-        return Table.GetChunkDataWithReservation(typeIdx, chunkIdx);
+        return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
     public Span<(int, EntityRef)> GetEntitiesSpan()
@@ -256,6 +256,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 #endregion
 
 #region Internal Methods
+
+    internal (nint ptr, int size) GetChunkDataWithReservation(int typeId, int chunkIdx)
+    {
+        var typeIdx = GetTypeIndex(typeId);
+        return Table.GetChunkDataWithReservation(typeIdx, chunkIdx);
+    }
 
     internal void Commit(EntityPool entityPool)
     {

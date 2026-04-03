@@ -225,6 +225,65 @@ partial class TimeSystem
 }
 ```
 
+## Event System
+
+The event system provides a thread-safe way to communicate between Systems using double buffering.
+Events sent in the current frame will be readable in the next update.
+
+### Adding Events
+
+Events are registered as resources in the App:
+
+```csharp
+// Define event data type
+public struct DamageEvent
+{
+    public Entity Target;
+    public int Amount;
+}
+
+// Register event
+app.AddEvent<DamageEvent>();
+```
+
+### Sending Events
+
+Use the `[Resource]` attribute to access the event in a System:
+
+```csharp
+[AutoImplSystem]
+partial class CombatSystem
+{
+    private static void Execute([Resource] Event<DamageEvent> damageEvent, ref Health health)
+    {
+        if (health.Value <= 0)
+        {
+            damageEvent.SendEvent(new DamageEvent { Target = entity, Amount = 10 });
+        }
+    }
+}
+```
+
+### Reading Events
+
+Events sent in the previous frame can be read using `GetEnumerable()`:
+
+```csharp
+[AutoImplSystem]
+partial class DamageDisplaySystem
+{
+    private static void Execute([Resource] Event<DamageEvent> damageEvent)
+    {
+        foreach (var ev in damageEvent.GetEnumerable())
+        {
+            Console.WriteLine($"Entity {ev.Target} took {ev.Amount} damage");
+        }
+    }
+}
+```
+
+**Note**: Events are automatically exchanged at the beginning of each update called.
+
 ## Scheduling System
 
 ### Schedules Provided by BasicGamePlugin

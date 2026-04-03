@@ -102,10 +102,11 @@ public sealed class ArchetypeManager : IDisposable
         }
 
         var idx = startIndex;
-        startIndex = Archetypes.Count;
 
         lock (archetypeLock)
         {
+            startIndex = Archetypes.Count - 1;
+
             return Archetypes.Skip(idx).Where(a =>
             {
                 var ret = typeRequires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
@@ -408,10 +409,10 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
-    private void GetTypeIndices(IEnumerable<int> typeIdList, Span<int> output)
+    private void GetTypeIndices(IEnumerable<int> typeIds, Span<int> output)
     {
         var i = 0;
-        foreach (var typeId in typeIdList)
+        foreach (var typeId in typeIds)
         {
             output[i] = typeIdxMap[typeId];
             i++;

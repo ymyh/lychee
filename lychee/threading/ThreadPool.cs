@@ -13,7 +13,7 @@ public sealed class ThreadPool : IDisposable
 
     private readonly CountdownEvent countdownEvent = new(1);
 
-    public ThreadPool(int threadCount)
+    public ThreadPool(int threadCount, int channelCapacity = 64)
     {
         if (threadCount < 1)
         {
@@ -21,7 +21,7 @@ public sealed class ThreadPool : IDisposable
         }
 
         threads = new(threadCount);
-        sendTaskChannel = Channel.CreateBounded<Action<int>>(new BoundedChannelOptions(64)
+        sendTaskChannel = Channel.CreateBounded<Action<int>>(new BoundedChannelOptions(channelCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
@@ -79,15 +79,8 @@ public sealed class ThreadPool : IDisposable
             return;
         }
 
-        try
-        {
-            countdownEvent.Wait();
-            countdownEvent.Reset();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Already disposed, ignore
-        }
+        countdownEvent.Wait();
+        countdownEvent.Reset();
     }
 
 #region IDisposable Member

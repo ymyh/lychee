@@ -12,8 +12,6 @@ public sealed class Mesh2D
 
     public Vector2[] UVs;
 
-    public Vector4[] Colors;
-
     public object[] Textures;
 
     public int[] Indices;

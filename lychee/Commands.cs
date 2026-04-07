@@ -683,16 +683,11 @@ public struct EntityAlterContext
         var dstArchetype = Entity.Commands.TransferDstInfo!.Archetype;
         var (chunkIdx, idx) = dstArchetype.Reserve();
 
-        // Write component data
         dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
 
-        // Move common data from current archetype
         originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-
-        // Mark current position for removal
         originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
 
-        // Update entity to new position
         Entity.Archetype = dstArchetype;
         Entity.Pos = new(chunkIdx, idx);
 
@@ -723,7 +718,6 @@ public struct EntityAlterContext
         var dstArchetype = Entity.Commands.TransferDstInfo!.Archetype;
         var (chunkIdx, idx) = dstArchetype.Reserve();
 
-        // Write bundle data
         for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
         {
             unsafe
@@ -738,13 +732,9 @@ public struct EntityAlterContext
             }
         }
 
-        // Move common data from current archetype
         originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-
-        // Mark current position for removal
         originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
 
-        // Update entity to new position
         Entity.Archetype = dstArchetype;
         Entity.Pos = new(chunkIdx, idx);
 
@@ -758,22 +748,18 @@ public struct EntityAlterContext
     /// </summary>
     internal bool Commit()
     {
-        // If Add was called, migration already happened
         if (hasAdded)
         {
             return true;
         }
 
-        // Only Remove was called - need to perform migration
         var dstArchetype = Entity.Commands.TransferDstInfo?.Archetype ?? originalArchetype;
 
-        // No actual change needed (component didn't exist)
         if (dstArchetype == originalArchetype)
         {
             return false;
         }
 
-        // Reserve space and migrate
         var (chunkIdx, idx) = dstArchetype.Reserve();
         originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
         originalArchetype.MarkRemove(Entity.ID, Entity.Pos);

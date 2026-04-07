@@ -37,6 +37,15 @@ public sealed class ArchetypeManager : IDisposable
 
 #region Public methods
 
+    /// <summary>
+    /// Gets an existing archetype with the specified component types, or creates a new one if it doesn't exist.
+    /// </summary>
+    /// <param name="typeIdList">A collection of component type IDs that define the archetype.</param>
+    /// <returns>The archetype matching the specified component types.</returns>
+    /// <remarks>
+    /// The type IDs are sorted internally to ensure consistent archetype identification.
+    /// This method is thread-safe.
+    /// </remarks>
     public Archetype GetOrCreateArchetype(IEnumerable<int> typeIdList)
     {
         var array = typeIdList.ToArray();
@@ -62,6 +71,14 @@ public sealed class ArchetypeManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or creates an archetype using a tuple type to specify component types.
+    /// </summary>
+    /// <typeparam name="T">A tuple type containing the component types (e.g., (Position, Velocity)).</typeparam>
+    /// <returns>The archetype matching the specified component types.</returns>
+    /// <remarks>
+    /// This is a convenience method that extracts types from a tuple and registers them as components.
+    /// </remarks>
     public Archetype GetOrCreateArchetypeWithTuple<T>()
     {
         var typeList = TypeUtils.GetTupleTypes<T>();
@@ -70,6 +87,14 @@ public sealed class ArchetypeManager : IDisposable
         return GetOrCreateArchetype(typeIds);
     }
 
+    /// <summary>
+    /// Gets or creates an archetype using a component bundle to specify component types.
+    /// </summary>
+    /// <typeparam name="T">A struct implementing IComponentBundle that defines the component types as fields.</typeparam>
+    /// <returns>The archetype matching the component types defined in the bundle.</returns>
+    /// <remarks>
+    /// This method extracts field types from the bundle struct and uses them as component types.
+    /// </remarks>
     public Archetype GetOrCreateArchetypeWithBundle<T>() where T : IComponentBundle
     {
         var type = typeof(T);
@@ -93,6 +118,19 @@ public sealed class ArchetypeManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Finds all archetypes that match the specified filter predicates.
+    /// </summary>
+    /// <param name="allFilter">Types that must ALL be present in the archetype.</param>
+    /// <param name="anyFilter">Types where AT LEAST ONE must be present in the archetype.</param>
+    /// <param name="noneFilter">Types that must NOT be present in the archetype.</param>
+    /// <param name="typeRequires">Type IDs that are required (similar to allFilter but using IDs).</param>
+    /// <param name="startIndex">Reference parameter for incremental searching; updated to the last searched index.</param>
+    /// <returns>An array of archetypes that match all the specified filters.</returns>
+    /// <remarks>
+    /// This method is thread-safe and is typically used by query systems to find relevant archetypes.
+    /// The startIndex parameter allows for incremental matching of newly created archetypes.
+    /// </remarks>
     public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
         int[] typeRequires, ref int startIndex)
     {
@@ -159,6 +197,9 @@ public sealed class ArchetypeManager : IDisposable
 
 #region IDisposable Member
 
+    /// <summary>
+    /// Releases all resources used by the ArchetypeManager and all managed archetypes.
+    /// </summary>
     public void Dispose()
     {
         foreach (var archetype in Archetypes)
@@ -188,12 +229,28 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
 #region Public Properties
 
+    /// <summary>
+    /// The unique identifier of this archetype.
+    /// </summary>
     public int ID { get; } = id;
 
+    /// <summary>
+    /// The sorted array of component type IDs that define this archetype.
+    /// </summary>
     public int[] TypeIdList { get; } = typeIdList.Distinct().Count() != typeIdList.Length ? throw new ArgumentException("Duplicate type id in archetype.") : typeIdList;
 
+    /// <summary>
+    /// Gets the array of component types in this archetype.
+    /// </summary>
     public Type[] Types => typeIdList.Select(typeRegistrar.GetTypeById).ToArray();
 
+    /// <summary>
+    /// Indicates whether the archetype's table and entity count are synchronized.
+    /// </summary>
+    /// <remarks>
+    /// Returns true when the total count in the table equals the number of tracked entities.
+    /// An archetype may be incoherent temporarily during structural changes.
+    /// </remarks>
     public bool IsCoherent => Table.TotalCount == entities.Count;
 
 #endregion
@@ -202,12 +259,31 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
 #region Public Methods
 
+    /// <summary>
+    /// Iterates over the raw memory data of a specific component type across all chunks.
+    /// </summary>
+    /// <param name="typeId">The component type ID to iterate.</param>
+    /// <returns>An enumerable of tuples containing the memory pointer and element count for each chunk.</returns>
+    /// <remarks>
+    /// This method is useful for efficient bulk processing of component data.
+    /// The returned pointers point to unmanaged memory; use with caution.
+    /// </remarks>
     public IEnumerable<(nint ptr, int size)> IterateDataAmongChunk(int typeId)
     {
         var typeIdx = GetTypeIndex(typeId);
         return Table.IterateOfTypeAmongChunk(typeIdx);
     }
 
+    /// <summary>
+    /// Iterates over chunks in groups based on a target group size.
+    /// </summary>
+    /// <param name="groupSize">The minimum number of entities to include in each group.</param>
+    /// <returns>An enumerable of tuples containing the starting chunk index and the number of chunks in each group.</returns>
+    /// <remarks>
+    /// This method is useful for parallel processing or batching operations across chunks.
+    /// Groups may span multiple chunks to reach the target size.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when groupSize is less than 1.</exception>
     public IEnumerable<(int chunkIdx, int chunkCount)> IterateChunksAmongType(int groupSize)
     {
         if (groupSize < 1)
@@ -243,12 +319,22 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
+    /// <summary>
+    /// Gets the raw memory pointer and element count for a specific component type in a specific chunk.
+    /// </summary>
+    /// <param name="typeId">The component type ID.</param>
+    /// <param name="chunkIdx">The index of the chunk.</param>
+    /// <returns>A tuple containing the memory pointer and the number of elements in the chunk.</returns>
     public (nint ptr, int size) GetChunkData(int typeId, int chunkIdx)
     {
         var typeIdx = GetTypeIndex(typeId);
         return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
+    /// <summary>
+    /// Gets a span of all entity references stored in this archetype.
+    /// </summary>
+    /// <returns>A span containing tuples of entity IDs and their corresponding EntityRef structs.</returns>
     public Span<(int, EntityRef)> GetEntitiesSpan()
     {
         return entities.GetDenseAsSpan();

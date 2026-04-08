@@ -464,10 +464,20 @@ public abstract class BasicSchedule : ISchedule
 
         foreach (var group in frozenDagNodes)
         {
+            foreach (var frozenDagNode in group)
+            {
+                frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
+            }
+
             if (ExecutionMode == ExecutionModeEnum.SingleThread)
             {
                 foreach (var frozenDagNode in group)
                 {
+                    if (!frozenDagNode.Data.Predicate)
+                    {
+                        continue;
+                    }
+
                     entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG());
 
                     if (CommitPoint == CommitPointEnum.Synchronization)
@@ -482,6 +492,12 @@ public abstract class BasicSchedule : ISchedule
                 {
                     var node = group[i];
                     var idx = i;
+
+                    if (!node.Data.Predicate)
+                    {
+                        continue;
+                    }
+
                     app.ThreadPool.Dispatch(_ => { multiThreadResults[idx] = node.Data.System.ExecuteAG(); });
                 }
 

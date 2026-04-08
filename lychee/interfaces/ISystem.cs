@@ -23,4 +23,9 @@ public interface ISystem
     /// Execute the system from <see cref="ISchedule"/>.
     /// </summary>
     public Commands[] ExecuteAG();
+
+    public bool Predicate(ResourcePool pool)
+    {
+        return true;
+    }
 }

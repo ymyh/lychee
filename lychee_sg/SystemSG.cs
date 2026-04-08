@@ -42,6 +42,8 @@ namespace lychee_sg
         public ParamKind ParamKind;
 
         public string ParamName;
+
+        public bool ResourceRequireOnExec;
     }
 
     [Generator]
@@ -143,6 +145,7 @@ partial class {sysInfo.Name} : ISystem
             var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDecl);
             var autoImplAttr = classSymbol.GetAttributes()
                 .First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystem");
+            var resourceRequireOnExec = false;
 
             var multiThread = (bool)autoImplAttr.ConstructorArguments[0].Value;
 
@@ -172,13 +175,16 @@ partial class {sysInfo.Name} : ISystem
                                 paramKind = ParamKind.ComponentSpan;
                             }
 
-                            if (x.GetAttributes().Any(a =>
-                                {
-                                    var name = a.AttributeClass.ToDisplayString();
-                                    return name == "lychee.attributes.Resource";
-                                }))
+                            var attr = x.GetAttributes().FirstOrDefault(a =>
+                            {
+                                var name = a.AttributeClass.ToDisplayString();
+                                return name == "lychee.attributes.Resource";
+                            });
+
+                            if (attr != null)
                             {
                                 paramKind = x.Type.IsValueType ? ParamKind.StructResource : ParamKind.ClassResource;
+                                resourceRequireOnExec = (bool)attr.ConstructorArguments[1].Value;
                             }
 
                             return new ParamInfo
@@ -187,6 +193,7 @@ partial class {sysInfo.Name} : ISystem
                                 RefKind = x.RefKind,
                                 ParamKind = paramKind,
                                 ParamName = x.Name,
+                                ResourceRequireOnExec = resourceRequireOnExec
                             };
                         }).ToArray();
                     }
@@ -224,15 +231,21 @@ partial class {sysInfo.Name} : ISystem
 
             foreach (var resourceType in resourceTypes)
             {
-                if (resourceType.ParamKind == ParamKind.ClassResource)
+                if (!resourceType.ResourceRequireOnExec)
                 {
-                    resourceDecl.AppendLine(
-                        $"        ResourceDataAG.{resourceType.ParamName} = app.GetResource<{resourceType.Type}>();");
-                }
-                else
-                {
-                    resourceDecl.AppendLine(
-                        $"        ResourceDataAG.{resourceType.ParamName} = app.GetResourcePtr<{resourceType.Type}>();");
+                    if (resourceType.ParamKind == ParamKind.ClassResource)
+                    {
+                        if (resourceType.RefKind == RefKind.None)
+                        {
+                            resourceDecl.AppendLine(
+                                $"        ResourceDataAG.{resourceType.ParamName} = app.GetResource<{resourceType.Type}>();");
+                        }
+                    }
+                    else
+                    {
+                        resourceDecl.AppendLine(
+                            $"        ResourceDataAG.{resourceType.ParamName} = app.GetResourcePtr<{resourceType.Type}>();");
+                    }
                 }
             }
 
@@ -279,25 +292,31 @@ partial class {sysInfo.Name} : ISystem
                 var resourceParam = resourceParams[i];
                 var paramName = resourceParam.ParamName;
 
-                if (resourceParam.ParamKind == ParamKind.ClassResource)
+                if (!resourceParam.ResourceRequireOnExec)
                 {
-                    declResourceCode.AppendLine($"        public static {resourceParam.Type} {paramName};");
-                }
-                else
-                {
-                    declResourceCode.AppendLine($"        public static unsafe {resourceParam.Type}* {paramName};");
-                }
+                    if (resourceParam.ParamKind == ParamKind.ClassResource)
+                    {
+                        if (resourceParam.RefKind == RefKind.None)
+                        {
+                            declResourceCode.AppendLine($"        public static {resourceParam.Type} {paramName};");
+                        }
+                    }
+                    else
+                    {
+                        declResourceCode.AppendLine($"        public static unsafe {resourceParam.Type}* {paramName};");
+                    }
 
-                if (i != resourceParams.Length - 1)
-                {
-                    declResourceCode.AppendLine();
+                    if (i != resourceParams.Length - 1)
+                    {
+                        declResourceCode.AppendLine();
+                    }
                 }
             }
 
             var code = $@"
     private static class ResourceDataAG
     {{
-        {declResourceCode}
+{declResourceCode}
     }}
 ";
 
@@ -347,6 +366,30 @@ partial class {sysInfo.Name} : ISystem
                 {
                     var paramName = resourceParam.ParamName;
 
+                    if (resourceParam.ResourceRequireOnExec)
+                    {
+                        if (resourceParam.ParamKind == ParamKind.StructResource)
+                        {
+                            declResourceCode.AppendLine(
+                                $"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceStructRef<{resourceParam.Type}>();");
+                        }
+                        else if (resourceParam.ParamKind == ParamKind.ClassResource)
+                        {
+                            if (resourceParam.RefKind != RefKind.None)
+                            {
+                                declResourceCode.AppendLine(
+                                    $"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
+                            }
+                            else
+                            {
+                                declResourceCode.AppendLine(
+                                    $"        var {paramName} = SystemDataAG.Pool.GetResource<{resourceParam.Type}>();");
+                            }
+                        }
+
+                        continue;
+                    }
+
                     if (resourceParam.ParamKind == ParamKind.StructResource)
                     {
                         declResourceCode.AppendLine(
@@ -357,7 +400,6 @@ partial class {sysInfo.Name} : ISystem
                     {
                         declResourceCode.AppendLine(
                             $"        ref var {paramName} = ref SystemDataAG.Pool.GetResourceClassRef<{resourceParam.Type}>();");
-                        break;
                     }
                 }
             }
@@ -521,7 +563,13 @@ partial class {sysInfo.Name} : ISystem
                             case RefKind.Ref:
                                 return $"ref {paramName}";
                             case RefKind.None:
-                                return $"ResourceDataAG.{paramName}";
+
+                                if (!param.ResourceRequireOnExec)
+                                {
+                                    return $"ResourceDataAG.{paramName}";
+                                }
+
+                                return paramName;
                         }
 
                         break;

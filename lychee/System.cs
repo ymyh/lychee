@@ -11,13 +11,15 @@ public struct SystemParameterInfo(Type type, bool readOnly, bool isResource)
     public readonly bool IsResource = isResource;
 }
 
-public struct SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo)
+public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo)
 {
     internal readonly ISystem System = system;
 
     internal readonly SystemParameterInfo[] Parameters = parameters;
 
     internal readonly SystemFilterInfo FilterInfo = filterInfo;
+
+    internal bool Predicate = false;
 }
 
 /// <summary>

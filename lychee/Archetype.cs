@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using lychee.collections;
+using lychee.extensions;
 using lychee.interfaces;
 using lychee.utils;
 
@@ -131,7 +132,7 @@ public sealed class ArchetypeManager : IDisposable
     /// This method is thread-safe and is typically used by query systems to find relevant archetypes.
     /// The startIndex parameter allows for incremental matching of newly created archetypes.
     /// </remarks>
-    public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
+    public IEnumerable<Archetype> MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
         int[] typeRequires, ref int startIndex)
     {
         if (typeRequires.Length == 0)
@@ -143,7 +144,7 @@ public sealed class ArchetypeManager : IDisposable
 
         lock (archetypeLock)
         {
-            startIndex = Archetypes.Count - 1;
+            startIndex = Archetypes.Count;
 
             return Archetypes.Skip(idx).Where(a =>
             {
@@ -172,7 +173,7 @@ public sealed class ArchetypeManager : IDisposable
                 }
 
                 return ret;
-            }).ToArray();
+            });
         }
     }
 

@@ -87,6 +87,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using lychee;
 using lychee.interfaces;
+using lychee.extensions;
 using ThreadPool = lychee.threading.ThreadPool;
 
 namespace {sysInfo.Namespace};
@@ -101,7 +102,7 @@ partial class {sysInfo.Name} : ISystem
 
         public static int[] TypeIdList;
 
-        public static Archetype[] Archetypes;
+        public static Archetype[] Archetypes = [];
 
         public static Commands[] Commands;
 
@@ -112,7 +113,7 @@ partial class {sysInfo.Name} : ISystem
 
     public void ConfigureAG(App app, SystemFilterInfo filterInfo)
     {{
-        SystemDataAG.Archetypes = app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList, ref SystemDataAG.LastArchetypeIdx);
+        SystemDataAG.Archetypes = SystemDataAG.Archetypes.Concat(app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList, ref SystemDataAG.LastArchetypeIdx)).ToArray();
     }}
 {MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
 }}

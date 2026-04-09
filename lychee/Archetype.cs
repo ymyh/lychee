@@ -38,6 +38,14 @@ public sealed class ArchetypeManager : IDisposable
 
 #region Public methods
 
+    public void ClearData()
+    {
+        foreach (var archetype in Archetypes)
+        {
+            archetype.Clear();
+        }
+    }
+
     /// <summary>
     /// Gets an existing archetype with the specified component types, or creates a new one if it doesn't exist.
     /// </summary>
@@ -132,7 +140,7 @@ public sealed class ArchetypeManager : IDisposable
     /// This method is thread-safe and is typically used by query systems to find relevant archetypes.
     /// The startIndex parameter allows for incremental matching of newly created archetypes.
     /// </remarks>
-    public IEnumerable<Archetype> MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
+    public Archetype[] MatchArchetypesByPredicate(Type[] allFilter, Type[] anyFilter, Type[] noneFilter,
         int[] typeRequires, ref int startIndex)
     {
         if (typeRequires.Length == 0)
@@ -173,7 +181,7 @@ public sealed class ArchetypeManager : IDisposable
                 }
 
                 return ret;
-            });
+            }).ToArray();
         }
     }
 
@@ -275,6 +283,22 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         return Table.IterateOfTypeAmongChunk(typeIdx);
     }
 
+    public IEnumerable<UnsafeSpan<T>> IterateDataAmongChunk<T>(int typeId) where T : unmanaged
+    {
+        var typeIdx = GetTypeIndex(typeId);
+
+        foreach (var (ptr, size) in Table.IterateOfTypeAmongChunk(typeIdx))
+        {
+            UnsafeSpan<T> span;
+            unsafe
+            {
+                span = new((T*)ptr, size);
+            }
+
+            yield return span;
+        }
+    }
+
     /// <summary>
     /// Iterates over chunks in groups based on a target group size.
     /// </summary>
@@ -332,6 +356,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         return Table.GetChunkData(typeIdx, chunkIdx);
     }
 
+    public Span<T> GetChunkData<T>(int typeId, int chunkIdx) where T : unmanaged
+    {
+        var typeIdx = GetTypeIndex(typeId);
+        return Table.GetChunkData<T>(typeIdx, chunkIdx);
+    }
+
     /// <summary>
     /// Gets a span of all entity references stored in this archetype.
     /// </summary>
@@ -344,6 +374,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 #endregion
 
 #region Internal Methods
+
+    internal void Clear()
+    {
+        entities.Clear();
+        Table.Clear();
+    }
 
     internal (nint ptr, int size) GetChunkDataWithReservation(int typeId, int chunkIdx)
     {
@@ -387,7 +423,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
 
         Table.CommitReserved();
-        ShirkTable();
+        ShrinkTable();
         dirty = false;
 
         Debug.Assert(IsCoherent);
@@ -506,7 +542,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         }
     }
 
-    private void ShirkTable()
+    private void ShrinkTable()
     {
         for (var i = 0; i < Table.Chunks.Count - 1; i++)
         {

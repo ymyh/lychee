@@ -125,6 +125,17 @@ public sealed class Table : IDisposable
         }
     }
 
+    public void Clear()
+    {
+        foreach (var chunk in Chunks)
+        {
+            chunk.Clear();
+        }
+        Chunks.Clear();
+
+        lastAvailableViewIndex = 0;
+    }
+
     public unsafe void* GetPtr(int typeIdx, int chunkIdx, int indexInChunk)
     {
         var typeInfo = Layout.TypeInfoList[typeIdx];
@@ -158,6 +169,17 @@ public sealed class Table : IDisposable
         {
             var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * chunkCapacity;
             return (ptr, Chunks[chunkIdx].Size);
+        }
+    }
+
+    public Span<T> GetChunkData<T>(int typeIdx, int chunkIdx) where T: unmanaged
+    {
+        var typeInfo = Layout.TypeInfoList[typeIdx];
+
+        unsafe
+        {
+            var ptr = (nint)Chunks[chunkIdx].Data + typeInfo.Offset * chunkCapacity;
+            return new((T*)ptr, Chunks[chunkIdx].Size);
         }
     }
 
@@ -297,6 +319,13 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
     public void CommitReserved()
     {
         Size += Reservation;
+        Reservation = 0;
+    }
+
+    public void Clear()
+    {
+        Chunk.Free();
+        Size = 0;
         Reservation = 0;
     }
 

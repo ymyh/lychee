@@ -113,7 +113,7 @@ partial class {sysInfo.Name} : ISystem
 
     public void ConfigureAG(App app, SystemFilterInfo filterInfo)
     {{
-        SystemDataAG.Archetypes = SystemDataAG.Archetypes.Concat(app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList, ref SystemDataAG.LastArchetypeIdx)).ToArray();
+        SystemDataAG.Archetypes = SystemDataAG.Archetypes.ConcatCollection(app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList, ref SystemDataAG.LastArchetypeIdx));
     }}
 {MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
 }}
@@ -423,10 +423,7 @@ partial class {sysInfo.Name} : ISystem
 
             for (var i = 0; i < componentParams.Length; i++)
             {
-                declIterCode.AppendLine(
-                    i == 0
-                        ? $"                        var ({componentParams[i].ParamName}, size) = archetype.GetChunkData(SystemDataAG.TypeIdList[{i}], j);"
-                        : $"                        var ({componentParams[i].ParamName}, _) = archetype.GetChunkData(SystemDataAG.TypeIdList[{i}], j);");
+                declIterCode.AppendLine($"                        var {componentParams[i].ParamName} = archetype.GetChunkData<{componentParams[i].Type}>(SystemDataAG.TypeIdList[{i}], j);");
             }
 
             if (hasComponentSpan)
@@ -441,6 +438,7 @@ partial class {sysInfo.Name} : ISystem
                     for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
                     {{
 {declIterCode}
+                        var size = {componentParams[0].ParamName}.Length;
                         var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
 
                         Execute({execParams});
@@ -460,6 +458,7 @@ partial class {sysInfo.Name} : ISystem
                     for (var j = chunkIdx; j < chunkIdx + chunkCount; j++)
                     {{
 {declIterCode}
+                        var size = {componentParams[0].ParamName}.Length;
                         var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
                         for (var i = 0; i < size; i++)
                         {{
@@ -482,12 +481,10 @@ partial class {sysInfo.Name} : ISystem
             for (var i = 0; i < componentParams.Length; i++)
             {
                 declIterCode.AppendLine(
-                    $"            var iter{i} = archetype.IterateDataAmongChunk(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
+                    $"            var iter{i} = archetype.IterateDataAmongChunk<{componentParams[i].Type}>(SystemDataAG.TypeIdList[{i}]).GetEnumerator();");
                 iterMoveNextCode.Add($"iter{i}.MoveNext()");
 
-                iterDeclCurrentCode.AppendLine(i == 0
-                    ? $"                var ({componentParams[i].ParamName}, size) = iter{i}.Current;"
-                    : $"                var ({componentParams[i].ParamName}, _) = iter{i}.Current;");
+                iterDeclCurrentCode.AppendLine($"                var {componentParams[i].ParamName} = iter{i}.Current.Span;");
             }
 
             if (hasComponentSpan)
@@ -498,6 +495,7 @@ partial class {sysInfo.Name} : ISystem
             while ({string.Join(" & ", iterMoveNextCode)})
             {{
 {iterDeclCurrentCode}
+                var size = {componentParams[0].ParamName}.Length;
                 var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
 
                 Execute({execParams});
@@ -512,6 +510,7 @@ partial class {sysInfo.Name} : ISystem
             while ({string.Join(" & ", iterMoveNextCode)})
             {{
 {iterDeclCurrentCode}
+                var size = {componentParams[0].ParamName}.Length;
                 var entitySpan = archetype.GetEntitiesSpan().Slice(beginIndex, size);
 
                 for (var i = 0; i < size; i++)
@@ -533,7 +532,7 @@ partial class {sysInfo.Name} : ISystem
                 switch (param.ParamKind)
                 {
                     case ParamKind.Component:
-                        var derefCode = $"(({param.Type}*){paramName})[i]";
+                        var derefCode = $"{paramName}[i]";
                         switch (param.RefKind)
                         {
                             case RefKind.In:
@@ -550,7 +549,7 @@ partial class {sysInfo.Name} : ISystem
                         break;
 
                     case ParamKind.ComponentSpan:
-                        return $"new Span(({param.Type}*){paramName}, size)";
+                        return paramName;
 
                     case ParamKind.ClassResource:
 

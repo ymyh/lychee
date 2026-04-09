@@ -6,10 +6,7 @@ public sealed class ReadWriteLock<T>(T data) : IDisposable
 
     private T data = data;
 
-    ~ReadWriteLock()
-    {
-        Dispose();
-    }
+    ~ReadWriteLock() => Dispose();
 
     public readonly struct ReadLockGuard(ReadWriteLock<T> rwl) : IDisposable
     {

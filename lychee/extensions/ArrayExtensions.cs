@@ -11,6 +11,11 @@ public static class ArrayExtensions
         /// <returns>A new array containing elements from this array followed by elements from <paramref name="other"/>.</returns>
         public T[] ConcatCollection(ICollection<T> other)
         {
+            if (other.Count == 0)
+            {
+                return self;
+            }
+
             var result = new T[self.Length + other.Count];
             self.CopyTo(result, 0);
             other.CopyTo(result, self.Length);
@@ -25,6 +30,11 @@ public static class ArrayExtensions
         /// <returns>A new array containing elements from this array followed by elements from <paramref name="other"/>.</returns>
         public T[] ConcatSpan(ReadOnlySpan<T> other)
         {
+            if (other.Length == 0)
+            {
+                return self;
+            }
+
             var result = new T[self.Length + other.Length];
             self.CopyTo(result, 0);
             other.CopyTo(result.AsSpan(self.Length));

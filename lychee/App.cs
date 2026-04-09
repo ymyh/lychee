@@ -3,6 +3,13 @@ using ThreadPool = lychee.threading.ThreadPool;
 
 namespace lychee;
 
+public sealed class ThreadPoolDescriptor
+{
+    public int ThreadCount { get; set; } = Environment.ProcessorCount / 2;
+
+    public int Capacity { get; set; } = 64;
+}
+
 /// <summary>
 /// The ECS application.
 /// </summary>
@@ -25,14 +32,16 @@ public sealed class App : IDisposable
 #region Constructors
 
     /// <summary>
-    /// Creates an App with specified thread count.
+    /// Creates an App with specified thread pool setting.
     /// </summary>
-    /// <param name="threadCount">The thread count of the thread pool.</param>
-    public App(uint threadCount)
+    /// <param name="descriptor">The thread pool descriptor.</param>
+    public App(ThreadPoolDescriptor descriptor)
     {
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
-        ThreadPool = new((int)threadCount);
+        ThreadPool = new(descriptor.ThreadCount, descriptor.Capacity);
+
+        ResourcePool.AddResource(this);
 
         disposables.Add(World);
         disposables.Add(ResourcePool);
@@ -42,7 +51,7 @@ public sealed class App : IDisposable
     /// <summary>
     /// Creates an App with thread count of <see cref="Environment.ProcessorCount"/> / 2.
     /// </summary>
-    public App() : this((uint)Environment.ProcessorCount / 2)
+    public App() : this(new())
     {
     }
 
@@ -182,6 +191,16 @@ public sealed class App : IDisposable
     public void AddSchedule(ISchedule schedule, string addAfter)
     {
         World.SystemSchedules.AddSchedule(schedule, addAfter);
+    }
+
+    /// <summary>
+    /// Removes all entities and their components from the world, keeping only the archetype definitions.
+    /// This is useful for resetting the world state without affecting system schedules or resources.
+    /// </summary>
+    public void RemoveAllEntity()
+    {
+        World.EntityPool.Clear();
+        World.ArchetypeManager.ClearData();
     }
 
     /// <summary>

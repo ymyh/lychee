@@ -32,13 +32,13 @@ public sealed class Commands(App app)
 
     internal readonly TypeRegistrar TypeRegistrar = app.TypeRegistrar;
 
-    internal readonly TransferInfoMap ArchetypeAddingTypeMap = new();
+    internal readonly TransferInfoMap ArchetypeAddingTypeMap = [];
 
-    internal readonly TransferInfoMap ArchetypeRemovingTypeMap = new();
+    internal readonly TransferInfoMap ArchetypeRemovingTypeMap = [];
 
-    private readonly SparseMap<Entity> modifiedEntityInfoMap = new();
+    private readonly SparseMap<Entity> modifiedEntityInfoMap = [];
 
-    private readonly SparseMap<Entity> removedEntityMap = new();
+    private readonly SparseMap<Entity> removedEntityMap = [];
 
     internal EntityTransferInfo? TransferDstInfo;
 

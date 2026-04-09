@@ -1,7 +1,7 @@
 ﻿namespace lychee.interfaces;
 
 /// <summary>
-/// <b> Warning: Don't implement this interface manually unless you know what are you doing. </b> <br/>
+/// <b> Warning: Don't implement methods ends with `AG` manually unless you know what are you doing. </b> <br/>
 /// Interface for system, auto implemented by <see cref="lychee.attributes.AutoImplSystem"/>.
 /// </summary>
 public interface ISystem
@@ -24,6 +24,11 @@ public interface ISystem
     /// </summary>
     public Commands[] ExecuteAG();
 
+    /// <summary>
+    /// Determines whether the system should be executed.
+    /// </summary>
+    /// <param name="pool">The resource pool from <see cref="App"/></param>
+    /// <returns>whether the system should be executed.</returns>
     public bool Predicate(ResourcePool pool)
     {
         return true;

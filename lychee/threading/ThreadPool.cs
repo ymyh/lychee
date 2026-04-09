@@ -20,6 +20,11 @@ public sealed class ThreadPool : IDisposable
             throw new ArgumentException("threadCount must be greater than 0");
         }
 
+        if (channelCapacity < 1)
+        {
+            throw new ArgumentException("channelCapacity must be greater than 0");
+        }
+
         threads = new(threadCount);
         sendTaskChannel = Channel.CreateBounded<Action<int>>(new BoundedChannelOptions(channelCapacity)
         {
@@ -39,12 +44,13 @@ public sealed class ThreadPool : IDisposable
                     {
                         var act = await sendTaskChannel.Reader.ReadAsync();
                         act(idx);
+                        countdownEvent.Signal();
                     }
                     catch (ChannelClosedException)
                     {
                         break;
                     }
-                    finally
+                    catch (Exception)
                     {
                         countdownEvent.Signal();
                     }

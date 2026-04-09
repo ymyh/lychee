@@ -27,11 +27,7 @@ public struct MemoryChunk() : IDisposable
         }
     }
 
-#endregion
-
-#region IDisposable Member
-
-    public void Dispose()
+    public void Free()
     {
         unsafe
         {
@@ -42,6 +38,15 @@ public struct MemoryChunk() : IDisposable
                 Size = 0;
             }
         }
+    }
+
+#endregion
+
+#region IDisposable Member
+
+    public void Dispose()
+    {
+        Free();
     }
 
 #endregion

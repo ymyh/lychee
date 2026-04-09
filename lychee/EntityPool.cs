@@ -70,6 +70,12 @@ public sealed class EntityPool
 
 #region Internal methods
 
+    internal void Clear()
+    {
+        entities.Clear();
+        entityInfoList.Clear();
+    }
+
     internal void CommitRemoveEntity(EntityRef entityRef)
     {
         var id = entityRef.ID;

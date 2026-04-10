@@ -3,7 +3,7 @@
 namespace lychee;
 
 /// <summary>
-/// The central ECS world that manages entities, components, archetypes, and system schedules.
+/// The ECS world that manages entities, components, archetypes, and system schedules.
 /// </summary>
 /// <param name="typeRegistrar">The type registrar containing component and resource metadata.</param>
 public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
@@ -26,6 +26,8 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
     public readonly ArchetypeManager ArchetypeManager = new(typeRegistrar);
 
     private readonly List<IEvent> events = [];
+
+    private bool disposed = false;
 
 #endregion
 
@@ -61,12 +63,25 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
         }
     }
 
+    public void RemoveAllEntities()
+    {
+        EntityPool.Clear();
+        ArchetypeManager.ClearData();
+    }
+
 #endregion
 
 #region IDisposable Member
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+
         ArchetypeManager.Dispose();
     }
 

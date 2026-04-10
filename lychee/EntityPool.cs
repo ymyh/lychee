@@ -20,27 +20,6 @@ public sealed class EntityPool
     private readonly ConcurrentStack<EntityRef> removedEntitiesId = [];
 
     /// <summary>
-    /// Reserves an entity ID without initializing it. Call <see cref="CommitReservedEntity"/> to finalize.
-    /// </summary>
-    public EntityRef ReserveEntity()
-    {
-        if (reusableEntitiesId.TryPop(out var entityRef))
-        {
-            return entityRef;
-        }
-
-        return new(Interlocked.Increment(ref latestEntityId), 0);
-    }
-
-    /// <summary>
-    /// Marks an entity for removal. The actual removal happens on commit.
-    /// </summary>
-    public void MarkRemoveEntity(EntityRef entityRef)
-    {
-        removedEntitiesId.Push(entityRef);
-    }
-
-    /// <summary>
     /// Verifies whether an entity reference is still valid (generation matches).
     /// </summary>
     public bool CheckEntityValid(EntityRef entityRef)
@@ -72,8 +51,28 @@ public sealed class EntityPool
 
     internal void Clear()
     {
+        foreach (var entity in entities)
+        {
+            reusableEntitiesId.Push(entity);
+        }
+
         entities.Clear();
         entityInfoList.Clear();
+    }
+
+    internal EntityRef ReserveEntity()
+    {
+        if (reusableEntitiesId.TryPop(out var entityRef))
+        {
+            return entityRef;
+        }
+
+        return new(Interlocked.Increment(ref latestEntityId), 0);
+    }
+
+    internal void MarkRemoveEntity(EntityRef entityRef)
+    {
+        removedEntitiesId.Push(entityRef);
     }
 
     internal void CommitRemoveEntity(EntityRef entityRef)

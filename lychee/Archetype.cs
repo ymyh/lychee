@@ -2,12 +2,15 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using lychee.collections;
-using lychee.extensions;
 using lychee.interfaces;
 using lychee.utils;
 
 namespace lychee;
 
+/// <summary>
+/// Stores all archetypes in the ECS world. Containing a empty archetype for entities without components and
+/// providing methods to get or create archetypes based on component type combinations.
+/// </summary>
 public sealed class ArchetypeManager : IDisposable
 {
     public List<Archetype> Archetypes { get; } = [];
@@ -15,6 +18,8 @@ public sealed class ArchetypeManager : IDisposable
     private readonly TypeRegistrar typeRegistrar;
 
     private readonly Lock archetypeLock = new();
+
+    private bool disposed = false;
 
     public delegate void ArchetypeCreatedHandler();
 
@@ -197,11 +202,6 @@ public sealed class ArchetypeManager : IDisposable
         }
     }
 
-    internal Archetype GetArchetypeUnsafe(int id)
-    {
-        return Archetypes[id];
-    }
-
 #endregion
 
 #region IDisposable Member
@@ -211,6 +211,13 @@ public sealed class ArchetypeManager : IDisposable
     /// </summary>
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+
         foreach (var archetype in Archetypes)
         {
             archetype.Dispose();
@@ -234,7 +241,9 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     private readonly ConcurrentStack<(int id, ushort chunkIdx, ushort idx)> holesInTable = new();
 
-    private bool dirty;
+    private bool dirty = false;
+
+    private bool disposed = false;
 
 #region Public Properties
 
@@ -577,6 +586,13 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+
         Table.Dispose();
     }
 

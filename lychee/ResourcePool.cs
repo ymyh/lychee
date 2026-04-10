@@ -14,7 +14,9 @@ namespace lychee;
 /// <param name="typeRegistrar">The type registrar from the App for tracking component and resource types.</param>
 public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 {
-    private readonly Dictionary<Type, object> dataMap = new();
+    private readonly Dictionary<Type, object> dataMap = [];
+
+    private bool disposed = false;
 
     private static readonly MethodInfo UnsafeAsRef = typeof(Unsafe).GetMethod("AsRef", BindingFlags.Static | BindingFlags.Public, [typeof(void*)])!;
 
@@ -191,6 +193,13 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+
         foreach (var (type, value) in dataMap)
         {
             if (TypeUtils.IsUnmanaged(type))

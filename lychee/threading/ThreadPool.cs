@@ -13,6 +13,8 @@ public sealed class ThreadPool : IDisposable
 
     private readonly CountdownEvent countdownEvent = new(1);
 
+    private bool disposed = false;
+
     public ThreadPool(int threadCount, int channelCapacity = 64)
     {
         if (threadCount < 1)
@@ -93,6 +95,12 @@ public sealed class ThreadPool : IDisposable
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
         sendTaskChannel.Writer.Complete();
 
         foreach (var thread in threads)

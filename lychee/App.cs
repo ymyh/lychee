@@ -27,6 +27,8 @@ public sealed class App : IDisposable
 
     private readonly List<IDisposable> disposables = [];
 
+    private bool disposed = false;
+
 #endregion
 
 #region Constructors
@@ -40,8 +42,6 @@ public sealed class App : IDisposable
         World = new(TypeRegistrar);
         ResourcePool = new(TypeRegistrar);
         ThreadPool = new(descriptor.ThreadCount, descriptor.Capacity);
-
-        ResourcePool.AddResource(this);
 
         disposables.Add(World);
         disposables.Add(ResourcePool);
@@ -197,10 +197,9 @@ public sealed class App : IDisposable
     /// Removes all entities and their components from the world, keeping only the archetype definitions.
     /// This is useful for resetting the world state without affecting system schedules or resources.
     /// </summary>
-    public void RemoveAllEntity()
+    public void RemoveAllEntities()
     {
-        World.EntityPool.Clear();
-        World.ArchetypeManager.ClearData();
+        World.RemoveAllEntities();
     }
 
     /// <summary>
@@ -298,6 +297,12 @@ public sealed class App : IDisposable
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
         foreach (var disposable in disposables)
         {
             disposable.Dispose();

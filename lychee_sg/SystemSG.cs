@@ -43,7 +43,7 @@ namespace lychee_sg
 
         public string ParamName;
 
-        public bool ResourceRequireOnExec;
+        public bool ResourceAcquireOnExec;
     }
 
     [Generator]
@@ -146,7 +146,7 @@ partial class {sysInfo.Name} : ISystem
             var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDecl);
             var autoImplAttr = classSymbol.GetAttributes()
                 .First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystem");
-            var resourceRequireOnExec = false;
+            var resourceAcquireOnExec = false;
 
             var multiThread = (bool)autoImplAttr.ConstructorArguments[0].Value;
 
@@ -185,7 +185,7 @@ partial class {sysInfo.Name} : ISystem
                             if (attr != null)
                             {
                                 paramKind = x.Type.IsValueType ? ParamKind.StructResource : ParamKind.ClassResource;
-                                resourceRequireOnExec = (bool)attr.ConstructorArguments[1].Value;
+                                resourceAcquireOnExec = (bool)attr.ConstructorArguments[1].Value;
                             }
 
                             return new ParamInfo
@@ -194,7 +194,7 @@ partial class {sysInfo.Name} : ISystem
                                 RefKind = x.RefKind,
                                 ParamKind = paramKind,
                                 ParamName = x.Name,
-                                ResourceRequireOnExec = resourceRequireOnExec
+                                ResourceAcquireOnExec = resourceAcquireOnExec
                             };
                         }).ToArray();
                     }
@@ -232,7 +232,7 @@ partial class {sysInfo.Name} : ISystem
 
             foreach (var resourceType in resourceTypes)
             {
-                if (!resourceType.ResourceRequireOnExec)
+                if (!resourceType.ResourceAcquireOnExec)
                 {
                     if (resourceType.ParamKind == ParamKind.ClassResource)
                     {
@@ -293,7 +293,7 @@ partial class {sysInfo.Name} : ISystem
                 var resourceParam = resourceParams[i];
                 var paramName = resourceParam.ParamName;
 
-                if (!resourceParam.ResourceRequireOnExec)
+                if (!resourceParam.ResourceAcquireOnExec)
                 {
                     if (resourceParam.ParamKind == ParamKind.ClassResource)
                     {
@@ -373,7 +373,7 @@ partial class {sysInfo.Name} : ISystem
                 {
                     var paramName = resourceParam.ParamName;
 
-                    if (resourceParam.ResourceRequireOnExec)
+                    if (resourceParam.ResourceAcquireOnExec)
                     {
                         if (resourceParam.ParamKind == ParamKind.StructResource)
                         {
@@ -570,7 +570,7 @@ partial class {sysInfo.Name} : ISystem
                                 return $"ref {paramName}";
                             case RefKind.None:
 
-                                if (!param.ResourceRequireOnExec)
+                                if (!param.ResourceAcquireOnExec)
                                 {
                                     return $"ResourceDataAG.{paramName}";
                                 }

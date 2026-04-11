@@ -43,14 +43,6 @@ public sealed class ArchetypeManager : IDisposable
 
 #region Public methods
 
-    public void ClearData()
-    {
-        foreach (var archetype in Archetypes)
-        {
-            archetype.Clear();
-        }
-    }
-
     /// <summary>
     /// Gets an existing archetype with the specified component types, or creates a new one if it doesn't exist.
     /// </summary>
@@ -199,6 +191,14 @@ public sealed class ArchetypeManager : IDisposable
         foreach (var archetype in Archetypes)
         {
             archetype.Commit(entityPool);
+        }
+    }
+
+    internal void ClearData()
+    {
+        foreach (var archetype in Archetypes)
+        {
+            archetype.Clear();
         }
     }
 

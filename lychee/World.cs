@@ -40,19 +40,9 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
 
 #endregion
 
-#region Public methods
+#region Internal methods
 
-    /// <summary>
-    /// Executes all system schedules up to the specified end point.
-    /// If scheduleEnd is null or not found, all schedules are executed in order.
-    /// Calling this method again continues execution from where it left off,
-    /// looping back to the first schedule after the last one completes.
-    /// </summary>
-    /// <param name="scheduleEnd">
-    /// The schedule at which to stop execution. If null, executes all schedules.
-    /// Subsequent calls will resume from the next schedule in sequence.
-    /// </param>
-    public void Update(ISchedule? scheduleEnd = null)
+    internal void Update(ISchedule? scheduleEnd = null)
     {
         if (SystemSchedules.Execute(scheduleEnd))
         {
@@ -63,7 +53,7 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
         }
     }
 
-    public void RemoveAllEntities()
+    internal void RemoveAllEntities()
     {
         EntityPool.Clear();
         ArchetypeManager.ClearData();

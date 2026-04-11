@@ -1,15 +1,16 @@
-# lychee
+# LYCHEE
 
-A high-performance ECS (Entity-Component-System) framework for .NET 10.0 / C# 14.
+A simple archetype-based ECS (Entity-Component-System) framework for .NET 10.0 / C# 14.
 
 ## Features
 
-- **Cache-friendly archetype storage** - Components are grouped by archetype for improved data locality
-- **Automatic parallelization** - DAG-based System dependency analysis provides basic automatic identification of
-  parallelizable Systems
+- **Cache-friendly archetype storage** - Components are grouped by archetype for improved data locality, but moving entities
+  between archetypes (e.g., adding/removing components) incurs data copy overhead and is cache-unfriendly.
+- **Automatic parallelism** - DAG-based System dependency analysis provides basic automatic identification of Systems that can
+  execute in parallel
 - **Source generation** - Use the `[AutoImplSystem]` Attribute to automatically generate System code
 - **Deferred commands** - Entity modifications are batch-committed at synchronization points for concurrent safety
-- **Flexible scheduling system** - Supports single-threaded/multi-threaded execution with configurable commit timing
+- **Flexible scheduling system** - Supports single-thread/multi-thread execution with configurable commit timing
 
 ## Project Structure
 
@@ -86,17 +87,50 @@ partial class MovementSystem
 }
 ```
 
-**The `Execute` method accepts three types of parameters**:
+The `[AutoImplSystem]` attribute accepts an optional `multiThreaded` parameter. When set to `true`, entity iteration
+within the system is parallelized across multiple threads:
+
+```csharp
+[AutoImplSystem(multiThreaded: true)]
+partial class MovementSystem
+{
+    private static void Execute(ref Position pos, in Velocity vel)
+    {
+        pos.X += vel.X;
+        pos.Y += vel.Y;
+    }
+}
+```
+
+When using `multiThreaded`, pass a `SystemDescriptor` to `AddSystem` to control the thread count and group size:
+
+```csharp
+schedule.AddSystem<MovementSystem>(new SystemDescriptor
+{
+    ThreadCount = 4,   // Number of threads for this system
+    GroupSize = 128    // Number of entities each thread processes per batch
+});
+```
+
+- `ThreadCount` - How many threads to use for parallel entity iteration
+- `GroupSize` - How many entities each thread processes in one batch
+
+**The `Execute` method accepts four types of parameters**:
 
 - Component types - Components can be passed by value or by reference. When passed by reference, mutability may affect
   System execution scheduling (only applies in multi-threaded execution mode)
 - Resource types - Use the `[Resource]` Attribute on parameters to access globally unique resources. When passed by
   reference, the same effects apply as above
 - `Commands` - Records deferred entity operations (creation, deletion, adding components, etc.)
+- `Entity` - Typically passed by `ref` (i.e., `ref Entity entity`), provides access to the current entity being processed
 
 In addition to `Execute`, you can also define two methods named `BeforeExecute` and `AfterExecute`, which will execute
 before or after `Execute` respectively. They cannot accept any parameters, so they can only be used for simple
 functionality.
+
+You can also override the `Predicate` method (from `ISystem`) to control whether a system should execute. It receives a
+`ResourcePool` parameter and returns a `bool` — returning `false` will skip the system's execution entirely. By default,
+it returns `true`.
 
 #### System Filters
 
@@ -195,6 +229,31 @@ partial class DespawnSystem
 - `RemoveComponent<T>(ref Entity)` or `entity.RemoveComponent<T>()` - Remove a component
 - `AddComponents<T>(ref Entity, in T)` or `entity.AddComponents<T>(in T)` - Add a component bundle
 
+### 6. Entity Runtime Operations
+
+The `Entity` struct provides methods for runtime component queries and batch modifications:
+
+```csharp
+// Get a reference to a component
+ref Position pos = ref entity.GetComponent<Position>();
+
+// Check if entity has a specific component
+if (entity.WithComponent<Disabled>()) { /* ... */ }
+
+// Check if entity does not have a specific component
+if (entity.WithoutComponent<Destroyed>()) { /* ... */ }
+
+// Batch modify components in a single archetype migration
+entity.AlterComponents(alter =>
+{
+    alter.Remove<Velocity>();
+    alter.Add(new Immobile());
+});
+```
+
+> **Note**: `AlterComponents` performs all additions and removals in a single archetype migration, which is more
+> efficient than calling `AddComponent` / `RemoveComponent` separately (each triggers its own migration).
+
 ## Resource System
 
 Resources are globally singleton data managed through `ResourcePool`:
@@ -225,7 +284,25 @@ partial class TimeSystem
 }
 ```
 
-## Event System
+**`[Resource]` attribute parameters**:
+
+- `readOnly` (bool, default `false`) - For class-type resources only. When `true`, the resource is treated as read-only,
+  allowing safe concurrent access in multi-threaded execution mode
+- `acquireOnExec` (bool, default `false`) - When `true`, the resource is acquired (fetched) from the pool on each `Execute`
+  call rather than cached during system initialization. Useful for resources that may be added after system initialization,
+  such as those created by other systems
+
+```csharp
+[AutoImplSystem]
+partial class MySystem
+{
+    // Acquire on each Execute since the resource may not exist at init time
+    private static void Execute([Resource(acquireOnExec: true)] ref MyLateResource res)
+    {
+        // ...
+    }
+}
+```
 
 The event system provides a thread-safe way to communicate between Systems using double buffering.
 Events sent in the current frame will be readable in the next update.
@@ -443,4 +520,3 @@ public static class Program
 
 - .NET 10.0
 - C# 14
-- Unsafe code blocks enabled

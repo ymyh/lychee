@@ -1,3 +1,5 @@
+![image](https://github.com/ymyh/lychee/blob/main/logo.png)
+
 # LYCHEE
 
 A simple archetype-based ECS (Entity-Component-System) framework for .NET 10.0 / C# 14.

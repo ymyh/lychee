@@ -1,4 +1,4 @@
-![image](https://github.com/ymyh/lychee/blob/main/logo.png)
+<div align="center"><img width="512" height="512" src="https://github.com/ymyh/lychee/blob/main/logo.png"/></div>
 
 # LYCHEE
 

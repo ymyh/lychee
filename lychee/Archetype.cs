@@ -206,9 +206,6 @@ public sealed class ArchetypeManager : IDisposable
 
 #region IDisposable Member
 
-    /// <summary>
-    /// Releases all resources used by the ArchetypeManager and all managed archetypes.
-    /// </summary>
     public void Dispose()
     {
         if (disposed)
@@ -235,11 +232,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
 
-    private readonly SparseMap<(int[] src, int[] dst)> dstArchetypeCommCompIndices = new();
+    private readonly SparseMap<(int[] src, int[] dst)> dstArchetypeCommCompIndices = [];
 
     private readonly SparseMap<EntityRef> entities = [];
 
-    private readonly ConcurrentStack<(int id, ushort chunkIdx, ushort idx)> holesInTable = new();
+    private readonly ConcurrentStack<(int id, ushort chunkIdx, ushort idx)> holesInTable = [];
 
     private bool dirty = false;
 

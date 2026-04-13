@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace lychee.utils;
 
@@ -10,8 +11,8 @@ public static class TypeUtils
     private static readonly MethodInfo GetTupleTypesMethod =
         typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static | BindingFlags.Public)!;
 
-    private static readonly MethodInfo TestUnmanagedMethod =
-        typeof(TypeUtils).GetMethod("TestUnmanaged", BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo IsReferenceOrContainsReferences =
+        typeof(RuntimeHelpers).GetMethod("IsReferenceOrContainsReferences", BindingFlags.Static | BindingFlags.Public)!;
 
     private static readonly Type[] TupleTypes =
     [
@@ -117,7 +118,7 @@ public static class TypeUtils
             }
 
             var alignment = type.StructLayoutAttribute?.Pack ?? 0;
-            return alignment == 0 ? Math.Min((size % 32 == 0 ? 32 : (size % 16 == 0 ? 16 : 8)), 64) : alignment;
+            return alignment == 0 ? Math.Min(size % 32 == 0 ? 32 : (size % 16 == 0 ? 16 : 8), 64) : alignment;
         }
     }
 
@@ -128,22 +129,11 @@ public static class TypeUtils
     /// <returns>true if the type is unmanaged; otherwise, false.</returns>
     /// <remarks>
     /// This method uses reflection to test the unmanaged constraint at runtime,
-    /// which is not directly available through the Type API.
+    /// which is not directly available through the Type API. <br/>
+    /// <strong>Native AOT not compatible</strong>
     /// </remarks>
     public static bool IsUnmanaged(Type type)
     {
-        try
-        {
-            TestUnmanagedMethod.MakeGenericMethod(type).Invoke(null, null);
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-    }
-
-    private static void TestUnmanaged<T>() where T : unmanaged
-    {
+        return !(bool)IsReferenceOrContainsReferences.MakeGenericMethod(type).Invoke(null, null)!;
     }
 }

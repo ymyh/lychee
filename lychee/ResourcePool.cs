@@ -210,6 +210,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 
                     if (typeof(IDisposable).IsAssignableFrom(type))
                     {
+                        // FIXME: Native AOT not compatible
                         (UnsafeAsRef.MakeGenericMethod(type).Invoke(null, [value]) as IDisposable)!.Dispose();
                     }
 

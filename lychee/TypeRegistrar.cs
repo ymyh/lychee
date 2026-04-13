@@ -61,6 +61,18 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
+    /// Registers a component type and returns its unique type identifier.
+    /// Subsequent registrations of the same type return the existing identifier.
+    /// </summary>
+    /// <param name="type">The component type to register. Must be unmanaged and implement IComponent.</param>
+    /// <param name="alignment">The alignment requirement in bytes. Default is 0 for automatic detection.</param>
+    /// <returns>The unique type identifier assigned to this component type.</returns>
+    public int RegisterComponent<T>(Type type, uint alignment = 0) where T : unmanaged, IComponent
+    {
+        return Register(type, alignment);
+    }
+
+    /// <summary>
     /// Registers a component type using reflection and returns its unique type identifier.
     /// Subsequent registrations of the same type return the existing identifier.
     /// </summary>
@@ -69,7 +81,7 @@ public sealed class TypeRegistrar
     /// <returns>The unique type identifier assigned to this component type.</returns>
     public int RegisterComponent(Type type, uint alignment = 0)
     {
-        return (int)RegisterComponentMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
+        return RegisterComponent(type, alignment);
     }
 
     /// <summary>
@@ -80,19 +92,6 @@ public sealed class TypeRegistrar
     /// <returns></returns>
     internal int Register(Type type, uint alignment = 0)
     {
-        return (int)RegisterMethod.MakeGenericMethod(type).Invoke(this, [alignment])!;
-    }
-
-    /// <summary>
-    /// Register a type
-    /// </summary>
-    /// <param name="alignment">The alignment of type, default is 0, which means auto deduction.</param>
-    /// <typeparam name="T">The type to register.</typeparam>
-    /// <returns></returns>
-    internal int Register<T>(uint alignment = 0)
-    {
-        var type = typeof(T);
-
         using var wg = typeListLock.EnterWriteLock();
         var typeList = wg.Data;
 
@@ -106,7 +105,7 @@ public sealed class TypeRegistrar
 
         unsafe
         {
-            var size = typeof(T).IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
+            var size = type.IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
 
             if (size == 1 && TypeUtils.IsEmptyStruct(type))
             {
@@ -122,6 +121,11 @@ public sealed class TypeRegistrar
         }
 
         return typeList.Count - 1;
+    }
+
+    internal int Register<T>(uint alignment = 0)
+    {
+        return Register(typeof(T), alignment);
     }
 
     /// <summary>
@@ -160,7 +164,20 @@ public sealed class TypeRegistrar
     /// <exception cref="ArgumentException">Thrown when the bundle type has no instance fields.</exception>
     public void RegisterBundle(Type type)
     {
-        RegisterBundleMethod.MakeGenericMethod(type).Invoke(this, []);
+        if (bundleToInfoDict.ContainsKey(type))
+        {
+            return;
+        }
+
+        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+        if (fields.Length == 0)
+        {
+            throw new ArgumentException("Bundle type must have at least one non-static field", type.Name);
+        }
+
+        bundleToInfoDict.TryAdd(type, fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf(type, f.Name)),
+            RegisterComponent(f.FieldType))).ToArray());
     }
 
     /// <summary>

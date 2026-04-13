@@ -34,8 +34,17 @@ public static class TypeUtils
     /// <exception cref="ArgumentException">Thrown when type T is not a value tuple type.</exception>
     public static List<Type> GetTupleTypes<T>()
     {
-        var type = typeof(T);
+        return GetTupleTypes(typeof(T));
+    }
 
+    /// <summary>
+    /// Extracts all generic type arguments from a value tuple type.
+    /// </summary>
+    /// <param name="type">The value tuple type to extract types from.</param>
+    /// <returns>A list containing all type arguments in the tuple, including nested ones.</returns>
+    /// <exception cref="ArgumentException">Thrown when type T is not a value tuple type.</exception>
+    public static List<Type> GetTupleTypes(Type type)
+    {
         if (!IsValueTuple(type))
         {
             throw new ArgumentException($"Generic Argument {type.Name} is not a ValueTuple");
@@ -48,7 +57,7 @@ public static class TypeUtils
         {
             if (field.Name == "Rest")
             {
-                var subList = (List<Type>)GetTupleTypesMethod.MakeGenericMethod(field.FieldType).Invoke(null, null)!;
+                var subList = GetTupleTypes(field.FieldType);
                 list.AddRange(subList);
 
                 continue;
@@ -134,6 +143,7 @@ public static class TypeUtils
     /// </remarks>
     public static bool IsUnmanaged(Type type)
     {
+        // FIXME: Native AOT not compatible
         return !(bool)IsReferenceOrContainsReferences.MakeGenericMethod(type).Invoke(null, null)!;
     }
 }

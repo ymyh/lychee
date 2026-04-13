@@ -82,8 +82,6 @@ public abstract class BasicSchedule : ISchedule
 
 #region Static Members
 
-    private static readonly MethodInfo AddSystemsMethod = typeof(BasicSchedule).GetMethod(nameof(AddSystems), BindingFlags.Public | BindingFlags.Instance, [typeof(ISystem)])!;
-
 #endregion
 
 #region Constructor
@@ -147,48 +145,71 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
-    /// Adds multiple systems to the schedule in the order specified by a nested value tuple.
-    /// Systems at the same nesting level may execute in parallel if their access patterns allow.
-    /// All systems must have a default constructor.
+    /// Adds multiple systems to the schedule. Each argument is an array of systems representing
+    /// a parallel group. Systems within the same array may execute in parallel if their access
+    /// patterns allow. Sequential arrays execute in order.
     /// </summary>
-    /// <typeparam name="T">A value tuple containing system types. Nested tuples create hierarchical ordering.</typeparam>
-    /// <param name="addAfter">Optional. The system after which the first system should execute.</param>
-    /// <exception cref="ArgumentException">Thrown when T is not a value tuple or contains non-system types.</exception>
+    /// <param name="systemGroups">
+    /// Variable number of system arrays. Each array represents a group of systems that can run in parallel.
+    /// </param>
     /// <example>
     /// <code>
-    /// // SysA executes first
-    /// // SysB and SysC execute in parallel (if compatible) after SysA
-    /// // SysD executes after both SysB and SysC complete
-    /// schedule.AddSystems&lt;(SysA, (SysB, SysC), SysD)&gt;();
+    /// // SysA and SysB run in parallel (if compatible)
+    /// // SysC runs after both SysA and SysB complete
+    /// schedule.AddSystems(null, [new SysA(), new SysB()], [new SysC()]);
     /// </code>
     /// </example>
-    public void AddSystems<T>(ISystem? addAfter = null)
+    public void AddSystems(params ISystem[][] systemGroups)
     {
-        if (!TypeUtils.IsValueTuple<T>())
-        {
-            throw new ArgumentException($"Type {typeof(T).Name} is not a value tuple");
-        }
+        ISystem? addAfter = null;
 
-        var types = TypeUtils.GetTupleTypes<T>();
-
-        foreach (var type in types)
+        foreach (var group in systemGroups)
         {
-            if (TypeUtils.IsValueTuple(type))
+            if (group.Length == 0)
             {
-                AddSystemsMethod.MakeGenericMethod(type).Invoke(this, [addAfter]);
                 continue;
             }
 
-            if (type.GetInterface("lychee.interfaces.ISystem") == null)
+            foreach (var system in group)
             {
-                throw new ArgumentException($"Type {typeof(T).Name} is not a system type");
+                DoAddSystem(system, new());
             }
 
-            var ctor = type.GetConstructor([])!;
-            var system = (ctor.Invoke([]) as ISystem)!;
+            addAfter = group[0];
+        }
+    }
 
-            DoAddSystem(system, new() { AddAfter = addAfter });
-            addAfter = system;
+    /// <summary>
+    /// Adds multiple systems to the schedule. Each argument is an array of systems representing
+    /// a parallel group. Systems within the same array may execute in parallel if their access
+    /// patterns allow. Sequential arrays execute in order.
+    /// </summary>
+    /// <param name="addAfter">Optional. The system after which the first system should execute.</param>
+    /// <param name="systemGroups">
+    /// Variable number of system arrays. Each array represents a group of systems that can run in parallel.
+    /// </param>
+    /// <example>
+    /// <code>
+    /// // SysA and SysB run in parallel (if compatible)
+    /// // SysC runs after both SysA and SysB complete
+    /// schedule.AddSystems(null, [new SysA(), new SysB()], [new SysC()]);
+    /// </code>
+    /// </example>
+    public void AddSystems(ISystem? addAfter, params ISystem[][] systemGroups)
+    {
+        foreach (var group in systemGroups)
+        {
+            if (group.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var system in group)
+            {
+                DoAddSystem(system, new() { AddAfter = addAfter });
+            }
+
+            addAfter = group[0];
         }
     }
 

@@ -19,6 +19,8 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly Lock archetypeLock = new();
 
+    private readonly int chunkSizeHint;
+
     private bool disposed = false;
 
     public delegate void ArchetypeCreatedHandler();
@@ -32,12 +34,13 @@ public sealed class ArchetypeManager : IDisposable
 
     static ArchetypeManager()
     {
-        EmptyArchetype = new(0, [], [], null!);
+        EmptyArchetype = new(0, [], [], null!, 0);
     }
 
-    public ArchetypeManager(TypeRegistrar typeRegistrar)
+    public ArchetypeManager(TypeRegistrar typeRegistrar, int chunkSizeHint)
     {
         this.typeRegistrar = typeRegistrar;
+        this.chunkSizeHint = chunkSizeHint;
         Archetypes.Add(EmptyArchetype);
     }
 
@@ -69,7 +72,7 @@ public sealed class ArchetypeManager : IDisposable
 
             var id = Archetypes.Count;
             var typeInfoList = array.Select(id => typeRegistrar.GetTypeInfo(id)).ToArray();
-            Archetypes.Add(new(id, array, typeInfoList, typeRegistrar));
+            Archetypes.Add(new(id, array, typeInfoList, typeRegistrar, chunkSizeHint));
 
             ArchetypeCreated?.Invoke();
 
@@ -224,11 +227,11 @@ public sealed class ArchetypeManager : IDisposable
 #endregion
 }
 
-public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistrar typeRegistrar) : IDisposable
+public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistrar typeRegistrar, int chunkSizeHint) : IDisposable
 {
 #region Fields
 
-    internal readonly Table Table = new(new(typeInfoList));
+    internal readonly Table Table = new(new(typeInfoList), chunkSizeHint);
 
     private readonly SparseMap<int> typeIdxMap = new(typeIdList.Select((id, index) => (id, index)));
 

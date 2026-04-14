@@ -6,7 +6,8 @@ namespace lychee;
 /// The ECS world that manages entities, components, archetypes, and system schedules.
 /// </summary>
 /// <param name="typeRegistrar">The type registrar containing component and resource metadata.</param>
-public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
+/// <param name="chunkSizeHint">A hint for the average size of archetype chunks in bytes, used for optimizing memory layout.</param>
+public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDisposable
 {
 #region Fields
 
@@ -23,7 +24,7 @@ public sealed class World(TypeRegistrar typeRegistrar) : IDisposable
     /// <summary>
     /// Manages archetypes which store entities grouped by their component composition.
     /// </summary>
-    public readonly ArchetypeManager ArchetypeManager = new(typeRegistrar);
+    public readonly ArchetypeManager ArchetypeManager = new(typeRegistrar, chunkSizeHint);
 
     private readonly List<IEvent> events = [];
 

@@ -3,11 +3,26 @@ using ThreadPool = lychee.threading.ThreadPool;
 
 namespace lychee;
 
-public sealed class ThreadPoolDescriptor
+public sealed class AppDescriptor
 {
+    /// <summary>
+    /// A hint for archetype chunk size in bytes. Larger chunk sizes can improve performance by reducing the number of chunks and
+    /// increasing cache locality, but may also increase memory usage and fragmentation.
+    /// The optimal value depends on the typical size of entities and components in your application. The default value is 16 KB.
+    /// </summary>
+    public int ChunkSizeHint { get; set; } = 16384;
+
+    /// <summary>
+    /// The number of threads to use in the default thread pool for parallel system execution. The default value is half of the available processor count.
+    /// Adjusting this value can help balance performance and resource usage based on the workload and hardware capabilities of your application.
+    /// </summary>
     public int ThreadCount { get; set; } = Environment.ProcessorCount / 2;
 
-    public int Capacity { get; set; } = 64;
+    /// <summary>
+    /// The capacity of the thread pool's work queue. This limits how many tasks can be queued for execution before new tasks are rejected.
+    /// A larger capacity allows for more queued tasks but may increase memory usage. The default value is 64.
+    /// </summary>
+    public int ThreadPoolQueueCapacity { get; set; } = 64;
 }
 
 /// <summary>
@@ -36,12 +51,12 @@ public sealed class App : IDisposable
     /// <summary>
     /// Creates an App with specified thread pool setting.
     /// </summary>
-    /// <param name="descriptor">The thread pool descriptor.</param>
-    public App(ThreadPoolDescriptor descriptor)
+    /// <param name="descriptor">The app descriptor.</param>
+    public App(AppDescriptor descriptor)
     {
-        World = new(TypeRegistrar);
+        World = new(TypeRegistrar, descriptor.ChunkSizeHint);
         ResourcePool = new(TypeRegistrar);
-        ThreadPool = new(descriptor.ThreadCount, descriptor.Capacity);
+        ThreadPool = new(descriptor.ThreadCount, descriptor.ThreadPoolQueueCapacity);
 
         disposables.Add(World);
         disposables.Add(ResourcePool);

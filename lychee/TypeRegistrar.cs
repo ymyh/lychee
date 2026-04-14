@@ -39,15 +39,6 @@ public sealed class TypeRegistrar
 
     private readonly ConcurrentDictionary<Type, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
 
-    private static readonly MethodInfo RegisterMethod =
-        typeof(TypeRegistrar).GetMethod("Register", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(uint)])!;
-
-    private static readonly MethodInfo RegisterComponentMethod =
-        typeof(TypeRegistrar).GetMethod("RegisterComponent", BindingFlags.Public | BindingFlags.Instance, [typeof(uint)])!;
-
-    private static readonly MethodInfo RegisterBundleMethod =
-        typeof(TypeRegistrar).GetMethod("RegisterBundle", BindingFlags.Public | BindingFlags.Instance, [])!;
-
     /// <summary>
     /// Registers a component type and returns its unique type identifier.
     /// Subsequent registrations of the same type return the existing identifier.

@@ -145,6 +145,27 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
+    /// Adds multiple systems to the schedule in the order specified by a nested value tuple.
+    /// Systems at the same nesting level may execute in parallel if their access patterns allow.
+    /// All systems must have a default constructor.
+    /// </summary>
+    /// <typeparam name="T">A value tuple containing system types. Nested tuples create hierarchical ordering.</typeparam>
+    /// <param name="addAfter">Optional. The system after which the first system should execute.</param>
+    /// <exception cref="ArgumentException">Thrown when T is not a value tuple or contains non-system types.</exception>
+    /// <example>
+    /// <code>
+    /// // SysA executes first
+    /// // SysB and SysC execute in parallel (if compatible) after SysA
+    /// // SysD executes after both SysB and SysC complete
+    /// schedule.AddSystems&lt;(SysA, (SysB, SysC), SysD)&gt;();
+    /// </code>
+    /// </example>
+    public void AddSystems<T>(ISystem? addAfter = null)
+    {
+        AddSystems(typeof(T), addAfter);
+    }
+
+    /// <summary>
     /// Adds multiple systems to the schedule. Each argument is an array of systems representing
     /// a parallel group. Systems within the same array may execute in parallel if their access
     /// patterns allow. Sequential arrays execute in order.
@@ -225,6 +246,29 @@ public abstract class BasicSchedule : ISchedule
 #endregion
 
 #region Private methods
+
+    private void AddSystems(Type tupleType, ISystem? addAfter)
+    {
+        var types = TypeUtils.GetTupleTypes(tupleType);
+
+        foreach (var type in types)
+        {
+            if (type.IsAssignableTo(typeof(ISystem)))
+            {
+                var system = (type.GetConstructor([])!.Invoke([]) as ISystem)!;
+                DoAddSystem(system, new() { AddAfter = addAfter });
+                addAfter = system;
+            }
+            else if (TypeUtils.IsValueTuple(type))
+            {
+                AddSystems(type, addAfter);
+            }
+            else
+            {
+                throw new ArgumentException($"Type {type} in {tupleType} is not a system type");
+            }
+        }
+    }
 
     private (Type[] all, Type[] any, Type[] none) GetSystemFilter(ISystem system)
     {
@@ -360,7 +404,7 @@ public abstract class BasicSchedule : ISchedule
 
                 if (TypeUtils.IsEmptyStruct(type))
                 {
-                    throw new ArgumentException($"Type {type} as a component parameter is not supported, because it is an emtpy struct");
+                    throw new ArgumentException($"Type {type} as a component parameter is not supported, because it is an empty struct");
                 }
             }
             else

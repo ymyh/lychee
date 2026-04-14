@@ -65,6 +65,16 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
     /// <exception cref="ArgumentException">Thrown when a resource of this type already exists.</exception>
     public void AddResourceStruct<T>(T resource) where T : unmanaged
     {
+        if (typeof(T).IsAssignableTo(typeof(IDisposable)))
+        {
+            throw new ArgumentException($"Unmanaged resource {typeof(T).Name} cannot implement IDisposable");
+        }
+
+        if (typeof(T) == typeof(nint))
+        {
+            throw new ArgumentException($"Unmanaged resource {typeof(T).Name} is not supported to avoid pointer confusion");
+        }
+
         typeRegistrar.Register<T>();
 
         unsafe
@@ -200,21 +210,13 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 
         disposed = true;
 
-        foreach (var (type, value) in dataMap)
+        foreach (var (_, value) in dataMap)
         {
-            if (TypeUtils.IsUnmanaged(type))
+            if (value is nint ptr)
             {
                 unsafe
                 {
-                    var ptr = (void*)(nint)value;
-
-                    if (typeof(IDisposable).IsAssignableFrom(type))
-                    {
-                        // FIXME: Native AOT not compatible
-                        (UnsafeAsRef.MakeGenericMethod(type).Invoke(null, [value]) as IDisposable)!.Dispose();
-                    }
-
-                    NativeMemory.AlignedFree(ptr);
+                    NativeMemory.AlignedFree((void*)ptr);
                 }
             }
             else if (value is IDisposable disposable)

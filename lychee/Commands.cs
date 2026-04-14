@@ -202,9 +202,9 @@ public sealed class Commands(App app)
 
         Debug.Assert(TransferDstInfo != null);
 
-        var (chunkIdx, idx) = TransferDstInfo!.Archetype.Reserve();
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
-        for (var i = 0; i < TransferDstInfo!.TypeIndices.Length; i++)
+        for (var i = 0; i < TransferDstInfo.TypeIndices.Length; i++)
         {
             unsafe
             {
@@ -578,7 +578,9 @@ internal static class CommandsExtensions
 public struct EntityAlterContext
 {
     internal Entity Entity;
+
     private readonly Archetype originalArchetype;
+
     private bool hasAdded;
 
     internal EntityAlterContext(Entity entity)
@@ -593,9 +595,8 @@ public struct EntityAlterContext
     /// Must be called before any Add operations.
     /// </summary>
     /// <typeparam name="T">The component type to remove.</typeparam>
-    /// <returns>This EntityAlter for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
-    public EntityAlterContext Remove<T>() where T : unmanaged, IComponent
+    public void Remove<T>() where T : unmanaged, IComponent
     {
         if (hasAdded)
         {
@@ -608,8 +609,6 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
-
-        return this;
     }
 
     /// <summary>
@@ -617,9 +616,8 @@ public struct EntityAlterContext
     /// Must be called before any Add operations.
     /// </summary>
     /// <typeparam name="T">The component type to remove.</typeparam>
-    /// <returns>This EntityAlter for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
-    public EntityAlterContext RemoveBundle<T>() where T : unmanaged, IComponentBundle
+    public void RemoveBundle<T>() where T : unmanaged, IComponentBundle
     {
         if (hasAdded)
         {
@@ -632,8 +630,6 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
-
-        return this;
     }
 
     /// <summary>
@@ -641,9 +637,8 @@ public struct EntityAlterContext
     /// Must be called before any Add operations.
     /// </summary>
     /// <typeparam name="T">The tuple type containing component types to remove.</typeparam>
-    /// <returns>This EntityAlter for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
-    public EntityAlterContext RemoveTuple<T>() where T : unmanaged
+    public void RemoveTuple<T>() where T : unmanaged
     {
         if (hasAdded)
         {
@@ -656,8 +651,6 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
-
-        return this;
     }
 
     /// <summary>
@@ -666,9 +659,8 @@ public struct EntityAlterContext
     /// </summary>
     /// <typeparam name="T">The component type to add.</typeparam>
     /// <param name="component">The component value.</param>
-    /// <returns>This EntityAlter for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown if called before Remove or called more than once.</exception>
-    public EntityAlterContext Add<T>(in T component) where T : unmanaged, IComponent
+    public void Add<T>(in T component) where T : unmanaged, IComponent
     {
         if (hasAdded)
         {
@@ -680,7 +672,7 @@ public struct EntityAlterContext
 
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
-        var dstArchetype = Entity.Commands.TransferDstInfo!.Archetype;
+        var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
         var (chunkIdx, idx) = dstArchetype.Reserve();
 
         dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
@@ -692,7 +684,6 @@ public struct EntityAlterContext
         Entity.Pos = new(chunkIdx, idx);
 
         hasAdded = true;
-        return this;
     }
 
     /// <summary>
@@ -701,9 +692,8 @@ public struct EntityAlterContext
     /// </summary>
     /// <typeparam name="T">The component bundle type.</typeparam>
     /// <param name="bundle">The bundle containing component values.</param>
-    /// <returns>This EntityAlter for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown if called before Remove or called more than once.</exception>
-    public EntityAlterContext AddBundle<T>(in T bundle) where T : unmanaged, IComponentBundle
+    public void AddBundle<T>(in T bundle) where T : unmanaged, IComponentBundle
     {
         if (hasAdded)
         {
@@ -715,7 +705,7 @@ public struct EntityAlterContext
 
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
-        var dstArchetype = Entity.Commands.TransferDstInfo!.Archetype;
+        var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
         var (chunkIdx, idx) = dstArchetype.Reserve();
 
         for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
@@ -739,7 +729,6 @@ public struct EntityAlterContext
         Entity.Pos = new(chunkIdx, idx);
 
         hasAdded = true;
-        return this;
     }
 
     /// <summary>

@@ -59,7 +59,7 @@ public sealed class Table : IDisposable
 
 #region Constructors
 
-    public Table(TableLayout layout, int chunkSizeBytesHint = 16384)
+    public Table(TableLayout layout, int chunkSizeBytesHint)
     {
         Layout = layout;
 

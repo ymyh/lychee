@@ -8,9 +8,6 @@ namespace lychee.utils;
 /// </summary>
 public static class TypeUtils
 {
-    private static readonly MethodInfo GetTupleTypesMethod =
-        typeof(TypeUtils).GetMethod("GetTupleTypes", BindingFlags.Static | BindingFlags.Public)!;
-
     private static readonly MethodInfo IsReferenceOrContainsReferences =
         typeof(RuntimeHelpers).GetMethod("IsReferenceOrContainsReferences", BindingFlags.Static | BindingFlags.Public)!;
 

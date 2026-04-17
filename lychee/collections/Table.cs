@@ -291,7 +291,7 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     public readonly int Capacity = capacity;
 
-    internal volatile int Reservation;
+    internal int Reservation;
 
     public bool IsFull => Size + Reservation == Capacity;
 

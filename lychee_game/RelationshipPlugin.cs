@@ -6,7 +6,7 @@ namespace lychee_game;
 
 public sealed class ManyToOne
 {
-    private readonly SparseMap<(EntityRef parent, List<EntityRef> children)> relationships = new();
+    private readonly SparseMap<(EntityRef parent, List<EntityRef> children)> relationships = [];
 
     public void AddRelationship(EntityRef parent, EntityRef child)
     {
@@ -22,7 +22,7 @@ public sealed class ManyToOne
 
 public sealed class OneToOne
 {
-    private readonly SparseMap<(EntityRef, EntityRef)> relationships = new();
+    private readonly SparseMap<(EntityRef, EntityRef)> relationships = [];
 
     public void AddRelationship(EntityRef head, EntityRef tail)
     {

@@ -432,7 +432,7 @@ public sealed class Commands(App app)
         }
         else
         {
-            dict = new();
+            dict = [];
             TransferDstInfo = null;
             map.AddOrUpdate(archetype.ID, dict);
         }

@@ -199,6 +199,37 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
         return dataMap.ContainsKey(typeof(T));
     }
 
+    /// <summary>
+    /// Removes a resource of the specified type from the pool.
+    /// </summary>
+    /// <typeparam name="T">The resource type to remove.</typeparam>
+    public void RemoveResource<T>()
+    {
+        RemoveResource(typeof(T));
+    }
+
+    /// <summary>
+    /// Removes a resource of the specified type from the pool.
+    /// </summary>
+    /// <param name="type">The type of the resource to remove.</param>
+    public void RemoveResource(Type type)
+    {
+        if (dataMap.Remove(type, out var value))
+        {
+            if (value is nint ptr)
+            {
+                unsafe
+                {
+                    NativeMemory.AlignedFree((void*)ptr);
+                }
+            }
+            else if (value is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+    }
+
 #region IDisposable Members
 
     public void Dispose()

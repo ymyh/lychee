@@ -17,7 +17,7 @@ public sealed class EntityPool
 
     private readonly Stack<EntityRef> reusableEntitiesId = [];
 
-    private readonly ConcurrentStack<EntityRef> removedEntitiesId = [];
+    private readonly Stack<EntityRef> removedEntitiesId = [];
 
     /// <summary>
     /// Verifies whether an entity reference is still valid (generation matches).

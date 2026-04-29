@@ -534,38 +534,36 @@ public abstract class BasicSchedule : ISchedule
                 frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
             }
 
-            if (ExecutionMode == ExecutionModeEnum.SingleThread)
-            {
-                foreach (var frozenDagNode in group)
-                {
-                    if (!frozenDagNode.Data.Predicate)
-                    {
-                        continue;
-                    }
+            var multiThread = false;
 
-                    entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG());
+            for (var i = 0; i < group.Length; i++)
+            {
+                var node = group[i];
+                var idx = i;
+
+                if (!node.Data.Predicate)
+                {
+                    continue;
+                }
+
+                if (ExecutionMode == ExecutionModeEnum.SingleThread || group.Length == 1)
+                {
+                    entityCommanders.AddRange(node.Data.System.ExecuteAG());
 
                     if (CommitPoint == CommitPointEnum.Synchronization)
                     {
                         Commit();
                     }
                 }
-            }
-            else
-            {
-                for (var i = 0; i < group.Length; i++)
+                else
                 {
-                    var node = group[i];
-                    var idx = i;
-
-                    if (!node.Data.Predicate)
-                    {
-                        continue;
-                    }
-
+                    multiThread = true;
                     app.ThreadPool.Dispatch(_ => { multiThreadResults[idx] = node.Data.System.ExecuteAG(); });
                 }
+            }
 
+            if (multiThread)
+            {
                 app.ThreadPool.Wait();
 
                 for (var i = 0; i < group.Length; i++)
@@ -581,6 +579,54 @@ public abstract class BasicSchedule : ISchedule
                     Commit();
                 }
             }
+
+            // if (ExecutionMode == ExecutionModeEnum.SingleThread)
+            // {
+            //     foreach (var frozenDagNode in group)
+            //     {
+            //         if (!frozenDagNode.Data.Predicate)
+            //         {
+            //             continue;
+            //         }
+
+            //         entityCommanders.AddRange(frozenDagNode.Data.System.ExecuteAG());
+
+            //         if (CommitPoint == CommitPointEnum.Synchronization)
+            //         {
+            //             Commit();
+            //         }
+            //     }
+            // }
+            // else
+            // {
+            //     for (var i = 0; i < group.Length; i++)
+            //     {
+            //         var node = group[i];
+            //         var idx = i;
+
+            //         if (!node.Data.Predicate)
+            //         {
+            //             continue;
+            //         }
+
+            //         app.ThreadPool.Dispatch(_ => { multiThreadResults[idx] = node.Data.System.ExecuteAG(); });
+            //     }
+
+            //     app.ThreadPool.Wait();
+
+            //     for (var i = 0; i < group.Length; i++)
+            //     {
+            //         if (multiThreadResults[i].Length > 0)
+            //         {
+            //             entityCommanders.AddRange(multiThreadResults[i]);
+            //         }
+            //     }
+
+            //     if (CommitPoint == CommitPointEnum.Synchronization)
+            //     {
+            //         Commit();
+            //     }
+            // }
         }
 
         if (CommitPoint == CommitPointEnum.ScheduleEnd)

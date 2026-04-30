@@ -196,7 +196,17 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
     /// <returns>True if the resource exists; otherwise, false.</returns>
     public bool HasResource<T>()
     {
-        return dataMap.ContainsKey(typeof(T));
+        return HasResource(typeof(T));
+    }
+
+    /// <summary>
+    /// Checks whether a resource of the specified type exists in the pool.
+    /// </summary>
+    /// <param name="type">The resource type to check.</param>
+    /// <returns>True if the resource exists; otherwise, false.</returns>
+    public bool HasResource(Type type)
+    {
+        return dataMap.ContainsKey(type);
     }
 
     /// <summary>

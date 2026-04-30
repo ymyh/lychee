@@ -2,6 +2,29 @@
 
 public static class NumberExtensions
 {
+    extension(sbyte num)
+    {
+        /// <summary>
+        /// Performs a saturating addition that clamps the result to <see cref="sbyte.MaxValue"/> on overflow.
+        /// </summary>
+        /// <param name="other">The value to add.</param>
+        /// <returns>The sum, clamped to the valid range of <see cref="sbyte"/>.</returns>
+        public sbyte SaturatingAdd(sbyte other)
+        {
+            return (sbyte)(sbyte.MaxValue - other > num ? num + other : sbyte.MaxValue);
+        }
+
+        /// <summary>
+        /// Performs a saturating subtraction that clamps the result to <see cref="sbyte.MinValue"/> on underflow.
+        /// </summary>
+        /// <param name="other">The value to subtract.</param>
+        /// <returns>The difference, clamped to the valid range of <see cref="sbyte"/>.</returns>
+        public sbyte SaturatingSub(sbyte other)
+        {
+            return (sbyte)(other <= num ? num - other : sbyte.MinValue);
+        }
+    }
+
     extension(byte num)
     {
         /// <summary>
@@ -48,6 +71,29 @@ public static class NumberExtensions
         }
     }
 
+    extension(ushort num)
+    {
+        /// <summary>
+        /// Performs a saturating addition that clamps the result to <see cref="ushort.MaxValue"/> on overflow.
+        /// </summary>
+        /// <param name="other">The value to add.</param>
+        /// <returns>The sum, clamped to the valid range of <see cref="ushort"/>.</returns>
+        public ushort SaturatingAdd(ushort other)
+        {
+            return (ushort)(ushort.MaxValue - other > num ? num + other : ushort.MaxValue);
+        }
+
+        /// <summary>
+        /// Performs a saturating subtraction that clamps the result to <see cref="ushort.MinValue"/> on underflow.
+        /// </summary>
+        /// <param name="other">The value to subtract.</param>
+        /// <returns>The difference, clamped to the valid range of <see cref="ushort"/>.</returns>
+        public ushort SaturatingSub(ushort other)
+        {
+            return (ushort)(other <= num ? num - other : ushort.MinValue);
+        }
+    }
+
     extension(int num)
     {
         /// <summary>
@@ -90,7 +136,7 @@ public static class NumberExtensions
         /// <returns>The difference, clamped to the valid range of <see cref="uint"/>.</returns>
         public uint SaturatingSub(uint other)
         {
-            return other <= num ? num - other : 0;
+            return other <= num ? num - other : uint.MinValue;
         }
     }
 
@@ -114,6 +160,29 @@ public static class NumberExtensions
         public long SaturatingSub(long other)
         {
             return other <= num ? num - other : long.MinValue;
+        }
+    }
+
+    extension(ulong num)
+    {
+        /// <summary>
+        /// Performs a saturating addition that clamps the result to <see cref="ulong.MaxValue"/> on overflow.
+        /// </summary>
+        /// <param name="other">The value to add.</param>
+        /// <returns>The sum, clamped to the valid range of <see cref="ulong"/>.</returns>
+        public ulong SaturatingAdd(ulong other)
+        {
+            return ulong.MaxValue - other > num ? num + other : ulong.MaxValue;
+        }
+
+        /// <summary>
+        /// Performs a saturating subtraction that clamps the result to <see cref="ulong.MinValue"/> on underflow.
+        /// </summary>
+        /// <param name="other">The value to subtract.</param>
+        /// <returns>The difference, clamped to the valid range of <see cref="ulong"/>.</returns>
+        public ulong SaturatingSub(ulong other)
+        {
+            return other <= num ? num - other : ulong.MinValue;
         }
     }
 }

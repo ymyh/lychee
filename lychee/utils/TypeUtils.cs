@@ -1,5 +1,4 @@
 ﻿using System.Reflection;
-using System.Runtime.CompilerServices;
 
 namespace lychee.utils;
 
@@ -8,9 +7,6 @@ namespace lychee.utils;
 /// </summary>
 public static class TypeUtils
 {
-    private static readonly MethodInfo IsReferenceOrContainsReferences =
-        typeof(RuntimeHelpers).GetMethod("IsReferenceOrContainsReferences", BindingFlags.Static | BindingFlags.Public)!;
-
     private static readonly Type[] TupleTypes =
     [
         typeof(ValueTuple<>),
@@ -126,21 +122,5 @@ public static class TypeUtils
             var alignment = type.StructLayoutAttribute?.Pack ?? 0;
             return alignment == 0 ? Math.Min(size % 32 == 0 ? 32 : (size % 16 == 0 ? 16 : 8), 64) : alignment;
         }
-    }
-
-    /// <summary>
-    /// Determines whether the specified type is an unmanaged type at runtime.
-    /// </summary>
-    /// <param name="type">The type to check.</param>
-    /// <returns>true if the type is unmanaged; otherwise, false.</returns>
-    /// <remarks>
-    /// This method uses reflection to test the unmanaged constraint at runtime,
-    /// which is not directly available through the Type API. <br/>
-    /// <strong>Native AOT not compatible</strong>
-    /// </remarks>
-    public static bool IsUnmanaged(Type type)
-    {
-        // FIXME: Native AOT not compatible
-        return !(bool)IsReferenceOrContainsReferences.MakeGenericMethod(type).Invoke(null, null)!;
     }
 }

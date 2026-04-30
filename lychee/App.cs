@@ -189,6 +189,16 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
+    /// Checks whether a resource of the specified type exists in the pool.
+    /// </summary>
+    /// <param name="typeName">The type name of the resource to check.</param>
+    /// <returns>True if the resource exists; otherwise, false.</returns>
+    public bool HasResource(string typeName)
+    {
+        return ResourcePool.HasResource(Type.GetType(typeName) ?? throw new ArgumentException($"Type {typeName} not found"));
+    }
+
+    /// <summary>
     /// Adds a system schedule with a unique name for execution ordering.
     /// </summary>
     /// <param name="schedule">The schedule instance to add.</param>

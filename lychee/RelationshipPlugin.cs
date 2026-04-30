@@ -1,8 +1,7 @@
-﻿using lychee;
-using lychee.collections;
+﻿using lychee.collections;
 using lychee.interfaces;
 
-namespace lychee_game;
+namespace lychee;
 
 /// <summary>
 /// Represents a many-to-one relationship between entities. Each parent entity can have multiple child entities, but each child can only have one parent.
@@ -49,6 +48,10 @@ public sealed class OneToOne
     }
 }
 
+/// <summary>
+/// Provides relationship management between entities. <br/>
+/// Add a <see cref="lychee.OneToOne"/> resource and a <see cref="lychee.ManyToOne"/> resource to the app for managing one-to-one and many-to-one relationships between entities. <br/>
+/// </summary>
 public sealed class RelationshipPlugin : IPlugin
 {
     public readonly OneToOne OneToOne = new();

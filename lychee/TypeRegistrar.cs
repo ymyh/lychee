@@ -72,7 +72,7 @@ public sealed class TypeRegistrar
     /// <returns>The unique type identifier assigned to this component type.</returns>
     public int RegisterComponent(Type type, uint alignment = 0)
     {
-        return RegisterComponent(type, alignment);
+        return !type.IsAssignableTo(typeof(IComponent)) ? throw new ArgumentException($"Type parameter {type.Name} must be assignable to IComponent") : Register(type, alignment);
     }
 
     /// <summary>

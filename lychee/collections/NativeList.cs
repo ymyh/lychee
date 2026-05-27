@@ -18,9 +18,9 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
 
     private int capacity;
 
-    private static readonly unsafe nuint Alignment = (nuint)TypeUtils.GetOrGuessAlignment(typeof(T), sizeof(T));
+    private static readonly nuint Alignment = (nuint)TypeUtils.GetOrGuessAlignment<T>();
 
-#region Public properties
+#region Public Properties
 
     /// <summary>
     /// Gets a value indicating whether the list has reached its current capacity.
@@ -87,7 +87,7 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
 
 #endregion
 
-#region Constructors & Destructors
+#region Constructors & Destructor
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NativeList&lt;T&gt;"/> class with the specified initial capacity.

@@ -80,7 +80,7 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
         unsafe
         {
             var size = (nuint)sizeof(T);
-            var ptr = NativeMemory.AlignedAlloc(size, (nuint)TypeUtils.GetOrGuessAlignment(typeof(T), (int)size));
+            var ptr = NativeMemory.AlignedAlloc(size, (nuint)TypeUtils.GetOrGuessAlignment<T>());
             NativeMemory.Copy(&resource, ptr, size);
 
             if (!dataMap.TryAdd(typeof(T), (nint)ptr))

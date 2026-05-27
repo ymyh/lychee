@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace lychee.utils;
 
@@ -105,22 +106,59 @@ public static class TypeUtils
 
     /// <summary>
     /// Gets the memory alignment for a type, either from its StructLayoutAttribute or by estimation.
+    /// For structs without explicit Pack, recursively inspects instance fields to compute the maximum alignment.
     /// </summary>
     /// <param name="type">The type to get alignment for.</param>
-    /// <param name="size">The size in bytes of the type.</param>
+    /// <param name="size">The size in bytes of the type (used as fallback for types with no fields).</param>
     /// <returns>The alignment in bytes. Returns pointer size for reference types, StructLayoutAttribute.Pack if specified,
-    /// or an estimated value based on type size (max 64 bytes).</returns>
-    public static int GetOrGuessAlignment(Type type, int size)
+    /// the maximum field alignment for structs with fields.</returns>
+    public static int GetOrGuessAlignment(Type type)
     {
-        unsafe
+        if (!type.IsValueType)
         {
-            if (!type.IsValueType)
+            unsafe
             {
                 return sizeof(nint);
             }
+        }
 
-            var alignment = type.StructLayoutAttribute?.Pack ?? 0;
-            return alignment == 0 ? Math.Min(size % 32 == 0 ? 32 : (size % 16 == 0 ? 16 : 8), 64) : alignment;
+        if (IsEmptyStruct(type))
+        {
+            return 0;
+        }
+
+        if (type.IsPrimitive)
+        {
+            return Marshal.SizeOf(type);
+        }
+
+        var alignment = type.StructLayoutAttribute?.Pack ?? 0;
+        if (alignment != 0)
+        {
+            return alignment;
+        }
+
+        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        if (fields.Length == 0)
+        {
+            return 0;
+        }
+
+        return fields.Select(field => GetOrGuessAlignment(field.FieldType)).Max();
+    }
+
+    /// <summary>
+    /// Gets the memory alignment for a type, either from its StructLayoutAttribute or by estimation.
+    /// For structs without explicit Pack, recursively inspects instance fields to compute the maximum alignment.
+    /// </summary>
+    /// <typeparam name="T">The type to get alignment for.</typeparam>
+    /// <returns>The alignment in bytes. Returns pointer size for reference types, StructLayoutAttribute.Pack if specified,
+    /// the maximum field alignment for structs with fields.</returns>
+    public static int GetOrGuessAlignment<T>() where T : unmanaged
+    {
+        unsafe
+        {
+            return GetOrGuessAlignment(typeof(T));
         }
     }
 }

@@ -105,7 +105,7 @@ public sealed class TypeRegistrar
 
             if (size != 0 && alignment == 0)
             {
-                alignment = (uint)TypeUtils.GetOrGuessAlignment(type, size);
+                alignment = (uint)TypeUtils.GetOrGuessAlignment(type);
             }
 
             typeList.Add(new(size, (int)alignment));
@@ -183,6 +183,28 @@ public sealed class TypeRegistrar
         return !TypeUtils.IsValueTuple<T>()
             ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T))
             : TypeUtils.GetTupleTypes<T>().Select(t => Register(t)).ToArray();
+    }
+
+    /// <summary>
+    /// Registers types by their assembly-qualified names, sorted in descending order by alignment.
+    /// Types with larger alignment requirements are registered first to optimize memory layout.
+    /// </summary>
+    /// <param name="typeNames">A list of assembly-qualified type name strings to register.</param>
+    public void RegisterTypesByName(List<string> typeNames)
+    {
+        foreach (var type in typeNames.Select(Type.GetType).OrderByDescending(TypeUtils.GetOrGuessAlignment))
+        {
+            Register(type);
+        }
+    }
+
+    /// <summary>
+    /// Returns the full names of all currently registered types.
+    /// </summary>
+    /// <returns>A list of full type name strings for all registered types.</returns>
+    public List<string> DumpAllTypesName()
+    {
+        return typeToIdDict.Select(pair => pair.Key.FullName).ToList()!;
     }
 
     /// <summary>

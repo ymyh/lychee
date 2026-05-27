@@ -80,11 +80,7 @@ public abstract class BasicSchedule : ISchedule
 
     private bool needConfigure = true;
 
-#region Static Members
-
-#endregion
-
-#region Constructor
+#region Constructors
 
     protected BasicSchedule(App app, string name, ExecutionModeEnum executionMode = ExecutionModeEnum.SingleThread, CommitPointEnum commitPoint = CommitPointEnum.Synchronization)
     {
@@ -193,7 +189,7 @@ public abstract class BasicSchedule : ISchedule
 
             foreach (var system in group)
             {
-                DoAddSystem(system, new());
+                DoAddSystem(system, new() { AddAfter = addAfter });
             }
 
             addAfter = group[0];
@@ -312,6 +308,9 @@ public abstract class BasicSchedule : ISchedule
             NoneFilter = noneFilter,
         }));
         DAGNode<SystemInfo> addAfterNode = null!;
+
+        var predicateMethod = system.GetType().GetMethod("Predicate", BindingFlags.Instance | BindingFlags.Public, [typeof(ResourcePool)]);
+        node.Data.PredicateOverriden = predicateMethod != null;
 
         isFrozen = false;
 
@@ -531,7 +530,10 @@ public abstract class BasicSchedule : ISchedule
         {
             foreach (var frozenDagNode in group)
             {
-                frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
+                if (frozenDagNode.Data.PredicateOverriden)
+                {
+                    frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
+                }
             }
 
             var multiThread = false;

@@ -32,7 +32,7 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
 #endregion
 
-#region Internal methods
+#region Internal Methods
 
     internal void AddEvent(IEvent ev)
     {
@@ -41,7 +41,7 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
 #endregion
 
-#region Internal methods
+#region Internal Methods
 
     internal void Update(ISchedule? scheduleEnd = null)
     {
@@ -62,7 +62,7 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {

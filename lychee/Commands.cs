@@ -422,7 +422,7 @@ public sealed class Commands(App app)
 
 #endregion
 
-#region Internal methods
+#region Internal Methods
 
     internal Dictionary<nint, EntityTransferInfo> TrySetTransferDstInfo(TransferInfoMap map, Archetype archetype, nint ptr)
     {

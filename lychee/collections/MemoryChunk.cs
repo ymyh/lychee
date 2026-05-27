@@ -42,7 +42,7 @@ public struct MemoryChunk() : IDisposable
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {

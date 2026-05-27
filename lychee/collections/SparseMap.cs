@@ -13,7 +13,7 @@ namespace lychee.collections;
 /// <typeparam name="T">The type of values in the map.</typeparam>
 public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
 {
-#region Private fields
+#region Private Fields
 
     private readonly List<int> sparseArray = [];
 
@@ -21,7 +21,7 @@ public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
 
 #endregion
 
-#region Public properties
+#region Public Properties
 
     /// <summary>
     /// Gets the number of elements contained in the map.

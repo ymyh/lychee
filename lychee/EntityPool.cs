@@ -47,7 +47,7 @@ public sealed class EntityPool
         return entityInfoList[entityRef.ID];
     }
 
-#region Internal methods
+#region Internal Methods
 
     internal void Clear()
     {

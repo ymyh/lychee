@@ -72,7 +72,7 @@ public sealed class App : IDisposable
 
 #endregion
 
-#region Public methods
+#region Public Methods
 
     /// <summary>
     /// Registers a new event type and adds it to both the resource pool and world.
@@ -318,7 +318,7 @@ public sealed class App : IDisposable
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {

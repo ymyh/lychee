@@ -55,7 +55,7 @@ public sealed class Table : IDisposable
 
     private volatile bool isInitialized;
 
-    public int TotalCount => Chunks.Sum(chunk => chunk.Size);
+    public int TotalElementCount => Chunks.Sum(chunk => chunk.Size);
 
 #region Constructors
 
@@ -90,7 +90,7 @@ public sealed class Table : IDisposable
 
 #endregion
 
-#region Public methods
+#region Public Methods
 
     public (int chunkIdx, int idx) Reserve()
     {
@@ -196,7 +196,7 @@ public sealed class Table : IDisposable
 
 #endregion
 
-#region Internal methods
+#region Internal Methods
 
     internal (int, int) GetChunkAndIndex(int idx)
     {
@@ -230,7 +230,7 @@ public sealed class Table : IDisposable
 
 #endregion
 
-#region Private methods
+#region Private Methods
 
     private void CreateChunk()
     {
@@ -270,7 +270,7 @@ public sealed class Table : IDisposable
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {
@@ -297,12 +297,12 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     public unsafe void* Data => Chunk.Data;
 
-#region Public methods
+#region Public Methods
 
     /// <summary>
     /// Try to reserve one extra slot in chunk.
     /// </summary>
-    /// <returns>Whether succeed</returns>
+    /// <returns>Latest element index</returns>
     public int Reserve()
     {
         var newVal = Interlocked.Increment(ref Reservation);
@@ -324,14 +324,13 @@ public sealed class TableMemoryChunk(int capacity) : IDisposable
 
     public void Clear()
     {
-        Chunk.Free();
         Size = 0;
         Reservation = 0;
     }
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {

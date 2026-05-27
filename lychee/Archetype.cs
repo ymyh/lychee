@@ -8,7 +8,7 @@ using lychee.utils;
 namespace lychee;
 
 /// <summary>
-/// Stores all archetypes in the ECS world. Containing a empty archetype for entities without components and
+/// Stores all archetypes in the ECS world. Containing an empty archetype for entities without components and
 /// providing methods to get or create archetypes based on component type combinations.
 /// </summary>
 public sealed class ArchetypeManager : IDisposable
@@ -44,7 +44,23 @@ public sealed class ArchetypeManager : IDisposable
         Archetypes.Add(EmptyArchetype);
     }
 
-#region Public methods
+#region Public Methods
+
+    /// <summary>
+    /// Dumps all archetype definitions except empty archetype.
+    /// </summary>
+    /// <returns></returns>
+    public ArchetypeDefinition[] DumpAllArchetypeDefinitions()
+    {
+        return Archetypes.Skip(1).Select(a =>
+        {
+            return new ArchetypeDefinition
+            {
+                ID = a.ID,
+                TypeNames = a.Types.Select(t => t.FullName).ToArray()!,
+            };
+        }).ToArray();
+    }
 
     /// <summary>
     /// Gets an existing archetype with the specified component types, or creates a new one if it doesn't exist.
@@ -187,7 +203,7 @@ public sealed class ArchetypeManager : IDisposable
 
 #endregion
 
-#region Internal methods
+#region Internal Methods
 
     internal void Commit(EntityPool entityPool)
     {
@@ -207,7 +223,7 @@ public sealed class ArchetypeManager : IDisposable
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {
@@ -241,9 +257,11 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     private readonly ConcurrentStack<(int id, ushort chunkIdx, ushort idx)> holesInTable = [];
 
-    private bool dirty = false;
+    private bool dirty;
 
-    private bool disposed = false;
+    private bool disposed;
+
+#endregion
 
 #region Public Properties
 
@@ -262,6 +280,8 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     /// </summary>
     public Type[] Types => typeIdList.Select(typeRegistrar.GetTypeById).ToArray();
 
+    public int EntityCount => Table.TotalElementCount;
+
     /// <summary>
     /// Indicates whether the archetype's table and entity count are synchronized.
     /// </summary>
@@ -269,9 +289,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     /// Returns true when the total count in the table equals the number of tracked entities.
     /// An archetype may be incoherent temporarily during structural changes.
     /// </remarks>
-    public bool IsCoherent => Table.TotalCount == entities.Count;
-
-#endregion
+    public bool IsCoherent => EntityCount == entities.Count;
 
 #endregion
 
@@ -525,7 +543,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
 #endregion
 
-#region Private methods
+#region Private Methods
 
     private void FillHole(int chunkIdx, int from, int to)
     {
@@ -582,7 +600,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
 #endregion
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {
@@ -597,4 +615,20 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
     }
 
 #endregion
+}
+
+/// <summary>
+/// Contains id and all type names of archetype.
+/// </summary>
+public sealed class ArchetypeDefinition
+{
+    /// <summary>
+    /// Archetype id.
+    /// </summary>
+    public int ID { get; init; }
+
+    /// <summary>
+    /// Full name of types.
+    /// </summary>
+    public string[] TypeNames { get; init; }
 }

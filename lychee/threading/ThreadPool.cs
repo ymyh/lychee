@@ -1,9 +1,9 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 
 namespace lychee.threading;
 
 /// <summary>
-/// A simple thread pool that dispatch tasks to multiple threads.
+/// A simple thread pool that dispatches tasks to multiple threads.
 /// </summary>
 public sealed class ThreadPool : IDisposable
 {
@@ -11,9 +11,11 @@ public sealed class ThreadPool : IDisposable
 
     private readonly Channel<Action<int>> sendTaskChannel;
 
-    private readonly CountdownEvent countdownEvent = new(1);
+    private int pendingCount;
 
-    private bool disposed = false;
+    private readonly ManualResetEventSlim doneEvent = new(true);
+
+    private bool disposed;
 
     public ThreadPool(int threadCount, int channelCapacity = 64)
     {
@@ -46,7 +48,11 @@ public sealed class ThreadPool : IDisposable
                     {
                         var act = await sendTaskChannel.Reader.ReadAsync();
                         act(idx);
-                        countdownEvent.Signal();
+
+                        if (Interlocked.Decrement(ref pendingCount) == 0)
+                        {
+                            doneEvent.Set();
+                        }
                     }
                     catch (ChannelClosedException)
                     {
@@ -54,7 +60,10 @@ public sealed class ThreadPool : IDisposable
                     }
                     catch (Exception)
                     {
-                        countdownEvent.Signal();
+                        if (Interlocked.Decrement(ref pendingCount) == 0)
+                        {
+                            doneEvent.Set();
+                        }
                     }
                 }
             }) { IsBackground = true };
@@ -65,33 +74,28 @@ public sealed class ThreadPool : IDisposable
     }
 
     /// <summary>
-    /// Dispatch a task to thread.
+    /// Dispatches a task to be executed on a worker thread.
     /// </summary>
-    /// <param name="act">The task to dispatch. The parameter of action is the index of thread.</param>
+    /// <param name="act">The task to dispatch. The parameter is the index of the worker thread executing it.</param>
     public void Dispatch(Action<int> act)
     {
-        countdownEvent.TryAddCount();
-        sendTaskChannel.Writer.TryWrite(act);
+        sendTaskChannel.Writer.WriteAsync(act);
+
+        if (Interlocked.Increment(ref pendingCount) == 1)
+        {
+            doneEvent.Reset();
+        }
     }
 
     /// <summary>
-    /// Wait until all tasks are completed.
+    /// Blocks the calling thread until all dispatched tasks have completed.
     /// </summary>
     public void Wait()
     {
-        countdownEvent.Signal();
-
-        if (countdownEvent.CurrentCount == 0)
-        {
-            countdownEvent.Reset();
-            return;
-        }
-
-        countdownEvent.Wait();
-        countdownEvent.Reset();
+        doneEvent.Wait();
     }
 
-#region IDisposable Member
+#region IDisposable Implementation
 
     public void Dispose()
     {
@@ -111,7 +115,7 @@ public sealed class ThreadPool : IDisposable
             }
         }
 
-        countdownEvent.Dispose();
+        doneEvent.Dispose();
         threads.Clear();
     }
 

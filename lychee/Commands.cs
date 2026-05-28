@@ -62,6 +62,41 @@ public sealed class Commands(App app)
     }
 
     /// <summary>
+    /// Creates a copy of an existing entity with identical component data.
+    /// </summary>
+    /// <param name="entity">The entity to copy.</param>
+    /// <returns>The newly created copy entity.</returns>
+    public Entity CopyEntity(in Entity entity)
+    {
+        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
+        {
+            throw new ArgumentException("Cannot copy an invalid entity");
+        }
+
+        var newEntityRef = entityPool.ReserveEntity();
+        var (newChunkIdx, newIdx) = entity.Archetype.Reserve();
+
+        var typeIdList = entity.Archetype.TypeIdList;
+        for (var i = 0; i < typeIdList.Length; i++)
+        {
+            unsafe
+            {
+                var srcPtr = entity.Archetype.Table.GetPtr(i, entity.Pos.ChunkIdx, entity.Pos.Idx);
+                var dstPtr = entity.Archetype.Table.GetPtr(i, newChunkIdx, newIdx);
+                NativeMemory.Copy(
+                    srcPtr,
+                    dstPtr,
+                    (nuint)entity.Archetype.Table.Layout.TypeInfoList[i].Size);
+            }
+        }
+
+        var newEntity = new Entity(this, entity.Archetype, newEntityRef, new((ushort)newChunkIdx, (ushort)newIdx));
+        modifiedEntityInfoMap[newEntityRef.ID] = newEntity;
+
+        return newEntity;
+    }
+
+    /// <summary>
     /// Removes an existing entity. Does nothing if the entity is already removed or in uncommitted state.
     /// </summary>
     /// <param name="entityRef">The entity to remove.</param>

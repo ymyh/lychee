@@ -38,6 +38,15 @@ public struct Entity(Commands commands, Archetype archetype)
     }
 
     /// <summary>
+    /// Creates a copy of this entity with identical component data.
+    /// </summary>
+    /// <returns>The newly created copy entity.</returns>
+    public Entity Copy()
+    {
+        return commands.CopyEntity(in this);
+    }
+
+    /// <summary>
     /// Despawns this entity, marking it for removal.
     /// The entity will be fully removed when the commands are committed.
     /// </summary>

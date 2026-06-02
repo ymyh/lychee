@@ -172,21 +172,14 @@ public sealed class DirectedAcyclicGraph<T>
     }
 
     /// <summary>
-    /// Performs a depth-first traversal of the graph, executing the specified action on each node.
+    /// Executes the specified action on each node in the graph.
     /// </summary>
     /// <param name="action">The action to perform on each node.</param>
     public void ForEach(Action<DAGNode<T>> action)
     {
-        ForEachInner(Nodes, action);
-        return;
-
-        static void ForEachInner(List<DAGNode<T>> nodes, Action<DAGNode<T>> action)
+        foreach (var node in Nodes)
         {
-            foreach (var node in nodes)
-            {
-                action(node);
-                ForEachInner(node.Children, action);
-            }
+            action(node);
         }
     }
 }

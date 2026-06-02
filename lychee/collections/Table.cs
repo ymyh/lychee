@@ -131,7 +131,7 @@ public sealed class Table : IDisposable
         {
             chunk.Clear();
         }
-        Chunks.Clear();
+        Chunks.RemoveRange(1, Chunks.Count - 1);
 
         lastAvailableViewIndex = 0;
     }

@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using lychee.interfaces;
 using lychee.threading;
@@ -46,9 +47,9 @@ public sealed class TypeRegistrar
     /// <param name="alignment">The alignment requirement in bytes. Default is 0 for automatic detection.</param>
     /// <typeparam name="T">The component type to register. Must be unmanaged and implement IComponent.</typeparam>
     /// <returns>The unique type identifier assigned to this component type.</returns>
-    public int RegisterComponent<T>(uint alignment = 0) where T : unmanaged, IComponent
+    public int RegisterComponent<T>(int size = 0, uint alignment = 0) where T : unmanaged, IComponent
     {
-        return Register<T>(alignment);
+        return Register<T>(size, alignment);
     }
 
     /// <summary>
@@ -58,9 +59,9 @@ public sealed class TypeRegistrar
     /// <param name="type">The component type to register. Must be unmanaged and implement IComponent.</param>
     /// <param name="alignment">The alignment requirement in bytes. Default is 0 for automatic detection.</param>
     /// <returns>The unique type identifier assigned to this component type.</returns>
-    public int RegisterComponent<T>(Type type, uint alignment = 0) where T : unmanaged, IComponent
+    public int RegisterComponent<T>(Type type, int size = 0, uint alignment = 0) where T : unmanaged, IComponent
     {
-        return Register(type, alignment);
+        return Register(type, size, alignment);
     }
 
     /// <summary>
@@ -70,18 +71,20 @@ public sealed class TypeRegistrar
     /// <param name="type">The component type to register. Must be unmanaged and implement IComponent.</param>
     /// <param name="alignment">The alignment requirement in bytes. Default is 0 for automatic detection.</param>
     /// <returns>The unique type identifier assigned to this component type.</returns>
-    public int RegisterComponent(Type type, uint alignment = 0)
+    public int RegisterComponent(Type type, int size = 0, uint alignment = 0)
     {
-        return !type.IsAssignableTo(typeof(IComponent)) ? throw new ArgumentException($"Type parameter {type.Name} must be assignable to IComponent") : Register(type, alignment);
+        return !type.IsAssignableTo(typeof(IComponent)) ? throw new ArgumentException($"Type parameter {type.Name} must be assignable to IComponent")
+            : Register(type, size, alignment);
     }
 
     /// <summary>
     /// Register a type.
     /// </summary>
     /// <param name="type">The type to register.</param>
+    /// <param name="size">The size of type, default is 0, which means auto deduction.</param>
     /// <param name="alignment">The alignment of type, default is 0, which means auto deduction.</param>
     /// <returns></returns>
-    internal int Register(Type type, uint alignment = 0)
+    internal int Register(Type type, int size = 0, uint alignment = 0)
     {
         using var wg = typeListLock.EnterWriteLock();
         var typeList = wg.Data;
@@ -96,16 +99,25 @@ public sealed class TypeRegistrar
 
         unsafe
         {
-            var size = type.IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
-
-            if (size == 1 && TypeUtils.IsEmptyStruct(type))
+            if (size == 0)
             {
-                size = 0;
-            }
+                if (type.IsAssignableTo(typeof(IComponent)))
+                {
+                    size = GetComponentSize(type);
+                }
+                else
+                {
+                    size = type.IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
+                    if (size == 1 && TypeUtils.IsEmptyStruct(type))
+                    {
+                        size = 0;
+                    }
+                }
 
-            if (size != 0 && alignment == 0)
-            {
-                alignment = (uint)TypeUtils.GetOrGuessAlignment(type);
+                if (size != 0 && alignment == 0)
+                {
+                    alignment = (uint)TypeUtils.GetOrGuessAlignment(type);
+                }
             }
 
             typeList.Add(new(size, (int)alignment));
@@ -114,9 +126,9 @@ public sealed class TypeRegistrar
         return typeList.Count - 1;
     }
 
-    internal int Register<T>(uint alignment = 0)
+    internal int Register<T>(int size = 0, uint alignment = 0)
     {
-        return Register(typeof(T), alignment);
+        return Register(typeof(T), size, alignment);
     }
 
     /// <summary>
@@ -142,7 +154,7 @@ public sealed class TypeRegistrar
             throw new ArgumentException("Bundle type must have at least one non-static field", nameof(T));
         }
 
-        bundleToInfoDict.TryAdd(type, fields.Select(f => (new TypeInfo(Marshal.SizeOf(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
+        bundleToInfoDict.TryAdd(type, fields.Select(f => (new TypeInfo(GetComponentSize(f.FieldType), (int)Marshal.OffsetOf<T>(f.Name)),
             RegisterComponent(f.FieldType))).ToArray());
     }
 
@@ -269,4 +281,13 @@ public sealed class TypeRegistrar
     {
         return idToTypeDict[typeId];
     }
+
+#region Private Methods
+
+    private int GetComponentSize(Type type)
+    {
+        return (Activator.CreateInstance(type) as IComponent)!.GetComponentMeta().Size;
+    }
+
+#endregion
 }

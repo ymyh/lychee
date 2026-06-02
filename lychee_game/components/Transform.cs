@@ -1,29 +1,33 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices;
-using lychee.interfaces;
+using lychee.attributes;
 
 namespace lychee_game.components;
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
-public struct Position : IComponent
+[Component]
+public partial struct Position
 {
     public Vector3 Value;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
-public struct Rotation : IComponent
+[Component]
+public partial struct Rotation
 {
     public Vector3 Value;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
-public struct Scale : IComponent
+[Component]
+public partial struct Scale
 {
     public Vector3 Value;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
-public struct Transform : IComponent
+[Component]
+public partial struct Transform
 {
     public Position Position;
 

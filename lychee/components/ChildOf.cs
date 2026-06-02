@@ -1,8 +1,9 @@
-﻿using lychee.interfaces;
+﻿using lychee.attributes;
 
 namespace lychee.components;
 
-public struct ChildOf : IComponent
+[Component]
+public partial struct ChildOf
 {
     public EntityRef Parent;
 }

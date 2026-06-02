@@ -8,4 +8,8 @@
         <LangVersion>14</LangVersion>
     </PropertyGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\lychee_sg\lychee_sg.csproj" OutputItemType="Analyzer"/>
+    </ItemGroup>
+
 </Project>

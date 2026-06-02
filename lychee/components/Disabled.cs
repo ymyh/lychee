@@ -1,8 +1,9 @@
-﻿using lychee.interfaces;
+﻿using lychee.attributes;
 
 namespace lychee.components;
 
 /// <summary>
 /// Marker component indicating that an entity is disabled.
 /// </summary>
-public struct Disabled : IComponent;
+[Component]
+public partial struct Disabled;

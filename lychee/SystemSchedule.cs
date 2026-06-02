@@ -8,6 +8,16 @@ namespace lychee;
 /// </summary>
 public sealed class SystemSchedules
 {
+    /// <summary>
+    /// The built-in first schedule, always executes before all user-added schedules.
+    /// </summary>
+    public DefaultSchedule First { get; }
+
+    /// <summary>
+    /// The built-in last schedule, always executes after all user-added schedules.
+    /// </summary>
+    public DefaultSchedule Last { get; }
+
     private readonly List<ISchedule> schedules = [];
 
     private readonly Dictionary<string, ISchedule> scheduleDict = [];
@@ -15,6 +25,18 @@ public sealed class SystemSchedules
     private int lastScheduleIndex;
 
     private bool needClear;
+
+    internal SystemSchedules(App app)
+    {
+        First = new(app, nameof(First));
+        Last = new(app, nameof(Last));
+
+        schedules.Add(First);
+        schedules.Add(Last);
+
+        scheduleDict.Add(First.Name, First);
+        scheduleDict.Add(Last.Name, Last);
+    }
 
     /// <summary>
     /// Adds a schedule to the collection, optionally inserting it after a specified schedule.
@@ -36,7 +58,7 @@ public sealed class SystemSchedules
             throw new ArgumentException($"Schedule {schedule.Name} already exists");
         }
 
-        if (addAfter != null && schedules.IndexOf(addAfter) == -1)
+        if (addAfter != null)
         {
             index = schedules.IndexOf(addAfter);
             if (index == -1)
@@ -44,11 +66,11 @@ public sealed class SystemSchedules
                 throw new ArgumentException($"Schedule {addAfter} does not exist");
             }
 
-            schedules.Insert(index, schedule);
+            schedules.Insert(index + 1, schedule);
         }
         else
         {
-            schedules.Add(schedule);
+            schedules.Insert(schedules.Count - 1, schedule);
         }
 
         scheduleDict.Add(schedule.Name, schedule);
@@ -64,16 +86,12 @@ public sealed class SystemSchedules
     public void AddSchedule(ISchedule schedule, string addAfter)
     {
         var addAfterSchedule = GetSchedule(addAfter);
-        if (addAfterSchedule == null)
-        {
-            throw new ArgumentException($"Schedule {addAfter} not found");
-        }
-
         AddSchedule(schedule, addAfterSchedule);
     }
 
     /// <summary>
-    /// Requests that all schedules be cleared after the current execution cycle completes.
+    /// Requests that all user-added schedules be cleared after the current execution cycle completes.
+    /// The built-in <see cref="First"/> and <see cref="Last"/> schedules are preserved.
     /// </summary>
     /// <remarks>
     /// The clearing is deferred until the end of the current execution cycle to avoid
@@ -116,6 +134,9 @@ public sealed class SystemSchedules
             {
                 schedules.Clear();
                 scheduleDict.Clear();
+
+                schedules.Add(First);
+                schedules.Add(Last);
 
                 needClear = false;
             }

@@ -1,4 +1,5 @@
 ﻿using lychee.interfaces;
+using lychee.systems;
 using ThreadPool = lychee.threading.ThreadPool;
 
 namespace lychee;
@@ -38,11 +39,13 @@ public sealed class App : IDisposable
 
     public World World { get; }
 
+    public SystemSchedules SystemSchedules { get; }
+
     internal readonly ThreadPool ThreadPool;
 
     private readonly List<IDisposable> disposables = [];
 
-    private bool disposed = false;
+    private bool disposed;
 
 #endregion
 
@@ -55,6 +58,7 @@ public sealed class App : IDisposable
     public App(AppDescriptor descriptor)
     {
         World = new(TypeRegistrar, descriptor.ChunkSizeHint);
+        SystemSchedules = new(this);
         ResourcePool = new(TypeRegistrar);
         ThreadPool = new(descriptor.ThreadCount, descriptor.ThreadPoolQueueCapacity);
 
@@ -85,6 +89,23 @@ public sealed class App : IDisposable
 
         ResourcePool.AddResource(ev);
         World.AddEvent(ev);
+    }
+
+    /// <summary>
+    /// Registers a new state and adds a cleanup system to the <see cref="Last"/> schedule.
+    /// Entities with a <see cref="lychee.components.StateScoped{T}"/> matching the previous state
+    /// are automatically despawned when the state changes.
+    /// </summary>
+    /// <param name="initial">The initial state value.</param>
+    /// <typeparam name="T">The state type, typically an enum.</typeparam>
+    /// <returns>The state resource for use in systems.</returns>
+    public State<T> AddState<T>(T initial) where T : unmanaged, Enum
+    {
+        var state = new State<T>(initial);
+        ResourcePool.AddResource(state);
+        SystemSchedules.Last.AddSystem<StateCleanupSystem<T>>();
+
+        return state;
     }
 
     /// <summary>
@@ -204,7 +225,7 @@ public sealed class App : IDisposable
     /// <param name="schedule">The schedule instance to add.</param>
     public void AddSchedule(ISchedule schedule)
     {
-        World.SystemSchedules.AddSchedule(schedule);
+        SystemSchedules.AddSchedule(schedule);
     }
 
     /// <summary>
@@ -215,7 +236,18 @@ public sealed class App : IDisposable
     /// <exception cref="ArgumentException">Thrown when the schedule name already exists or the addAfter schedule is not found.</exception>
     public void AddSchedule(ISchedule schedule, string addAfter)
     {
-        World.SystemSchedules.AddSchedule(schedule, addAfter);
+        SystemSchedules.AddSchedule(schedule, addAfter);
+    }
+
+    /// <summary>
+    /// Adds a system schedule, inserting it after an existing schedule in the execution order.
+    /// </summary>
+    /// <param name="schedule">The schedule instance to add.</param>
+    /// <param name="addAfter">The schedule after which this schedule should execute.</param>
+    /// <exception cref="ArgumentException">Thrown when the schedule name already exists or the addAfter schedule is not found.</exception>
+    public void AddSchedule(ISchedule schedule, ISchedule addAfter)
+    {
+        AddSchedule(schedule, addAfter.Name);
     }
 
     /// <summary>
@@ -232,7 +264,7 @@ public sealed class App : IDisposable
     /// </summary>
     public void ClearSchedules()
     {
-        World.SystemSchedules.ClearSchedules();
+        SystemSchedules.ClearSchedules();
     }
 
     /// <summary>
@@ -256,7 +288,7 @@ public sealed class App : IDisposable
     /// <returns>The schedule if found; otherwise, null.</returns>
     public ISchedule? GetSchedule(string name)
     {
-        return World.SystemSchedules.GetSchedule(name);
+        return SystemSchedules.GetSchedule(name);
     }
 
     /// <summary>
@@ -267,7 +299,7 @@ public sealed class App : IDisposable
     /// <returns>The schedule if found and of the correct type; otherwise, null.</returns>
     public T? GetSchedule<T>(string name) where T : class, ISchedule
     {
-        return World.SystemSchedules.GetSchedule<T>(name);
+        return SystemSchedules.GetSchedule<T>(name);
     }
 
     /// <summary>
@@ -313,7 +345,10 @@ public sealed class App : IDisposable
     /// </param>
     public void Update(ISchedule? scheduleEnd = null)
     {
-        World.Update(scheduleEnd);
+        if (SystemSchedules.Execute(scheduleEnd))
+        {
+           World.SwapEvents();
+        }
     }
 
 #endregion

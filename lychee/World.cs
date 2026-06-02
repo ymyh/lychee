@@ -12,11 +12,6 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 #region Fields
 
     /// <summary>
-    /// Manages the collection and execution order of all system schedules.
-    /// </summary>
-    public readonly SystemSchedules SystemSchedules = new();
-
-    /// <summary>
     /// Manages entity creation, destruction, and ID allocation.
     /// </summary>
     public readonly EntityPool EntityPool = new();
@@ -28,7 +23,7 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
     private readonly List<IEvent> events = [];
 
-    private bool disposed = false;
+    private bool disposed;
 
 #endregion
 
@@ -45,19 +40,21 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
     internal void Update(ISchedule? scheduleEnd = null)
     {
-        if (SystemSchedules.Execute(scheduleEnd))
-        {
-            foreach (var ev in events)
-            {
-                ev.ExchangeFrontBack();
-            }
-        }
+
     }
 
     internal void RemoveAllEntities()
     {
         EntityPool.Clear();
         ArchetypeManager.ClearData();
+    }
+
+    internal void SwapEvents()
+    {
+        foreach (var ev in events)
+        {
+            ev.ExchangeFrontBack();
+        }
     }
 
 #endregion

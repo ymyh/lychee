@@ -73,8 +73,6 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 {
     public FireOnceSchedule StartUp { get; private set; } = null!;
 
-    public DefaultSchedule First { get; private set; } = null!;
-
     public FixedIntervalSchedule FixedUpdate { get; private set; } = null!;
 
     public DefaultSchedule Update { get; private set; } = null!;
@@ -87,8 +85,6 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
 
     public DefaultSchedule RenderUI { get; private set; } = null!;
 
-    public DefaultSchedule Last { get; private set; } = null!;
-
     public BasicGamePlugin() : this(new())
     {
     }
@@ -96,34 +92,28 @@ public sealed class BasicGamePlugin(DefaultPluginDescriptor desc) : IPlugin
     public void Install(App app)
     {
         StartUp = new(app, nameof(StartUp));
-        app.AddSchedule(StartUp);
-
-        First = new(app, nameof(First));
-        app.AddSchedule(First);
+        app.AddSchedule(StartUp, "First");
 
         FixedUpdate = new(app, nameof(FixedUpdate))
         {
             FixedUpdateInterval = desc.FixedUpdateInterval,
             CatchUpCount = desc.FixedUpdateCatchUpCount
         };
-        app.AddSchedule(FixedUpdate);
+        app.AddSchedule(FixedUpdate, nameof(StartUp));
 
         Update = new(app, nameof(Update));
-        app.AddSchedule(Update);
+        app.AddSchedule(Update, nameof(FixedUpdate));
 
         PostUpdate = new(app, nameof(PostUpdate));
-        app.AddSchedule(PostUpdate);
+        app.AddSchedule(PostUpdate, nameof(Update));
 
         Render = new(app, nameof(Render));
-        app.AddSchedule(Render);
+        app.AddSchedule(Render, nameof(PostUpdate));
 
         RenderTransparency = new(app, nameof(RenderTransparency));
-        app.AddSchedule(RenderTransparency);
+        app.AddSchedule(RenderTransparency, nameof(Render));
 
         RenderUI = new(app, nameof(RenderUI));
-        app.AddSchedule(RenderUI);
-
-        Last = new(app, nameof(Last));
-        app.AddSchedule(Last);
+        app.AddSchedule(RenderUI, nameof(RenderTransparency));
     }
 }

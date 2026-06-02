@@ -363,23 +363,84 @@ partial class DamageDisplaySystem
 
 **Note**: Events are automatically exchanged at the beginning of each update called.
 
+## State System
+
+The State system provides a finite state machine pattern for managing game states (e.g., game phases, UI screens).
+Entities can be scoped to a specific state and are automatically despawned when the state changes.
+
+### Registering a State
+
+Use `App.AddState<T>()` to register a state. This creates a `State<T>` resource and automatically registers a cleanup
+system that removes state-scoped entities when the state transitions:
+
+```csharp
+using lychee;
+
+// Typically an enum
+enum GamePhase { Menu, Playing, Paused, GameOver }
+
+// Register state with initial value
+var phase = app.AddState(GamePhase.Menu);
+```
+
+### Transitioning States
+
+Call `State<T>.Set()` to transition to a new state. If the new value equals the current value, no transition occurs:
+
+```csharp
+[AutoImplSystem]
+partial class PauseSystem
+{
+    private static void Execute([Resource] State<GamePhase> phase, Commands commands)
+    {
+        if (/* pause key pressed */)
+        {
+            phase.Set(GamePhase.Paused);
+        }
+    }
+}
+```
+
+### Scoping Entities to a State
+
+Use the `StateScoped<T>` component to bind an entity's lifetime to a specific state value. When the state changes
+away from the scoped value, the entity is automatically despawned:
+
+```csharp
+[AutoImplSystem]
+partial class MenuSetupSystem
+{
+    private static void Execute(Commands commands)
+    {
+        // This entity will be despawned when GamePhase transitions away from Menu
+        commands.CreateEntityWithComponent(new StateScoped<GamePhase>
+        {
+            Value = GamePhase.Menu
+        });
+    }
+}
+```
+
+**How it works**: `App.AddState<T>()` registers a `StateCleanupSystem<T>` in the `Last` schedule. Each frame, it
+checks if the state has changed and removes all entities whose `StateScoped<T>.Value` does not match the current state.
+
 ## Scheduling System
 
 ### Schedules Provided by BasicGamePlugin
 
 `BasicGamePlugin` provides standard game loop schedules:
 
-| Schedule             | Description                          |
-|----------------------|--------------------------------------|
-| `StartUp`            | Execute once at startup              |
-| `First`              | First call each frame                |
-| `FixedUpdate`        | Fixed interval update (default 20ms) |
-| `Update`             | Regular update                       |
-| `PostUpdate`         | Post-processing update               |
-| `Render`             | Render update                        |
-| `RenderTransparency` | Transparent rendering                |
-| `RenderUI`           | UI rendering                         |
-| `Last`               | Last call each frame                 |
+| Schedule             | Description                                         |
+|----------------------|-----------------------------------------------------|
+| `First`              | Built-in. First call each frame                     |
+| `StartUp`            | Execute once at startup                             |
+| `FixedUpdate`        | Fixed interval update (default 20ms)                |
+| `Update`             | Regular update                                      |
+| `PostUpdate`         | Post-processing update                              |
+| `Render`             | Render update                                       |
+| `RenderTransparency` | Transparent rendering                               |
+| `RenderUI`           | UI rendering                                        |
+| `Last`               | Built-in. Last call each frame (state cleanup runs) |
 
 ### System Ordering and Parallel Execution
 
@@ -455,14 +516,14 @@ using lychee.interfaces;
 using lychee_game;
 
 // Define components
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-struct Position : IComponent
+[Component]
+struct Position
 {
     public float X, Y;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-struct Velocity : IComponent
+[Component]
+struct Velocity
 {
     public float X, Y;
 }

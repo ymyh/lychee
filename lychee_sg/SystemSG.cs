@@ -14,6 +14,10 @@ namespace lychee_sg
 
         public string Namespace;
 
+        public string TypeParameters;
+
+        public string TypeConstraints;
+
         public ParamInfo[] Params;
 
         public bool HasAfterExecute;
@@ -92,7 +96,7 @@ using ThreadPool = lychee.threading.ThreadPool;
 
 namespace {sysInfo.Namespace};
 
-partial class {sysInfo.Name} : ISystem
+partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConstraints}
 {{
     private static class SystemDataAG
     {{
@@ -215,10 +219,17 @@ partial class {sysInfo.Name} : ISystem
                 }
             }
 
+            var typeParams = classDecl.TypeParameterList?.ToString() ?? "";
+            var typeConstraints = classDecl.ConstraintClauses.Count > 0
+                ? " " + string.Join(" ", classDecl.ConstraintClauses.Select(c => c.ToString()))
+                : "";
+
             return new SystemInfo
             {
                 Name = classDecl.Identifier.Text,
                 Namespace = Utils.GetNamespace(classDecl),
+                TypeParameters = typeParams,
+                TypeConstraints = typeConstraints,
                 Params = paramList,
                 HasBeforeExecute = hasBeforeExecute,
                 HasAfterExecute = hasAfterExecute,

@@ -89,7 +89,10 @@ public abstract class BasicSchedule : ISchedule
         CommitPoint = commitPoint;
         ExecutionMode = executionMode;
 
-        this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
+        this.app.World.ArchetypeManager.ArchetypeCreated += () =>
+        {
+            needConfigure = true;
+        };
 
         ExecutionGraph.AddNode(new());
     }
@@ -308,10 +311,6 @@ public abstract class BasicSchedule : ISchedule
             NoneFilter = noneFilter,
         }));
         DAGNode<SystemInfo> addAfterNode = null!;
-
-        var predicateMethod = system.GetType().GetMethod("Predicate", BindingFlags.Instance | BindingFlags.Public, [typeof(ResourcePool)]);
-        node.Data.PredicateOverriden = predicateMethod != null;
-
         isFrozen = false;
 
         var list = ExecutionGraph.AsList();
@@ -530,10 +529,7 @@ public abstract class BasicSchedule : ISchedule
         {
             foreach (var frozenDagNode in group)
             {
-                if (frozenDagNode.Data.PredicateOverriden)
-                {
-                    frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
-                }
+                frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
             }
 
             var multiThread = false;

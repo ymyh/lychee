@@ -19,8 +19,6 @@ public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters,
 
     internal readonly SystemFilterInfo FilterInfo = filterInfo;
 
-    internal bool PredicateOverriden = false;
-
     internal bool Predicate = true;
 }
 

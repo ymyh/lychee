@@ -62,6 +62,65 @@ public sealed class Commands(App app)
     }
 
     /// <summary>
+    /// Creates a new entity with a single component attached, skipping the EmptyArchetype migration.
+    /// </summary>
+    /// <param name="component">The component value to attach.</param>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>The newly created entity with the component.</returns>
+    public Entity CreateEntityWithComponent<T>(in T component) where T : unmanaged, IComponent
+    {
+        this.AddComponentTransferInfo<T>(ArchetypeManager.EmptyArchetype);
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var entityRef = entityPool.ReserveEntity();
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
+
+        var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
+        modifiedEntityInfoMap[entityRef.ID] = entity;
+
+        return entity;
+    }
+
+    /// <summary>
+    /// Creates a new entity with a component bundle attached, skipping the EmptyArchetype migration.
+    /// </summary>
+    /// <param name="bundle">The component bundle containing the components to attach.</param>
+    /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
+    /// <returns>The newly created entity with the bundle components.</returns>
+    public Entity CreateEntityWithComponents<T>(in T bundle) where T : unmanaged, IComponentBundle
+    {
+        this.AddComponentsTransferInfo<T>(ArchetypeManager.EmptyArchetype);
+
+        Debug.Assert(TransferDstInfo != null);
+
+        var entityRef = entityPool.ReserveEntity();
+        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+
+        for (var i = 0; i < TransferDstInfo.TypeIndices.Length; i++)
+        {
+            unsafe
+            {
+                var bundleInfo = TransferDstInfo.BundleInfo[i].info;
+                var ptr = TransferDstInfo.Archetype.Table.GetPtr(TransferDstInfo.TypeIndices[i], chunkIdx, idx);
+
+                fixed (T* bundlePtr = &bundle)
+                {
+                    var componentPtr = (byte*)bundlePtr + bundleInfo.Offset;
+                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.Size);
+                }
+            }
+        }
+
+        var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
+        modifiedEntityInfoMap[entityRef.ID] = entity;
+
+        return entity;
+    }
+
+    /// <summary>
     /// Creates a copy of an existing entity with identical component data.
     /// </summary>
     /// <param name="entity">The entity to copy.</param>
@@ -204,17 +263,6 @@ public sealed class Commands(App app)
         modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
-    }
-
-    /// <summary>
-    /// Adds a component with the default value to an entity.
-    /// </summary>
-    /// <param name="entity">The target entity.</param>
-    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>True if the component was added; false if the entity is invalid or removed.</returns>
-    public bool AddComponent<T>(ref Entity entity) where T : unmanaged, IComponent
-    {
-        return AddComponent(ref entity, new T());
     }
 
     /// <summary>

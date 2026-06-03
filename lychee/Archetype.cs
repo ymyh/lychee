@@ -13,7 +13,20 @@ namespace lychee;
 /// </summary>
 public sealed class ArchetypeManager : IDisposable
 {
+#region Public Properties & Fields
+
     public List<Archetype> Archetypes { get; } = [];
+
+    public delegate void ArchetypeCreatedHandler();
+
+    /// <summary>
+    /// Invoked when a new archetype is created.
+    /// </summary>
+    public event ArchetypeCreatedHandler? ArchetypeCreated;
+
+#endregion
+
+#region Private Fields
 
     private readonly TypeRegistrar typeRegistrar;
 
@@ -21,21 +34,22 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly int chunkSizeHint;
 
-    private bool disposed = false;
+    private bool disposed;
 
-    public delegate void ArchetypeCreatedHandler();
+#endregion
+
+#region Static Members
 
     internal static Archetype EmptyArchetype { get; }
-
-    /// <summary>
-    /// Invoked when a new archetype is created.
-    /// </summary>
-    public event ArchetypeCreatedHandler? ArchetypeCreated;
 
     static ArchetypeManager()
     {
         EmptyArchetype = new(0, [], [], null!, 0);
     }
+
+#endregion
+
+#region Constructors
 
     public ArchetypeManager(TypeRegistrar typeRegistrar, int chunkSizeHint)
     {
@@ -43,6 +57,8 @@ public sealed class ArchetypeManager : IDisposable
         this.chunkSizeHint = chunkSizeHint;
         Archetypes.Add(EmptyArchetype);
     }
+
+#endregion
 
 #region Public Methods
 
@@ -245,7 +261,7 @@ public sealed class ArchetypeManager : IDisposable
 
 public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList, TypeRegistrar typeRegistrar, int chunkSizeHint) : IDisposable
 {
-#region Fields
+#region Private Fields
 
     internal readonly Table Table = new(new(typeInfoList), chunkSizeHint);
 

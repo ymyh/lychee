@@ -14,11 +14,15 @@ namespace lychee;
 /// <param name="typeRegistrar">The type registrar from the App for tracking component and resource types.</param>
 public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 {
+#region Private Fields
+
     private readonly Dictionary<Type, object> dataMap = [];
 
-    private bool disposed = false;
+    private bool disposed;
 
-    private static readonly MethodInfo UnsafeAsRef = typeof(Unsafe).GetMethod("AsRef", BindingFlags.Static | BindingFlags.Public, [typeof(void*)])!;
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Adds a reference-type resource to the pool.
@@ -240,7 +244,9 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
         }
     }
 
-#region IDisposable Members
+#endregion
+
+#region IDisposable Implementation
 
     public void Dispose()
     {

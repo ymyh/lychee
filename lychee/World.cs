@@ -9,7 +9,7 @@ namespace lychee;
 /// <param name="chunkSizeHint">A hint for the average size of archetype chunks in bytes, used for optimizing memory layout.</param>
 public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDisposable
 {
-#region Fields
+#region Public Fields
 
     /// <summary>
     /// Manages entity creation, destruction, and ID allocation.
@@ -20,6 +20,10 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
     /// Manages archetypes which store entities grouped by their component composition.
     /// </summary>
     public readonly ArchetypeManager ArchetypeManager = new(typeRegistrar, chunkSizeHint);
+
+#endregion
+
+#region Private Fields
 
     private readonly List<IEvent> events = [];
 
@@ -37,11 +41,6 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 #endregion
 
 #region Internal Methods
-
-    internal void Update(ISchedule? scheduleEnd = null)
-    {
-
-    }
 
     internal void RemoveAllEntities()
     {

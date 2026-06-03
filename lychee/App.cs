@@ -92,7 +92,7 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Registers a new state and adds a cleanup system to the <see cref="Last"/> schedule.
+    /// Registers a new state and adds a cleanup system to the "Last" schedule.
     /// Entities with a <see cref="lychee.components.StateScoped{T}"/> matching the previous state
     /// are automatically despawned when the state changes.
     /// </summary>

@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using lychee.extensions;
 
 namespace lychee;
@@ -9,6 +8,8 @@ namespace lychee;
 /// </summary>
 public sealed class EntityPool
 {
+#region Private Fields
+
     private int latestEntityId = -1;
 
     private readonly List<EntityRef> entities = [];
@@ -18,6 +19,10 @@ public sealed class EntityPool
     private readonly Stack<EntityRef> reusableEntitiesId = [];
 
     private readonly Stack<EntityRef> removedEntitiesId = [];
+
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Verifies whether an entity reference is still valid (generation matches).
@@ -46,6 +51,8 @@ public sealed class EntityPool
 
         return entityInfoList[entityRef.ID];
     }
+
+#endregion
 
 #region Internal Methods
 

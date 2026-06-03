@@ -1,5 +1,4 @@
 using lychee.attributes;
-using lychee.interfaces;
 
 namespace lychee.components;
 
@@ -9,13 +8,19 @@ namespace lychee.components;
 /// </summary>
 /// <typeparam name="T">The state type, typically an enum.</typeparam>
 [Component]
-public partial struct StateScoped<T> : IEquatable<StateScoped<T>>
+public partial struct StateScoped<T>(T value) : IEquatable<StateScoped<T>>
     where T : unmanaged, Enum
 {
+#region Public Fields
+
     /// <summary>
     /// The state value this entity is scoped to.
     /// </summary>
-    public T Value;
+    public T Value = value;
+
+#endregion
+
+#region Public Methods
 
     public bool Equals(StateScoped<T> other)
     {
@@ -41,4 +46,6 @@ public partial struct StateScoped<T> : IEquatable<StateScoped<T>>
     {
         return !(left == right);
     }
+
+#endregion
 }

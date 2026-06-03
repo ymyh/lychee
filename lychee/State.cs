@@ -5,33 +5,28 @@ namespace lychee;
 /// Tracks the current and previous state values, and signals when a transition occurs.
 /// </summary>
 /// <typeparam name="T">The state type, typically an enum.</typeparam>
-public sealed class State<T> where T : Enum
+public sealed class State<T>(T initial) where T : Enum
 {
+#region Public Properties
+
     /// <summary>
     /// The current state value.
     /// </summary>
-    public T Current { get; private set; }
+    public T Current { get; private set; } = initial;
 
     /// <summary>
     /// The previous state value before the last transition.
     /// </summary>
-    public T Previous { get; private set; }
+    public T Previous { get; private set; } = initial;
 
     /// <summary>
     /// Whether the state has changed since the last cleanup.
     /// </summary>
-    public bool Changed { get; private set; }
+    public bool Changed { get; private set; } = true;
 
-    /// <summary>
-    /// Creates a new state with the specified initial value.
-    /// </summary>
-    /// <param name="initial">The initial state value.</param>
-    public State(T initial)
-    {
-        Current = initial;
-        Previous = initial;
-        Changed = true;
-    }
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Transitions to a new state. If the new value equals the current value, no transition occurs.
@@ -49,8 +44,14 @@ public sealed class State<T> where T : Enum
         Changed = true;
     }
 
+#endregion
+
+#region Internal Methods
+
     internal void ClearChanged()
     {
         Changed = false;
     }
+
+#endregion
 }

@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using lychee.interfaces;
 using lychee.threading;
@@ -32,6 +31,8 @@ public struct TypeInfo(int size, int alignment)
 /// </summary>
 public sealed class TypeRegistrar
 {
+#region Private Fields
+
     private readonly ReadWriteLock<List<TypeInfo>> typeListLock = new([]);
 
     private readonly ConcurrentDictionary<Type, int> typeToIdDict = new();
@@ -39,6 +40,10 @@ public sealed class TypeRegistrar
     private readonly ConcurrentDictionary<int, Type> idToTypeDict = new();
 
     private readonly ConcurrentDictionary<Type, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
+
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Registers a component type and returns its unique type identifier.
@@ -75,60 +80,6 @@ public sealed class TypeRegistrar
     {
         return !type.IsAssignableTo(typeof(IComponent)) ? throw new ArgumentException($"Type parameter {type.Name} must be assignable to IComponent")
             : Register(type, size, alignment);
-    }
-
-    /// <summary>
-    /// Register a type.
-    /// </summary>
-    /// <param name="type">The type to register.</param>
-    /// <param name="size">The size of type, default is 0, which means auto deduction.</param>
-    /// <param name="alignment">The alignment of type, default is 0, which means auto deduction.</param>
-    /// <returns></returns>
-    internal int Register(Type type, int size = 0, uint alignment = 0)
-    {
-        using var wg = typeListLock.EnterWriteLock();
-        var typeList = wg.Data;
-
-        if (typeToIdDict.TryGetValue(type, out var value))
-        {
-            return value;
-        }
-
-        typeToIdDict.TryAdd(type, typeList.Count);
-        idToTypeDict.TryAdd(typeList.Count, type);
-
-        unsafe
-        {
-            if (size == 0)
-            {
-                if (type.IsAssignableTo(typeof(IComponent)))
-                {
-                    size = GetComponentSize(type);
-                }
-                else
-                {
-                    size = type.IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
-                    if (size == 1 && TypeUtils.IsEmptyStruct(type))
-                    {
-                        size = 0;
-                    }
-                }
-
-                if (size != 0 && alignment == 0)
-                {
-                    alignment = (uint)TypeUtils.GetOrGuessAlignment(type);
-                }
-            }
-
-            typeList.Add(new(size, (int)alignment));
-        }
-
-        return typeList.Count - 1;
-    }
-
-    internal int Register<T>(int size = 0, uint alignment = 0)
-    {
-        return Register(typeof(T), size, alignment);
     }
 
     /// <summary>
@@ -281,6 +232,66 @@ public sealed class TypeRegistrar
     {
         return idToTypeDict[typeId];
     }
+
+#endregion
+
+#region Internal Methods
+
+    /// <summary>
+    /// Register a type.
+    /// </summary>
+    /// <param name="type">The type to register.</param>
+    /// <param name="size">The size of type, default is 0, which means auto deduction.</param>
+    /// <param name="alignment">The alignment of type, default is 0, which means auto deduction.</param>
+    /// <returns></returns>
+    internal int Register(Type type, int size = 0, uint alignment = 0)
+    {
+        using var wg = typeListLock.EnterWriteLock();
+        var typeList = wg.Data;
+
+        if (typeToIdDict.TryGetValue(type, out var value))
+        {
+            return value;
+        }
+
+        typeToIdDict.TryAdd(type, typeList.Count);
+        idToTypeDict.TryAdd(typeList.Count, type);
+
+        unsafe
+        {
+            if (size == 0)
+            {
+                if (type.IsAssignableTo(typeof(IComponent)))
+                {
+                    size = GetComponentSize(type);
+                }
+                else
+                {
+                    size = type.IsValueType ? Marshal.SizeOf(type) : sizeof(nint);
+                    if (size == 1 && TypeUtils.IsEmptyStruct(type))
+                    {
+                        size = 0;
+                    }
+                }
+
+                if (size != 0 && alignment == 0)
+                {
+                    alignment = (uint)TypeUtils.GetOrGuessAlignment(type);
+                }
+            }
+
+            typeList.Add(new(size, (int)alignment));
+        }
+
+        return typeList.Count - 1;
+    }
+
+    internal int Register<T>(int size = 0, uint alignment = 0)
+    {
+        return Register(typeof(T), size, alignment);
+    }
+
+#endregion
 
 #region Private Methods
 

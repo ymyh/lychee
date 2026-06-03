@@ -8,6 +8,8 @@ namespace lychee;
 /// </summary>
 public sealed class SystemSchedules
 {
+#region Public Properties
+
     /// <summary>
     /// The built-in first schedule, always executes before all user-added schedules.
     /// </summary>
@@ -18,6 +20,10 @@ public sealed class SystemSchedules
     /// </summary>
     public DefaultSchedule Last { get; }
 
+#endregion
+
+#region Private Fields
+
     private readonly List<ISchedule> schedules = [];
 
     private readonly Dictionary<string, ISchedule> scheduleDict = [];
@@ -25,6 +31,10 @@ public sealed class SystemSchedules
     private int lastScheduleIndex;
 
     private bool needClear;
+
+#endregion
+
+#region Constructors
 
     internal SystemSchedules(App app)
     {
@@ -37,6 +47,10 @@ public sealed class SystemSchedules
         scheduleDict.Add(First.Name, First);
         scheduleDict.Add(Last.Name, Last);
     }
+
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Adds a schedule to the collection, optionally inserting it after a specified schedule.
@@ -167,4 +181,6 @@ public sealed class SystemSchedules
     {
         return scheduleDict.GetValueOrDefault(name) as T;
     }
+
+#endregion
 }

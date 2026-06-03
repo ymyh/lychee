@@ -8,21 +8,27 @@ namespace lychee;
 /// </summary>
 public struct Entity(Commands commands, Archetype archetype)
 {
-    internal Archetype Archetype = archetype;
+#region Public Properties
 
     /// <summary>
     /// Gets or sets the entity reference containing the entity ID and generation.
     /// </summary>
     public EntityRef Ref { get; set; }
 
-    internal EntityPos Pos;
-
     /// <summary>
     /// Gets the unique identifier of this entity.
     /// </summary>
     public int ID => Ref.ID;
 
+#endregion
+
+    internal EntityPos Pos;
+
+    internal Archetype Archetype = archetype;
+
     internal Commands Commands => commands;
+
+#region Constructors
 
     /// <summary>
     /// Initializes a new instance of the Entity struct with full state information.
@@ -36,6 +42,10 @@ public struct Entity(Commands commands, Archetype archetype)
         Ref = entityRef;
         Pos = pos;
     }
+
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Creates a copy of this entity with identical component data.
@@ -144,6 +154,8 @@ public struct Entity(Commands commands, Archetype archetype)
     {
         return commands.WithoutComponent<T>(ref this);
     }
+
+#endregion
 }
 
 /// <summary>
@@ -152,6 +164,8 @@ public struct Entity(Commands commands, Archetype archetype)
 /// </summary>
 public struct EntityRef : IEquatable<EntityRef>
 {
+#region Properties & Fields
+
     /// <summary>
     /// Gets the unique identifier of the entity.
     /// </summary>
@@ -159,21 +173,19 @@ public struct EntityRef : IEquatable<EntityRef>
 
     internal int Generation;
 
+#endregion
+
+#region Constructors
+
     internal EntityRef(int id, int generation)
     {
         ID = id;
         Generation = generation;
     }
 
-    /// <summary>
-    /// Determines whether this entity reference is equal to another.
-    /// </summary>
-    /// <param name="other">The entity reference to compare with.</param>
-    /// <returns>True if both ID and generation match; otherwise, false.</returns>
-    public bool Equals(EntityRef other)
-    {
-        return ID == other.ID && Generation == other.Generation;
-    }
+#endregion
+
+#region Public Methods
 
     /// <summary>
     /// Determines whether two entity references are equal.
@@ -197,17 +209,26 @@ public struct EntityRef : IEquatable<EntityRef>
         return !a.Equals(b);
     }
 
-    /// <inheritdoc/>
     public override bool Equals(object? obj)
     {
         return obj is EntityRef other && Equals(other);
     }
 
-    /// <inheritdoc/>
     public override int GetHashCode()
     {
         return HashCode.Combine(Generation, ID);
     }
+
+#endregion
+
+#region IEquatable Implementation
+
+    public bool Equals(EntityRef other)
+    {
+        return ID == other.ID && Generation == other.Generation;
+    }
+
+#endregion
 }
 
 public struct EntityPos(int chunkIdx = 0, int idx = 0)

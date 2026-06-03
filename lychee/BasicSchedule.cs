@@ -49,6 +49,8 @@ public abstract class BasicSchedule : ISchedule
         MultiThread,
     }
 
+#region Public Properties
+
     /// <summary>
     /// The execution graph representing system dependencies and parallelization opportunities.
     /// You can inspect this graph to understand the execution order of systems.
@@ -57,14 +59,6 @@ public abstract class BasicSchedule : ISchedule
     public DirectedAcyclicGraph<SystemInfo> ExecutionGraph { get; } = new();
 
     public string Name { get; }
-
-    private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
-
-    private Commands[][] multiThreadResults = [];
-
-    private readonly App app;
-
-    private readonly List<Commands> entityCommanders = [];
 
     /// <summary>
     /// Gets or sets when entity modifications are committed.
@@ -76,9 +70,23 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     public ExecutionModeEnum ExecutionMode { get; set; }
 
+#endregion
+
+#region Private Fields
+
+    private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
+
+    private Commands[][] multiThreadResults = [];
+
+    private readonly App app;
+
+    private readonly List<Commands> entityCommanders = [];
+
     private bool isFrozen;
 
     private bool needConfigure = true;
+
+#endregion
 
 #region Constructors
 
@@ -89,10 +97,7 @@ public abstract class BasicSchedule : ISchedule
         CommitPoint = commitPoint;
         ExecutionMode = executionMode;
 
-        this.app.World.ArchetypeManager.ArchetypeCreated += () =>
-        {
-            needConfigure = true;
-        };
+        this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
 
         ExecutionGraph.AddNode(new());
     }
@@ -502,6 +507,8 @@ public abstract class BasicSchedule : ISchedule
 
 #endregion
 
+#region Protected Methods
+
     /// <summary>
     /// Executes all systems in the schedule according to the DAG and execution mode.
     /// Derived classes should call this method from their Execute implementation.
@@ -584,6 +591,8 @@ public abstract class BasicSchedule : ISchedule
             Commit();
         }
     }
+
+#endregion
 }
 
 /// <summary>
@@ -600,8 +609,12 @@ public sealed class DefaultSchedule(
     BasicSchedule.CommitPointEnum commitPoint = BasicSchedule.CommitPointEnum.Synchronization)
     : BasicSchedule(app, name, executionMode, commitPoint)
 {
+#region BasicSchedule Implementation
+
     public override void Execute()
     {
         DoExecute();
     }
+
+#endregion
 }

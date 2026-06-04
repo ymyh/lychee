@@ -5,4 +5,4 @@
 /// </summary>
 /// <param name="dynamicInterpolated">If true, dynamically interpolated strings are also accepted.</param>
 [AttributeUsage(AttributeTargets.Parameter)]
-public sealed class StringLiteral(bool dynamicInterpolated = false) : Attribute;
+public sealed class StringLiteralAttribute(bool dynamicInterpolated = false) : Attribute;

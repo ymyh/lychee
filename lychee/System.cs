@@ -1,4 +1,5 @@
-﻿using lychee.interfaces;
+﻿using lychee.attributes;
+using lychee.interfaces;
 
 namespace lychee;
 
@@ -35,14 +36,14 @@ public sealed class SystemDescriptor
 
     /// <summary>
     /// The number of threads to use for parallel execution.
-    /// This value is only used when multithreaded in <see cref="attributes.AutoImplSystem"/> is set to true; otherwise, it is ignored.
+    /// This value is only used when multithreaded in <see cref="AutoImplSystemAttribute"/> is set to true; otherwise, it is ignored.
     /// Must be a positive value when used.
     /// </summary>
     public int ThreadCount { get; set; } = 0;
 
     /// <summary>
     /// The number of entities each thread should process in parallel execution.
-    /// This value is only used when multithreaded in <see cref="attributes.AutoImplSystem"/> is set to true; otherwise, it is ignored.
+    /// This value is only used when multithreaded in <see cref="AutoImplSystemAttribute"/> is set to true; otherwise, it is ignored.
     /// Must be a positive value when used.
     /// </summary>
     public int GroupSize { get; set; } = 0;

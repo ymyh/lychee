@@ -7,7 +7,7 @@
 /// Violating this assumption may cause race conditions. For struct types, read-only behavior
 /// is determined by the parameter modifier (e.g., <c>in</c>, <c>ref</c>, <c>out</c>).</param>
 [AttributeUsage(AttributeTargets.Parameter)]
-public sealed class Resource(bool readOnly = false, bool acquireOnExec = false) : Attribute
+public sealed class ResourceAttribute(bool readOnly = false, bool acquireOnExec = false) : Attribute
 {
     /// <summary>
     /// Indicating whether the resource is treated as read-only.

@@ -13,7 +13,7 @@ public sealed partial class StateCleanupSystem<T> where T : unmanaged, Enum
 {
     private static bool changed;
 
-    private static void Execute(Commands commands, [Resource] State<T> state, StateScoped<T> stateScoped, in Entity entity)
+    private static void Execute(Commands commands, [Resource(true)] State<T> state, StateScoped<T> stateScoped, in Entity entity)
     {
         if (!stateScoped.Value.Equals(state.Current))
         {

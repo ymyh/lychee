@@ -12,7 +12,7 @@ namespace lychee.attributes;
 /// unless <c>Disabled</c> is already present in <c>All</c> or <c>Any</c>.</para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class SystemFilter : Attribute
+public sealed class SystemFilterAttribute : Attribute
 {
     /// <summary>
     /// Component types that must all be present for an archetype to match.

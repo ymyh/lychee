@@ -11,4 +11,4 @@
 /// </list>
 /// </remarks>
 [AttributeUsage(AttributeTargets.GenericParameter)]
-public sealed class SystemConcept : Attribute;
+public sealed class SystemConceptAttribute : Attribute;

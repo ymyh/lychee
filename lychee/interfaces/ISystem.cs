@@ -1,8 +1,10 @@
-﻿namespace lychee.interfaces;
+﻿using lychee.attributes;
+
+namespace lychee.interfaces;
 
 /// <summary>
 /// <b> Warning: Don't implement methods ends with `AG` manually unless you know what are you doing. </b> <br/>
-/// Interface for system, auto implemented by <see cref="lychee.attributes.AutoImplSystem"/>.
+/// Interface for system, auto implemented by <see cref="AutoImplSystemAttribute"/>.
 /// </summary>
 public interface ISystem
 {

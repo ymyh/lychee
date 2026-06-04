@@ -276,7 +276,7 @@ public abstract class BasicSchedule : ISchedule
 
     private (Type[] all, Type[] any, Type[] none) GetSystemFilter(ISystem system)
     {
-        var filterAttr = system.GetType().GetCustomAttribute<SystemFilter>();
+        var filterAttr = system.GetType().GetCustomAttribute<SystemFilterAttribute>();
         if (filterAttr != null)
         {
             if (filterAttr.All.Any(x => x == typeof(Disabled)) || filterAttr.Any.Any(x => x == typeof(Disabled)))
@@ -292,7 +292,7 @@ public abstract class BasicSchedule : ISchedule
 
     private bool CheckIfMultiThread(ISystem system)
     {
-        var attr = system.GetType().GetCustomAttribute<AutoImplSystem>();
+        var attr = system.GetType().GetCustomAttribute<AutoImplSystemAttribute>();
         return attr?.MultiThreaded ?? false;
     }
 
@@ -355,7 +355,7 @@ public abstract class BasicSchedule : ISchedule
         var method = sysType.GetMethod("Execute", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
         var parameters = method.GetParameters().Select(p =>
         {
-            var resourceAttr = p.GetCustomAttribute<Resource>();
+            var resourceAttr = p.GetCustomAttribute<ResourceAttribute>();
 
             if (resourceAttr != null)
             {

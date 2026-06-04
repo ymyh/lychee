@@ -149,7 +149,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
 
             var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDecl);
             var autoImplAttr = classSymbol.GetAttributes()
-                .First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystem");
+                .First(a => a.AttributeClass.ToDisplayString() == "lychee.attributes.AutoImplSystemAttribute");
             var resourceAcquireOnExec = false;
 
             var multiThread = (bool)autoImplAttr.ConstructorArguments[0].Value;
@@ -183,7 +183,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                             var attr = x.GetAttributes().FirstOrDefault(a =>
                             {
                                 var name = a.AttributeClass.ToDisplayString();
-                                return name == "lychee.attributes.Resource";
+                                return name == "lychee.attributes.ResourceAttribute";
                             });
 
                             if (attr != null)

@@ -3,6 +3,22 @@ using lychee.interfaces;
 
 namespace lychee;
 
+/// <summary>
+/// Specifies ordering direction for set configuration.
+/// </summary>
+public enum Order
+{
+    /// <summary>
+    /// The set should execute before the other set.
+    /// </summary>
+    Before,
+
+    /// <summary>
+    /// The set should execute after the other set.
+    /// </summary>
+    After,
+}
+
 public struct SystemParameterInfo(Type type, bool readOnly, bool isResource)
 {
     public readonly Type Type = type;
@@ -12,13 +28,15 @@ public struct SystemParameterInfo(Type type, bool readOnly, bool isResource)
     public readonly bool IsResource = isResource;
 }
 
-public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo)
+public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo, Enum[] sets)
 {
     internal readonly ISystem System = system;
 
     internal readonly SystemParameterInfo[] Parameters = parameters;
 
     internal readonly SystemFilterInfo FilterInfo = filterInfo;
+
+    internal readonly Enum[] Sets = sets;
 
     internal bool Predicate = true;
 }

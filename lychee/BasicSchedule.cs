@@ -82,6 +82,10 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly List<Commands> entityCommanders = [];
 
+    private readonly Dictionary<Enum, HashSet<Enum>> setOrderAfterDict = [];
+
+    private readonly Dictionary<Enum, Func<ResourcePool, bool>> setConditionsDict = [];
+
     private bool isFrozen;
 
     private bool needConfigure = true;
@@ -247,6 +251,53 @@ public abstract class BasicSchedule : ISchedule
         ExecutionGraph.AddNode(new());
     }
 
+    /// <summary>
+    /// Configures ordering between two system sets.
+    /// </summary>
+    /// <param name="set">The set to configure.</param>
+    /// <param name="order">Whether the set should execute before or after the other set.</param>
+    /// <param name="otherSet">The other set to configure ordering against.</param>
+    /// <returns>This schedule for method chaining.</returns>
+    public BasicSchedule ConfigureSetOrder(Enum set, Order order, Enum otherSet)
+    {
+        if (order == Order.After)
+        {
+            if (!setOrderAfterDict.TryGetValue(set, out var precedences))
+            {
+                precedences = [];
+                setOrderAfterDict[set] = precedences;
+            }
+
+            precedences.Add(otherSet);
+        }
+        else
+        {
+            if (!setOrderAfterDict.TryGetValue(otherSet, out var precedences))
+            {
+                precedences = [];
+                setOrderAfterDict[otherSet] = precedences;
+            }
+
+            precedences.Add(set);
+        }
+
+        isFrozen = false;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a run condition for a system set.
+    /// The condition is evaluated once at the start of each schedule execution and combined with each system's own Predicate.
+    /// </summary>
+    /// <param name="set">The set to configure.</param>
+    /// <param name="condition">The condition function. Returns true if the set's systems should execute.</param>
+    /// <returns>This schedule for method chaining.</returns>
+    public BasicSchedule ConfigureSetCondition(Enum set, Func<ResourcePool, bool> condition)
+    {
+        setConditionsDict[set] = condition;
+        return this;
+    }
+
 #endregion
 
 #region Private methods
@@ -290,10 +341,18 @@ public abstract class BasicSchedule : ISchedule
         return ([], [], [typeof(Disabled)]);
     }
 
-    private bool CheckIfMultiThread(ISystem system)
+    private HashSet<Enum> GetPredecessorSets(Enum[] sets)
     {
-        var attr = system.GetType().GetCustomAttribute<AutoImplSystemAttribute>();
-        return attr?.MultiThreaded ?? false;
+        var result = new HashSet<Enum>();
+        foreach (var set in sets)
+        {
+            if (setOrderAfterDict.TryGetValue(set, out var preds))
+            {
+                result.UnionWith(preds);
+            }
+        }
+
+        return result;
     }
 
     private void DoAddSystem(ISystem system, SystemDescriptor descriptor)
@@ -309,21 +368,49 @@ public abstract class BasicSchedule : ISchedule
         system.InitializeAG(app, descriptor);
 
         var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
+        var systemSets = GetSystemSets(system);
         var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
         {
             AllFilter = allFilter,
             AnyFilter = anyFilter,
             NoneFilter = noneFilter,
-        }));
+        }, systemSets));
         DAGNode<SystemInfo> addAfterNode = null!;
         isFrozen = false;
 
         var list = ExecutionGraph.AsList();
         var currentGroup = -1;
+        var setConstrained = false;
+
+        if (systemSets.Length > 0 && setOrderAfterDict.Count > 0)
+        {
+            var predecessorSets = GetPredecessorSets(systemSets);
+            if (predecessorSets.Count > 0)
+            {
+                DAGNode<SystemInfo>? lastPredNode = null;
+                foreach (var n in list)
+                {
+                    if (n == list[0]) continue;
+                    if (n.Data.Sets.Any(predecessorSets.Contains))
+                    {
+                        lastPredNode = n;
+                    }
+                }
+
+                if (lastPredNode != null)
+                {
+                    addAfterNode = lastPredNode;
+                    setConstrained = true;
+                }
+            }
+        }
 
         foreach (var n in list)
         {
-            addAfterNode = n;
+            if (!setConstrained)
+            {
+                addAfterNode = n;
+            }
 
             if (descriptor.AddAfter != null)
             {
@@ -336,7 +423,7 @@ public abstract class BasicSchedule : ISchedule
                 continue;
             }
 
-            if (n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
+            if (!setConstrained && n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
             {
                 if (n.Parents.Count > 0)
                 {
@@ -432,6 +519,33 @@ public abstract class BasicSchedule : ISchedule
         }
     }
 
+    private void Configure()
+    {
+        ExecutionGraph.ForEach(x =>
+        {
+            if (x != ExecutionGraph.Root)
+            {
+                x.Data.System.ConfigureAG(app, x.Data.FilterInfo);
+            }
+        });
+    }
+
+    private void Commit()
+    {
+        entityCommanders.ForEach(x => x.Commit());
+        entityCommanders.Clear();
+
+        if (needConfigure)
+        {
+            Configure();
+            needConfigure = false;
+        }
+    }
+
+#endregion
+
+#region Private Static Methods
+
     private static void ValidateParameter(ISystem system, SystemParameterInfo[] parameters)
     {
         var spanTypeCount = 0;
@@ -467,27 +581,18 @@ public abstract class BasicSchedule : ISchedule
         }
     }
 
-    private void Configure()
+    private static bool CheckIfMultiThread(ISystem system)
     {
-        ExecutionGraph.ForEach(x =>
-        {
-            if (x != ExecutionGraph.Root)
-            {
-                x.Data.System.ConfigureAG(app, x.Data.FilterInfo);
-            }
-        });
+        var attr = system.GetType().GetCustomAttribute<AutoImplSystemAttribute>();
+        return attr?.MultiThreaded ?? false;
     }
 
-    private void Commit()
+    private static Enum[] GetSystemSets(ISystem system)
     {
-        entityCommanders.ForEach(x => x.Commit());
-        entityCommanders.Clear();
-
-        if (needConfigure)
-        {
-            Configure();
-            needConfigure = false;
-        }
+        return system.GetType()
+            .GetCustomAttributes<InSetAttribute>()
+            .Select(a => a.Value)
+            .ToArray();
     }
 
     private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
@@ -515,6 +620,13 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     protected void DoExecute()
     {
+        // Evaluate set conditions once at the start
+        var setPredicateCache = new Dictionary<Enum, bool>();
+        foreach (var (set, cond) in setConditionsDict)
+        {
+            setPredicateCache[set] = cond(app.ResourcePool);
+        }
+
         if (!isFrozen)
         {
             frozenDagNodes = ExecutionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
@@ -536,7 +648,17 @@ public abstract class BasicSchedule : ISchedule
         {
             foreach (var frozenDagNode in group)
             {
-                frozenDagNode.Data.Predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
+                var sysPredicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
+
+                foreach (var set in frozenDagNode.Data.Sets)
+                {
+                    if (setPredicateCache.TryGetValue(set, out var setResult))
+                    {
+                        sysPredicate = sysPredicate && setResult;
+                    }
+                }
+
+                frozenDagNode.Data.Predicate = sysPredicate;
             }
 
             var multiThread = false;

@@ -150,7 +150,11 @@ public sealed class SparseMap<T>() : IEnumerable<(int key, T value)>
     /// <param name="action">The action to perform on each element.</param>
     public void ForEachRef(ForEachRefDelegate action)
     {
-        denseArray.ForEach(x => { action(x.key, ref x.value); });
+        var span = CollectionsMarshal.AsSpan(denseArray);
+        for (var i = 0; i < span.Length; i++)
+        {
+            action(span[i].key, ref span[i].value);
+        }
     }
 
     /// <summary>

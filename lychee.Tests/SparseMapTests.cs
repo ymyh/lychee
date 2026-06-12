@@ -368,17 +368,18 @@ public class SparseMapTests
 #region ForEachRef
 
     [Fact]
-    public void ForEachRef_VisitsAllElements()
+    public void ForEachRef_ModifiesValuesByRef()
     {
         var map = new SparseMap<int>();
         map.Add(0, 10);
         map.Add(1, 20);
         map.Add(2, 30);
 
-        var sum = 0;
-        map.ForEachRef((int _, ref int v) => sum += v);
+        map.ForEachRef((int _, ref int v) => v *= 2);
 
-        Assert.Equal(60, sum);
+        Assert.Equal(20, map[0]);
+        Assert.Equal(40, map[1]);
+        Assert.Equal(60, map[2]);
     }
 
 #endregion

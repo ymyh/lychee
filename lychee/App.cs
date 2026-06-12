@@ -31,7 +31,7 @@ public sealed class AppDescriptor
 /// </summary>
 public sealed class App : IDisposable
 {
-#region Fields
+#region Public Properties
 
     public TypeRegistrar TypeRegistrar { get; } = new();
 
@@ -41,7 +41,17 @@ public sealed class App : IDisposable
 
     public SystemSchedules SystemSchedules { get; }
 
+#region Internal Fields
+
     internal readonly ThreadPool ThreadPool;
+
+    internal readonly SystemSets SystemSets;
+
+#endregion
+
+#endregion
+
+#region Private Fields
 
     private readonly List<IDisposable> disposables = [];
 
@@ -61,6 +71,7 @@ public sealed class App : IDisposable
         SystemSchedules = new(this);
         ResourcePool = new(TypeRegistrar);
         ThreadPool = new(descriptor.ThreadCount, descriptor.ThreadPoolQueueCapacity);
+        SystemSets = new(TypeRegistrar, ResourcePool);
 
         disposables.Add(World);
         disposables.Add(ResourcePool);
@@ -89,23 +100,6 @@ public sealed class App : IDisposable
 
         ResourcePool.AddResource(ev);
         World.AddEvent(ev);
-    }
-
-    /// <summary>
-    /// Registers a new state and adds a cleanup system to the "Last" schedule.
-    /// Entities with a <see cref="lychee.components.StateScoped{T}"/> matching the previous state
-    /// are automatically despawned when the state changes.
-    /// </summary>
-    /// <param name="initial">The initial state value.</param>
-    /// <typeparam name="T">The state type, typically an enum.</typeparam>
-    /// <returns>The state resource for use in systems.</returns>
-    public State<T> AddState<T>(T initial) where T : unmanaged, Enum
-    {
-        var state = new State<T>(initial);
-        ResourcePool.AddResource(state);
-        SystemSchedules.Last.AddSystem<StateCleanupSystem<T>>();
-
-        return state;
     }
 
     /// <summary>
@@ -251,6 +245,28 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
+    /// Registers a new state and adds a cleanup system to the "Last" schedule.
+    /// Entities with a <see cref="lychee.components.StateScoped{T}"/> matching the previous state
+    /// are automatically despawned when the state changes.
+    /// </summary>
+    /// <param name="initial">The initial state value.</param>
+    /// <typeparam name="T">The state type, typically an enum.</typeparam>
+    /// <returns>The state resource for use in systems.</returns>
+    public State<T> AddState<T>(T initial) where T : unmanaged, Enum
+    {
+        var state = new State<T>(initial);
+        ResourcePool.AddResource(state);
+        SystemSchedules.Last.AddSystem<StateCleanupSystem<T>>();
+
+        return state;
+    }
+
+    public void AddSystemSet<T>() where T : Enum
+    {
+        var typeId = TypeRegistrar.Register<T>();
+    }
+
+    /// <summary>
     /// Removes all entities and their components from the world, keeping only the archetype definitions.
     /// This is useful for resetting the world state without affecting system schedules or resources.
     /// </summary>
@@ -265,20 +281,6 @@ public sealed class App : IDisposable
     public void ClearSchedules()
     {
         SystemSchedules.ClearSchedules();
-    }
-
-    /// <summary>
-    /// Creates a new ThreadPool with the specified thread count.
-    /// The created pool will be automatically disposed when the App is disposed.
-    /// </summary>
-    /// <param name="threadCount">The number of threads in the pool.</param>
-    /// <returns>A new ThreadPool instance.</returns>
-    public ThreadPool CreateThreadPool(int threadCount)
-    {
-        var pool = new ThreadPool(threadCount);
-        disposables.Add(pool);
-
-        return pool;
     }
 
     /// <summary>
@@ -300,6 +302,20 @@ public sealed class App : IDisposable
     public T? GetSchedule<T>(string name) where T : class, ISchedule
     {
         return SystemSchedules.GetSchedule<T>(name);
+    }
+
+    /// <summary>
+    /// Creates a new ThreadPool with the specified thread count.
+    /// The created pool will be automatically disposed when the App is disposed.
+    /// </summary>
+    /// <param name="threadCount">The number of threads in the pool.</param>
+    /// <returns>A new ThreadPool instance.</returns>
+    public ThreadPool CreateThreadPool(int threadCount)
+    {
+        var pool = new ThreadPool(threadCount);
+        disposables.Add(pool);
+
+        return pool;
     }
 
     /// <summary>

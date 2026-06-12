@@ -28,7 +28,7 @@ public struct SystemParameterInfo(Type type, bool readOnly, bool isResource)
     public readonly bool IsResource = isResource;
 }
 
-public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo, Enum[] sets)
+public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo, SetInfo[] setInfo)
 {
     internal readonly ISystem System = system;
 
@@ -36,9 +36,9 @@ public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters,
 
     internal readonly SystemFilterInfo FilterInfo = filterInfo;
 
-    internal readonly Enum[] Sets = sets;
-
     internal bool Predicate = true;
+
+    internal SetInfo[] EffectiveSets { get; set; } = setInfo;
 }
 
 /// <summary>

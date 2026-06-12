@@ -82,10 +82,6 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly List<Commands> entityCommanders = [];
 
-    private readonly Dictionary<Enum, HashSet<Enum>> setOrderAfterDict = [];
-
-    private readonly Dictionary<Enum, Func<ResourcePool, bool>> setConditionsDict = [];
-
     private bool isFrozen;
 
     private bool needConfigure = true;
@@ -251,53 +247,6 @@ public abstract class BasicSchedule : ISchedule
         ExecutionGraph.AddNode(new());
     }
 
-    /// <summary>
-    /// Configures ordering between two system sets.
-    /// </summary>
-    /// <param name="set">The set to configure.</param>
-    /// <param name="order">Whether the set should execute before or after the other set.</param>
-    /// <param name="otherSet">The other set to configure ordering against.</param>
-    /// <returns>This schedule for method chaining.</returns>
-    public BasicSchedule ConfigureSetOrder(Enum set, Order order, Enum otherSet)
-    {
-        if (order == Order.After)
-        {
-            if (!setOrderAfterDict.TryGetValue(set, out var precedences))
-            {
-                precedences = [];
-                setOrderAfterDict[set] = precedences;
-            }
-
-            precedences.Add(otherSet);
-        }
-        else
-        {
-            if (!setOrderAfterDict.TryGetValue(otherSet, out var precedences))
-            {
-                precedences = [];
-                setOrderAfterDict[otherSet] = precedences;
-            }
-
-            precedences.Add(set);
-        }
-
-        isFrozen = false;
-        return this;
-    }
-
-    /// <summary>
-    /// Configures a run condition for a system set.
-    /// The condition is evaluated once at the start of each schedule execution and combined with each system's own Predicate.
-    /// </summary>
-    /// <param name="set">The set to configure.</param>
-    /// <param name="condition">The condition function. Returns true if the set's systems should execute.</param>
-    /// <returns>This schedule for method chaining.</returns>
-    public BasicSchedule ConfigureSetCondition(Enum set, Func<ResourcePool, bool> condition)
-    {
-        setConditionsDict[set] = condition;
-        return this;
-    }
-
 #endregion
 
 #region Private methods
@@ -341,20 +290,6 @@ public abstract class BasicSchedule : ISchedule
         return ([], [], [typeof(Disabled)]);
     }
 
-    private HashSet<Enum> GetPredecessorSets(Enum[] sets)
-    {
-        var result = new HashSet<Enum>();
-        foreach (var set in sets)
-        {
-            if (setOrderAfterDict.TryGetValue(set, out var preds))
-            {
-                result.UnionWith(preds);
-            }
-        }
-
-        return result;
-    }
-
     private void DoAddSystem(ISystem system, SystemDescriptor descriptor)
     {
         if (CheckIfMultiThread(system))
@@ -368,7 +303,7 @@ public abstract class BasicSchedule : ISchedule
         system.InitializeAG(app, descriptor);
 
         var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
-        var systemSets = GetSystemSets(system);
+        var systemSets = GetEffectiveSystemSets(app.TypeRegistrar, system, app.SystemSets);
         var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
         {
             AllFilter = allFilter,
@@ -381,37 +316,54 @@ public abstract class BasicSchedule : ISchedule
         var list = ExecutionGraph.AsList();
         var currentGroup = -1;
         var setConstrained = false;
+        var afterNodes = new List<DAGNode<SystemInfo>>();
 
-        if (systemSets.Length > 0 && setOrderAfterDict.Count > 0)
+        if (systemSets.Length > 0)
         {
-            var predecessorSets = GetPredecessorSets(systemSets);
-            if (predecessorSets.Count > 0)
+            var setsBefore = new HashSet<SetInfo>();
+            var setsAfter = new HashSet<SetInfo>();
+
+            foreach (var set in systemSets)
             {
-                DAGNode<SystemInfo>? lastPredNode = null;
-                foreach (var n in list)
+                foreach (var s in app.SystemSets.GetSetsBefore(set))
+                    setsBefore.Add(s);
+                foreach (var s in app.SystemSets.GetSetsAfter(set))
+                    setsAfter.Add(s);
+            }
+
+            foreach (var n in list)
+            {
+                if (n == list[0]) continue;
+
+                foreach (var es in n.Data.EffectiveSets)
                 {
-                    if (n == list[0]) continue;
-                    if (n.Data.Sets.Any(predecessorSets.Contains))
+                    if (setsBefore.Contains(es))
                     {
-                        lastPredNode = n;
+                        if (!setConstrained || n.Group > addAfterNode.Group)
+                        {
+                            addAfterNode = n;
+                            setConstrained = true;
+                        }
                     }
                 }
+            }
 
-                if (lastPredNode != null)
+            foreach (var n in list)
+            {
+                if (n == list[0]) continue;
+
+                foreach (var es in n.Data.EffectiveSets)
                 {
-                    addAfterNode = lastPredNode;
-                    setConstrained = true;
+                    if (setsAfter.Contains(es))
+                    {
+                        afterNodes.Add(n);
+                    }
                 }
             }
         }
 
         foreach (var n in list)
         {
-            if (!setConstrained)
-            {
-                addAfterNode = n;
-            }
-
             if (descriptor.AddAfter != null)
             {
                 if (n.Data.System == descriptor.AddAfter)
@@ -423,17 +375,30 @@ public abstract class BasicSchedule : ISchedule
                 continue;
             }
 
-            if (!setConstrained && n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
+            if (n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
             {
                 if (n.Parents.Count > 0)
                 {
-                    addAfterNode = n.Parents[0];
+                    var candidate = n.Parents[0];
+                    if (!setConstrained || candidate.Group > addAfterNode.Group)
+                    {
+                        addAfterNode = candidate;
+                    }
                 }
+            }
+            else if (!setConstrained)
+            {
+                addAfterNode = n;
             }
         }
 
         ExecutionGraph.AddNode(node);
         ExecutionGraph.AddEdge(addAfterNode, node);
+
+        foreach (var afterNode in afterNodes)
+        {
+            ExecutionGraph.AddEdge(node, afterNode);
+        }
     }
 
     private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, Type[] allFilter, Type[] anyFilter, Type[] noneFilter)
@@ -587,12 +552,29 @@ public abstract class BasicSchedule : ISchedule
         return attr?.MultiThreaded ?? false;
     }
 
-    private static Enum[] GetSystemSets(ISystem system)
+    private static SetInfo[] GetEffectiveSystemSets(TypeRegistrar typeRegistrar, ISystem system, SystemSets systemSets)
     {
-        return system.GetType()
+        var directSets = system.GetType()
             .GetCustomAttributes<InSetAttribute>()
-            .Select(a => a.Value)
+            .Select(a =>
+            {
+                var type = a.Value.GetType();
+                return new SetInfo(typeRegistrar.GetTypeId(type), type.GetEnumName(a.Value)!);
+            })
             .ToArray();
+
+        var allSets = new HashSet<SetInfo>();
+        foreach (var set in directSets)
+        {
+            var current = set;
+            while (current != null)
+            {
+                if (!allSets.Add(current)) break;
+                current = systemSets.GetParent(current);
+            }
+        }
+
+        return [.. allSets];
     }
 
     private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
@@ -620,12 +602,7 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     protected void DoExecute()
     {
-        // Evaluate set conditions once at the start
-        var setPredicateCache = new Dictionary<Enum, bool>();
-        foreach (var (set, cond) in setConditionsDict)
-        {
-            setPredicateCache[set] = cond(app.ResourcePool);
-        }
+        app.SystemSets.ComputeAllPredicates();
 
         if (!isFrozen)
         {
@@ -648,17 +625,17 @@ public abstract class BasicSchedule : ISchedule
         {
             foreach (var frozenDagNode in group)
             {
-                var sysPredicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
+                var predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
 
-                foreach (var set in frozenDagNode.Data.Sets)
+                foreach (var set in frozenDagNode.Data.EffectiveSets)
                 {
-                    if (setPredicateCache.TryGetValue(set, out var setResult))
+                    if (app.SystemSets.SetPredicateResultDict.TryGetValue(set, out var setResult))
                     {
-                        sysPredicate = sysPredicate && setResult;
+                        predicate &= setResult;
                     }
                 }
 
-                frozenDagNode.Data.Predicate = sysPredicate;
+                frozenDagNode.Data.Predicate = predicate;
             }
 
             var multiThread = false;
@@ -667,6 +644,7 @@ public abstract class BasicSchedule : ISchedule
             {
                 var node = group[i];
                 var idx = i;
+                multiThreadResults[idx] = [];
 
                 if (!node.Data.Predicate)
                 {

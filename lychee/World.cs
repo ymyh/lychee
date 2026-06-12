@@ -38,10 +38,6 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
         events.Add(ev);
     }
 
-#endregion
-
-#region Internal Methods
-
     internal void RemoveAllEntities()
     {
         EntityPool.Clear();
@@ -68,7 +64,6 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
         }
 
         disposed = true;
-
         ArchetypeManager.Dispose();
     }
 

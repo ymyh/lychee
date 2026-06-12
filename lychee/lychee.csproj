@@ -9,6 +9,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="lychee.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\lychee_sg\lychee_sg.csproj" OutputItemType="Analyzer"/>
     </ItemGroup>
 

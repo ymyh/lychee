@@ -1,4 +1,6 @@
-﻿namespace lychee.collections;
+﻿using System.Collections;
+
+namespace lychee.collections;
 
 /// <summary>
 /// Exception thrown when a graph operation results in an invalid state, such as detecting a cycle.
@@ -54,7 +56,7 @@ public struct FrozenDAGNode<T>(DAGNode<T> node)
 /// Represents a directed acyclic graph (DAG) with a single entry point and multiple possible exit points.
 /// </summary>
 /// <typeparam name="T">The type of data stored in the graph nodes.</typeparam>
-public sealed class DirectedAcyclicGraph<T>
+public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
 {
     /// <summary>
     /// Gets the collection of all nodes in the graph.
@@ -70,6 +72,82 @@ public sealed class DirectedAcyclicGraph<T>
     /// Gets the number of nodes in the graph.
     /// </summary>
     public int Count => Nodes.Count;
+
+    /// <summary>
+    /// Reusable queue for validation (cached to avoid per-call allocation).
+    /// </summary>
+    private readonly Queue<DAGNode<T>> validationQueue = [];
+
+    /// <summary>
+    /// Reusable in-degree dictionary for validation (cached to avoid per-call allocation).
+    /// </summary>
+    private readonly Dictionary<DAGNode<T>, int> validationInDegreeDict = [];
+
+    /// <summary>
+    /// Returns true if the graph is a valid DAG: has exactly one root node and contains no cycles.
+    /// </summary>
+    public bool Valid
+    {
+        get
+        {
+            if (Nodes.Count == 0)
+            {
+                return false;
+            }
+
+            var queue = validationQueue;
+            var inDegreeDict = validationInDegreeDict;
+
+            queue.Clear();
+            inDegreeDict.Clear();
+
+            DAGNode<T>? root = null;
+
+            foreach (var node in Nodes)
+            {
+                var inDegree = node.Parents.Count;
+
+                if (inDegree == 0)
+                {
+                    if (root != null)
+                    {
+                        return false;
+                    }
+
+                    root = node;
+                }
+
+                inDegreeDict[node] = inDegree;
+            }
+
+            if (root == null)
+            {
+                return false;
+            }
+
+            queue.Enqueue(root);
+            var visited = 0;
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                visited++;
+
+                foreach (var child in current.Children)
+                {
+                    var degree = inDegreeDict[child] - 1;
+                    inDegreeDict[child] = degree;
+
+                    if (degree == 0)
+                    {
+                        queue.Enqueue(child);
+                    }
+                }
+            }
+
+            return visited == Nodes.Count;
+        }
+    }
 
     /// <summary>
     /// Adds a node to the graph without connecting it to any other nodes.
@@ -113,6 +191,17 @@ public sealed class DirectedAcyclicGraph<T>
         {
             throw new ArgumentException("Can't add edge because at lease one of the nodes is not in the graph");
         }
+    }
+
+    /// <summary>
+    /// Removes a directed edge from one node to another.
+    /// </summary>
+    /// <param name="from">The source node of the edge.</param>
+    /// <param name="to">The destination node of the edge.</param>
+    public void RemoveEdge(DAGNode<T> from, DAGNode<T> to)
+    {
+        from.Children.Remove(to);
+        to.Parents.Remove(from);
     }
 
     /// <summary>
@@ -182,6 +271,20 @@ public sealed class DirectedAcyclicGraph<T>
             action(node);
         }
     }
+
+#region IEnumerable Implementation
+
+    public IEnumerator<DAGNode<T>> GetEnumerator()
+    {
+        return Nodes.GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+
+#endregion
 }
 
 /// <summary>

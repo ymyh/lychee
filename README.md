@@ -29,25 +29,24 @@ lychee_sg/       - Source generator/analyzer package
 Components are unmanaged data structures implementing the `IComponent` interface:
 
 ```csharp
-using lychee.interfaces;
-using System.Runtime.InteropServices;
+using lychee.attributes;
 
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-struct Position : IComponent
+[Component]
+struct Position
 {
     public float X;
     public float Y;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-struct Velocity : IComponent
+[Component]
+struct Velocity
 {
     public float X;
     public float Y;
 }
 
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-struct Health : IComponent
+[Component]
+struct Health
 {
     public float Value;
 }
@@ -89,7 +88,7 @@ partial class MovementSystem
 }
 ```
 
-The `[AutoImplSystem]` attribute accepts an optional `multiThreaded` parameter. When set to `true`, entity iteration
+The `[AutoImplSystem]` attribute accepts an optional `multiThreaded` parameter(default `false`). When set to `true`, entity iteration
 within the system is parallelized across multiple threads:
 
 ```csharp

@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\lychee\lychee.csproj" />
+    <ProjectReference Include="..\lychee_sg\lychee_sg.csproj" OutputItemType="Analyzer" />
   </ItemGroup>
 
 </Project>

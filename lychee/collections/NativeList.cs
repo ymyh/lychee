@@ -599,6 +599,7 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
                     NativeMemory.AlignedFree(data);
 
                     data = (T*)ptr;
+                    capacity = size;
                 }
                 else
                 {

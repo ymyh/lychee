@@ -616,7 +616,7 @@ public class NativeListTests : IDisposable
 
         list.ShirkToFit();
 
-        Assert.True(list.Capacity <= 2 || list.Capacity >= 2); // implementation may round up
+        Assert.Equal(2, list.Capacity);
         Assert.Equal(2, list.Count);
     }
 

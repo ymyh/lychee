@@ -756,15 +756,26 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
-        var (chunkIdx, idx) = dstArchetype.Reserve();
 
-        dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
+        if (dstArchetype == originalArchetype)
+        {
+            // Remove and Add of the same component type — archetype doesn't change.
+            // Just update the component data in place, no migration needed.
+            dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], Entity.Pos.ChunkIdx, Entity.Pos.Idx, in component);
+            Entity.Archetype = dstArchetype;
+        }
+        else
+        {
+            var (chunkIdx, idx) = dstArchetype.Reserve();
 
-        originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-        originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+            dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
 
-        Entity.Archetype = dstArchetype;
-        Entity.Pos = new(chunkIdx, idx);
+            originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
+            originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+
+            Entity.Archetype = dstArchetype;
+            Entity.Pos = new(chunkIdx, idx);
+        }
 
         hasAdded = true;
     }
@@ -789,27 +800,50 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
-        var (chunkIdx, idx) = dstArchetype.Reserve();
 
-        for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
+        if (dstArchetype == originalArchetype)
         {
-            unsafe
+            // Remove and Add of the same bundle type — archetype doesn't change.
+            // Just update the component data in place, no migration needed.
+            for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
             {
-                var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo[i];
-                var ptr = dstArchetype.Table.GetPtr(Entity.Commands.TransferDstInfo.TypeIndices[i], chunkIdx, idx);
-                fixed (T* bundlePtr = &bundle)
+                unsafe
                 {
-                    var componentPtr = (byte*)bundlePtr + bundleInfo.info.Offset;
-                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.info.Size);
+                    var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo[i];
+                    var ptr = dstArchetype.Table.GetPtr(Entity.Commands.TransferDstInfo.TypeIndices[i], Entity.Pos.ChunkIdx, Entity.Pos.Idx);
+                    fixed (T* bundlePtr = &bundle)
+                    {
+                        var componentPtr = (byte*)bundlePtr + bundleInfo.info.Offset;
+                        NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.info.Size);
+                    }
                 }
             }
+            Entity.Archetype = dstArchetype;
         }
+        else
+        {
+            var (chunkIdx, idx) = dstArchetype.Reserve();
 
-        originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-        originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+            for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
+            {
+                unsafe
+                {
+                    var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo[i];
+                    var ptr = dstArchetype.Table.GetPtr(Entity.Commands.TransferDstInfo.TypeIndices[i], chunkIdx, idx);
+                    fixed (T* bundlePtr = &bundle)
+                    {
+                        var componentPtr = (byte*)bundlePtr + bundleInfo.info.Offset;
+                        NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.info.Size);
+                    }
+                }
+            }
 
-        Entity.Archetype = dstArchetype;
-        Entity.Pos = new(chunkIdx, idx);
+            originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
+            originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+
+            Entity.Archetype = dstArchetype;
+            Entity.Pos = new(chunkIdx, idx);
+        }
 
         hasAdded = true;
     }

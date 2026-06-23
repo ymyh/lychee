@@ -550,6 +550,7 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
         if (holesInTable.TryPop(out var hole))
         {
+            entities.Remove(hole.id);
             return (hole.chunkIdx, hole.idx);
         }
 

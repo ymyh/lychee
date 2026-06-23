@@ -29,13 +29,13 @@ public sealed class EntityPool
     /// </summary>
     public bool CheckEntityValid(EntityRef entityRef)
     {
-        if (entityRef.Generation == 0)
-        {
-            return true;
-        }
-
         if ((uint)entityRef.ID >= (uint)entities.Count)
         {
+            if (entityRef.Generation == 0)
+            {
+                return true;
+            }
+
             return false;
         }
 

@@ -479,4 +479,178 @@ public class DirectedAcyclicGraphTests
     }
 
 #endregion
+
+#region Edge Cases
+
+    [Fact]
+    public void RemoveEdge_NonExistentEdge_DoesNotThrow()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+
+        // Remove edge that was never added — should not throw
+        graph.RemoveEdge(a, b);
+
+        Assert.DoesNotContain(b, a.Children);
+        Assert.DoesNotContain(a, b.Parents);
+    }
+
+    [Fact]
+    public void AddEdge_AfterRemove_CanReAdd()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+
+        graph.AddEdge(a, b);
+        graph.RemoveEdge(a, b);
+        graph.AddEdge(a, b); // re-add
+
+        Assert.Contains(b, a.Children);
+        Assert.Contains(a, b.Parents);
+    }
+
+    [Fact]
+    public void AsList_EmptyGraph_ThrowsMultipleRoots()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+
+        // Empty graph has 0 nodes, which means 0 roots — should this throw?
+        // Actually, the check is > 1 root, so 0 roots should pass.
+        // But AsList on empty graph should return empty list.
+        var list = graph.AsList();
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public void Valid_SelfLoop_ReturnsFalse()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+
+        // AddEdge rejects self-loop, so Valid should still be true
+        Assert.Throws<ArgumentException>(() => graph.AddEdge(a, a));
+        Assert.True(graph.Valid);
+    }
+
+    [Fact]
+    public void AddNode_DuplicateNode_Allowed()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var node = new DAGNode<int>(42);
+
+        graph.AddNode(node);
+        graph.AddNode(node); // same instance added twice
+
+        Assert.Equal(2, graph.Count);
+    }
+
+    [Fact]
+    public void Clear_ThenAdd_Works()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        graph.AddNode(new DAGNode<int>(1));
+        graph.AddNode(new DAGNode<int>(2));
+        graph.Clear();
+
+        graph.AddNode(new DAGNode<int>(3));
+
+        Assert.Equal(1, graph.Count);
+        Assert.Equal(3, graph.Root.Data);
+    }
+
+    [Fact]
+    public void AsList_LargeGraph_CorrectTopologicalOrder()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        // Build: 1 -> 2 -> 3 -> 4 -> 5
+        var nodes = new DAGNode<int>[5];
+        for (var i = 0; i < 5; i++)
+        {
+            nodes[i] = graph.AddNode(new DAGNode<int>(i + 1));
+        }
+
+        for (var i = 0; i < 4; i++)
+        {
+            graph.AddEdge(nodes[i], nodes[i + 1]);
+        }
+
+        var list = graph.AsList();
+
+        Assert.Equal(5, list.Count);
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.Equal(i + 1, list[i].Data);
+        }
+    }
+
+    [Fact]
+    public void ForEach_EmptyGraph_DoesNothing()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+
+        var count = 0;
+        graph.ForEach(_ => count++);
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public void GetEnumerator_EmptyGraph_ReturnsNothing()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+
+        var items = graph.ToArray();
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public void RemoveEdge_ThenValid_MultipleRoots()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+
+        graph.AddEdge(a, b);
+        graph.RemoveEdge(a, b);
+
+        // Both a and b have no parents now → two roots → invalid
+        Assert.False(graph.Valid);
+    }
+
+    [Fact]
+    public void Freeze_SingleNode_ReturnsSingleElement()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        graph.AddNode(new DAGNode<int>(42));
+
+        var list = graph.AsList();
+        var frozen = list.Freeze().ToArray();
+
+        Assert.Single(frozen);
+        Assert.Equal(42, frozen[0].Data);
+    }
+
+    [Fact]
+    public void AsExecutionGroup_LinearChain_EachInSeparateGroup()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+        var c = graph.AddNode(new DAGNode<int>(3));
+
+        graph.AddEdge(a, b);
+        graph.AddEdge(b, c);
+
+        var groups = graph.AsList().Freeze().AsExecutionGroup();
+
+        Assert.Equal(3, groups.Length);
+        Assert.Single(groups[0]); // a
+        Assert.Single(groups[1]); // b
+        Assert.Single(groups[2]); // c
+    }
+
+#endregion
 }

@@ -474,4 +474,163 @@ public class SparseMapTests
     }
 
 #endregion
+
+#region Edge Cases
+
+    [Fact]
+    public void Add_NegativeKey_ThrowsOrHandles()
+    {
+        var map = new SparseMap<int>();
+
+        // Negative keys should either throw or return false for ContainsKey
+        Assert.False(map.ContainsKey(-1));
+        Assert.Equal(-1, map.GetIndex(-1));
+    }
+
+    [Fact]
+    public void Remove_ThenAddSameKey_NewValue()
+    {
+        var map = new SparseMap<int>();
+        map.Add(5, 100);
+        map.Remove(5);
+
+        map.Add(5, 200);
+
+        Assert.Equal(1, map.Count);
+        Assert.Equal(200, map[5]);
+    }
+
+    [Fact]
+    public void GetDenseAsSpan_AfterRemove_ReflectsChanges()
+    {
+        var map = new SparseMap<int>();
+        map.Add(0, 10);
+        map.Add(1, 20);
+        map.Add(2, 30);
+
+        map.Remove(1);
+
+        var span = map.GetDenseAsSpan();
+        Assert.Equal(2, span.Length);
+    }
+
+    [Fact]
+    public void ContainsKey_Zero_ReturnsFalseWhenEmpty()
+    {
+        var map = new SparseMap<int>();
+
+        Assert.False(map.ContainsKey(0));
+    }
+
+    [Fact]
+    public void GetOrDefault_ZeroKey_Works()
+    {
+        var map = new SparseMap<int>();
+        map.Add(0, 42);
+
+        Assert.Equal(42, map.GetOrDefault(0, -1));
+    }
+
+    [Fact]
+    public void AddOrUpdate_MultipleKeys_AllCorrect()
+    {
+        var map = new SparseMap<int>();
+
+        map.AddOrUpdate(0, 10);
+        map.AddOrUpdate(5, 50);
+        map.AddOrUpdate(0, 100); // update key 0
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal(100, map[0]);
+        Assert.Equal(50, map[5]);
+    }
+
+    [Fact]
+    public void Indexer_Set_AddsNewKey()
+    {
+        var map = new SparseMap<int>();
+
+        map[10] = 100;
+
+        Assert.Equal(1, map.Count);
+        Assert.Equal(100, map[10]);
+    }
+
+    [Fact]
+    public void ForEach_EmptyMap_DoesNothing()
+    {
+        var map = new SparseMap<int>();
+
+        var count = 0;
+        map.ForEach((_, _) => count++);
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public void ForEachRef_EmptyMap_DoesNothing()
+    {
+        var map = new SparseMap<int>();
+
+        var count = 0;
+        map.ForEachRef((int _, ref int _) => count++);
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public void GetDenseAsSpan_EmptyMap_ReturnsEmptySpan()
+    {
+        var map = new SparseMap<int>();
+
+        var span = map.GetDenseAsSpan();
+
+        Assert.Equal(0, span.Length);
+    }
+
+    [Fact]
+    public void GetEnumerator_EmptyMap_ReturnsNothing()
+    {
+        var map = new SparseMap<int>();
+
+        var items = map.ToArray();
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public void Clear_EmptyMap_DoesNotThrow()
+    {
+        var map = new SparseMap<int>();
+
+        map.Clear(); // should not throw
+
+        Assert.Equal(0, map.Count);
+    }
+
+    [Fact]
+    public void Remove_AllThenAdd_Works()
+    {
+        var map = new SparseMap<int>();
+        map.Add(0, 10);
+        map.Add(1, 20);
+        map.Remove(0);
+        map.Remove(1);
+
+        map.Add(0, 30);
+
+        Assert.Equal(1, map.Count);
+        Assert.Equal(30, map[0]);
+    }
+
+    [Fact]
+    public void Constructor_EmptyEnumerable_CreatesEmptyMap()
+    {
+        var source = new List<(int, string)>();
+        var map = new SparseMap<string>(source);
+
+        Assert.Equal(0, map.Count);
+    }
+
+#endregion
 }

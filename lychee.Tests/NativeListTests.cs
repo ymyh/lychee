@@ -683,6 +683,128 @@ public class NativeListTests : IDisposable
 
 #endregion
 
+#region Edge Cases
+
+    [Fact]
+    public void Insert_AtBeyondCount_Throws()
+    {
+        using var list = new NativeList<int>();
+        list.Add(1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.Insert(5, 99));
+    }
+
+    [Fact]
+    public void RemoveAt_EmptyList_Throws()
+    {
+        using var list = new NativeList<int>();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => list.RemoveAt(0));
+    }
+
+    [Fact]
+    public void ShrinkToFit_EmptyList_DoesNotThrow()
+    {
+        using var list = new NativeList<int>(100);
+
+        list.ShirkToFit();
+
+        Assert.Equal(0, list.Count);
+    }
+
+    [Fact]
+    public void Resize_ToZero_ClearsList()
+    {
+        using var list = new NativeList<int>();
+        list.Add(1);
+        list.Add(2);
+
+        list.Resize(0);
+
+        Assert.Equal(0, list.Count);
+        Assert.True(list.IsEmpty);
+    }
+
+    [Fact]
+    public void Add_AfterClear_Works()
+    {
+        using var list = new NativeList<int>();
+        list.Add(1);
+        list.Add(2);
+        list.Clear();
+
+        list.Add(3);
+
+        Assert.Equal(1, list.Count);
+        Assert.Equal(3, list[0]);
+    }
+
+    [Fact]
+    public void RemoveLast_ThenAdd_ReusesPosition()
+    {
+        using var list = new NativeList<int>();
+        list.Add(10);
+        list.Add(20);
+
+        list.RemoveLast();
+        list.Add(30);
+
+        Assert.Equal(2, list.Count);
+        Assert.Equal(10, list[0]);
+        Assert.Equal(30, list[1]);
+    }
+
+    [Fact]
+    public void Fill_EmptyRange_DoesNotThrow()
+    {
+        using var list = new NativeList<int>();
+        list.Resize(3);
+
+        list.Fill(0, 0, 42); // empty range
+
+        Assert.Equal(0, list[0]);
+    }
+
+    [Fact]
+    public void AsSpan_EmptyList_ReturnsEmptySpan()
+    {
+        using var list = new NativeList<int>();
+
+        var span = list.AsSpan();
+
+        Assert.Equal(0, span.Length);
+    }
+
+    [Fact]
+    public void CopyTo_EmptyList_CopiesNothing()
+    {
+        using var list = new NativeList<int>();
+
+        var array = new int[3];
+        list.CopyTo(array);
+
+        Assert.Equal([0, 0, 0], array);
+    }
+
+    [Fact]
+    public void IndexOf_EmptyList_ReturnsMinusOne()
+    {
+        using var list = new NativeList<int>();
+
+        Assert.Equal(-1, list.IndexOf(42));
+    }
+
+    [Fact]
+    public void Constructor_EmptyArray_CreatesEmptyList()
+    {
+        using var list = new NativeList<int>(Array.Empty<int>());
+
+        Assert.Equal(0, list.Count);
+        Assert.True(list.IsEmpty);
+    }
+
+#endregion
+
     public void Dispose()
     {
         // Each test creates its own list with 'using', so nothing to dispose here

@@ -197,4 +197,96 @@ public class DoubleBufferQueueTests
     }
 
 #endregion
+
+#region Edge Cases
+
+    [Fact]
+    public void GetFrontSpan_EmptyQueue_ReturnsEmptySpan()
+    {
+        var queue = new DoubleBufferQueue<int>();
+
+        var span = queue.GetFrontSpan();
+
+        Assert.Equal(0, span.Length);
+    }
+
+    [Fact]
+    public void ClearBack_AlreadyEmpty_DoesNotThrow()
+    {
+        var queue = new DoubleBufferQueue<int>();
+
+        queue.ClearBack(); // should not throw
+    }
+
+    [Fact]
+    public void Exchange_MultipleTimesWithoutEnqueue_DoesNotThrow()
+    {
+        var queue = new DoubleBufferQueue<int>();
+
+        queue.Exchange();
+        queue.Exchange();
+        queue.Exchange();
+
+        Assert.Empty(queue.GetEnumerable());
+    }
+
+    [Fact]
+    public void Enqueue_AfterExchangeWithoutClearBack_OnlyNewItem()
+    {
+        var queue = new DoubleBufferQueue<int>();
+
+        queue.Enqueue(1);
+        queue.Exchange();
+        // Don't clear back — old front becomes new back
+        queue.Enqueue(2);
+        queue.Exchange();
+
+        // Front should only have the new item (2), old item (1) is in back
+        var items = queue.GetEnumerable().ToArray();
+        Assert.Single(items);
+        Assert.Equal(2, items[0]);
+    }
+
+    [Fact]
+    public void GetFrontSpan_AfterExchange_ReturnsCorrectData()
+    {
+        var queue = new DoubleBufferQueue<int>();
+
+        queue.Enqueue(100);
+        queue.Enqueue(200);
+        queue.Enqueue(300);
+        queue.Exchange();
+
+        var span = queue.GetFrontSpan();
+
+        Assert.Equal(3, span.Length);
+        Assert.Equal(100, span[0]);
+        Assert.Equal(200, span[1]);
+        Assert.Equal(300, span[2]);
+    }
+
+    [Fact]
+    public void Enqueue_StructItems_PreservedCorrectly()
+    {
+        var queue = new DoubleBufferQueue<TestPoint>();
+
+        queue.Enqueue(new TestPoint { X = 1, Y = 2 });
+        queue.Enqueue(new TestPoint { X = 3, Y = 4 });
+        queue.Exchange();
+
+        var items = queue.GetEnumerable().ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.Equal(1, items[0].X);
+        Assert.Equal(2, items[0].Y);
+        Assert.Equal(3, items[1].X);
+        Assert.Equal(4, items[1].Y);
+    }
+
+    private struct TestPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+#endregion
 }

@@ -41,6 +41,8 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
 
     private readonly Dictionary<SetInfo, Predicate> setPredicateDict = [];
 
+    private readonly Dictionary<SetInfo, SetInfo> parentDict = [];
+
     public void AddSystemSet<T>() where T : Enum
     {
         var typeId = typeRegistrar.GetTypeId<T>();
@@ -82,10 +84,7 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
         var info1 = GetRegisteredSetInfo(parent);
         var info2 = GetRegisteredSetInfo(child);
 
-        var node1 = FindOrCreateNode(info1);
-        var node2 = FindOrCreateNode(info2);
-
-        node2.Data.Parent = node1.Data;
+        parentDict[info2] = info1;
     }
 
     public void ComputeAllPredicates()
@@ -101,8 +100,7 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// </summary>
     public SetInfo? GetParent(SetInfo set)
     {
-        var node = orderGraph.FirstOrDefault(n => n.Data.Equals(set));
-        return node?.Data.Parent;
+        return parentDict.GetValueOrDefault(set);
     }
 
     /// <summary>

@@ -65,6 +65,12 @@ public sealed class SystemDescriptor
     /// Must be a positive value when used.
     /// </summary>
     public int GroupSize { get; set; } = 0;
+
+    /// <summary>
+    /// The system sets this system belongs to.
+    /// Systems in the same set can be ordered relative to each other via <see cref="SystemSets.ConfigureSetOrder{TS1, TS2}"/>.
+    /// </summary>
+    public Enum[] Sets { get; set; } = [];
 }
 
 public sealed class SystemFilterInfo

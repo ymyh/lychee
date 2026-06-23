@@ -249,7 +249,6 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
     /// <returns>A span containing the specified range of elements.</returns>
     public Span<T> AsSpan(int begin, int count)
     {
-        Debug.Assert((uint)begin < (uint)size);
         Debug.Assert(count <= size - begin);
 
         unsafe

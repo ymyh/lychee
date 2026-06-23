@@ -303,17 +303,17 @@ public abstract class BasicSchedule : ISchedule
         system.InitializeAG(app, descriptor);
 
         var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
-        var systemSets = GetEffectiveSystemSets(app.TypeRegistrar, system, app.SystemSets);
+        var systemSets = GetEffectiveSystemSets(app.TypeRegistrar, descriptor, app.SystemSets);
         var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
         {
             AllFilter = allFilter,
             AnyFilter = anyFilter,
             NoneFilter = noneFilter,
         }, systemSets));
-        DAGNode<SystemInfo> addAfterNode = null!;
         isFrozen = false;
 
         var list = ExecutionGraph.AsList();
+        DAGNode<SystemInfo> addAfterNode = list[0];
         var currentGroup = -1;
         var setConstrained = false;
         var afterNodes = new List<DAGNode<SystemInfo>>();
@@ -362,8 +362,20 @@ public abstract class BasicSchedule : ISchedule
             }
         }
 
+        // Precompute all descendants of afterNodes to exclude them from addAfterNode candidates.
+        var afterNodeDescendants = new HashSet<DAGNode<SystemInfo>>();
+        foreach (var an in afterNodes)
+        {
+            CollectDescendants(an, afterNodeDescendants);
+        }
+
         foreach (var n in list)
         {
+            if (n == list[0])
+            {
+                continue;
+            }
+
             if (descriptor.AddAfter != null)
             {
                 if (n.Data.System == descriptor.AddAfter)
@@ -386,7 +398,7 @@ public abstract class BasicSchedule : ISchedule
                     }
                 }
             }
-            else if (!setConstrained)
+            else if (!setConstrained && !afterNodes.Contains(n) && !afterNodeDescendants.Contains(n))
             {
                 addAfterNode = n;
             }
@@ -397,7 +409,72 @@ public abstract class BasicSchedule : ISchedule
 
         foreach (var afterNode in afterNodes)
         {
-            ExecutionGraph.AddEdge(node, afterNode);
+            if (afterNode.Parents.Count == 0)
+            {
+                // No parent yet, safe to add edge.
+                ExecutionGraph.AddEdge(node, afterNode);
+            }
+            else if (!IsReachableFrom(node, afterNode))
+            {
+                // Replace existing parent edge with the set ordering edge.
+                // Skip only if it would create a cycle (node already reachable from afterNode).
+                var oldParent = afterNode.Parents[0];
+                ExecutionGraph.RemoveEdge(oldParent, afterNode);
+                ExecutionGraph.AddEdge(node, afterNode);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks if <paramref name="target"/> is reachable from <paramref name="start"/> by following Children edges.
+    /// Used to prevent creating cycles when adding Set ordering edges.
+    /// </summary>
+    private static bool IsReachableFrom(DAGNode<SystemInfo> start, DAGNode<SystemInfo> target)
+    {
+        var visited = new HashSet<DAGNode<SystemInfo>>();
+        var stack = new Stack<DAGNode<SystemInfo>>();
+        stack.Push(start);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            if (current == target)
+            {
+                return true;
+            }
+
+            foreach (var child in current.Children)
+            {
+                stack.Push(child);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Collects all descendant nodes of the given node by following Children edges.
+    /// </summary>
+    private static void CollectDescendants(DAGNode<SystemInfo> node, HashSet<DAGNode<SystemInfo>> result)
+    {
+        var stack = new Stack<DAGNode<SystemInfo>>();
+        stack.Push(node);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            foreach (var child in current.Children)
+            {
+                if (result.Add(child))
+                {
+                    stack.Push(child);
+                }
+            }
         }
     }
 
@@ -552,16 +629,13 @@ public abstract class BasicSchedule : ISchedule
         return attr?.MultiThreaded ?? false;
     }
 
-    private static SetInfo[] GetEffectiveSystemSets(TypeRegistrar typeRegistrar, ISystem system, SystemSets systemSets)
+    private static SetInfo[] GetEffectiveSystemSets(TypeRegistrar typeRegistrar, SystemDescriptor descriptor, SystemSets systemSets)
     {
-        var directSets = system.GetType()
-            .GetCustomAttributes<InSetAttribute>()
-            .Select(a =>
-            {
-                var type = a.Value.GetType();
-                return new SetInfo(typeRegistrar.GetTypeId(type), type.GetEnumName(a.Value)!);
-            })
-            .ToArray();
+        var directSets = descriptor.Sets.Select(e =>
+        {
+            var type = e.GetType();
+            return new SetInfo(typeRegistrar.GetTypeId(type), type.GetEnumName(e)!);
+        }).ToArray();
 
         var allSets = new HashSet<SetInfo>();
         foreach (var set in directSets)
@@ -569,7 +643,11 @@ public abstract class BasicSchedule : ISchedule
             var current = set;
             while (current != null)
             {
-                if (!allSets.Add(current)) break;
+                if (!allSets.Add(current))
+                {
+                    break;
+                }
+
                 current = systemSets.GetParent(current);
             }
         }

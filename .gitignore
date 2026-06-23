@@ -5,3 +5,6 @@
 bin/
 obj/
 *.user
+.agent/
+.pi/
+CLAUDE.md

@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using lychee.extensions;
 
 namespace lychee;
@@ -18,7 +19,7 @@ public sealed class EntityPool
 
     private readonly Stack<EntityRef> reusableEntitiesId = [];
 
-    private readonly Stack<EntityRef> removedEntitiesId = [];
+    private readonly ConcurrentQueue<EntityRef> removedEntitiesId = [];
 
 #endregion
 
@@ -79,7 +80,8 @@ public sealed class EntityPool
 
     internal void MarkRemoveEntity(EntityRef entityRef)
     {
-        removedEntitiesId.Push(entityRef);
+        entityRef.Generation++;
+        removedEntitiesId.Enqueue(entityRef);
     }
 
     internal void CommitRemoveEntity(EntityRef entityRef)
@@ -96,9 +98,9 @@ public sealed class EntityPool
 
     internal void ReclaimId()
     {
-        while (removedEntitiesId.TryPop(out var id))
+        while (removedEntitiesId.TryDequeue(out var entityRef))
         {
-            reusableEntitiesId.Push(id);
+            reusableEntitiesId.Push(entityRef);
         }
     }
 

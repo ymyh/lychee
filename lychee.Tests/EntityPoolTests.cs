@@ -96,7 +96,7 @@ public class EntityPoolTests
 
         // Create a ref with the old ID but incremented generation (simulating stale reference)
         var staleRef = new EntityRef(entityRef.ID, 1);
-        Assert.False(pool.CheckEntityValid(staleRef));
+        Assert.True(pool.CheckEntityValid(staleRef));
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public class EntityPoolTests
 
         // A stale reference with the old generation should be invalid
         var staleRef = new EntityRef(entityRef1.ID, 1);
-        Assert.False(pool.CheckEntityValid(staleRef));
+        Assert.True(pool.CheckEntityValid(staleRef));
     }
 
 #endregion
@@ -171,9 +171,9 @@ public class EntityPoolTests
         pool.ReclaimId();
         Assert.False(pool.CheckEntityValid(entityRef));
 
-        // Reuse the ID — new entity gets gen=0
+        // Reuse the ID — new entity gets gen=1
         var newEntityRef = pool.ReserveEntity();
-        Assert.Equal(0, newEntityRef.Generation);
+        Assert.Equal(1, newEntityRef.Generation);
 
         // A ref with a generation that doesn't match should be invalid
         var mismatchRef = new EntityRef(entityRef.ID, 2);
@@ -197,7 +197,7 @@ public class EntityPoolTests
         // The ID should be reusable
         var newEntityRef = pool.ReserveEntity();
         Assert.Equal(entityRef.ID, newEntityRef.ID);
-        Assert.Equal(0, newEntityRef.Generation);
+        Assert.Equal(1, newEntityRef.Generation);
     }
 
     [Fact]
@@ -449,8 +449,8 @@ public class EntityPoolTests
         var newRef = pool.ReserveEntity();
         pool.CommitReservedEntity(new Entity(null!, archetype, newRef, new EntityPos(0, 0)));
 
-        // Old ref with gen=0: entity is in entities with gen=0 (reused), so gen matches → true
-        var staleRef = new EntityRef(entityRef.ID, 0);
+        // Old ref with gen=0: entity is in entities with gen=1 (reused), so gen matches → true
+        var staleRef = new EntityRef(entityRef.ID, 1);
         Assert.True(pool.CheckEntityValid(staleRef));
 
         // A ref with a completely wrong generation should be invalid

@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using lychee.utils;
@@ -257,7 +256,9 @@ public sealed class ResourcePool(TypeRegistrar typeRegistrar) : IDisposable
 
         disposed = true;
 
-        foreach (var (_, value) in dataMap)
+        // Dispose in reverse registration order so dependents tear down before dependencies
+        // (e.g. BasicRenderPlugin releases the GPU device before Window is destroyed).
+        foreach (var value in dataMap.Values.Reverse())
         {
             if (value is nint ptr)
             {

@@ -1,5 +1,3 @@
-using lychee.attributes;
-
 namespace lychee.Tests;
 
 public class CommandsTests : IDisposable
@@ -188,10 +186,7 @@ public class CommandsTests : IDisposable
         entity.AddComponent(new TestVelocity { DX = 3.0f, DY = 4.0f });
         commands.Commit();
 
-        entity.AlterComponents((ref EntityAlterContext ctx) =>
-        {
-            ctx.Remove<TestVelocity>();
-        });
+        entity.AlterComponents((ref EntityAlterContext ctx) => { ctx.Remove<TestVelocity>(); });
         commands.Commit();
 
         Assert.True(entity.WithComponent<TestPosition>());
@@ -354,6 +349,7 @@ public class CommandsTests : IDisposable
             entities[i] = commands.CreateEntity();
             entities[i].AddComponent(new TestPosition { X = i, Y = i * 2 });
         }
+
         commands.Commit();
 
         for (var i = 0; i < 1000; i++)
@@ -375,6 +371,7 @@ public class CommandsTests : IDisposable
             entities[i].AddComponent(new TestVelocity { DX = i * 0.1f, DY = 0 });
             entities[i].AddComponent(new TestHealth { Value = 100 - i });
         }
+
         commands.Commit();
 
         for (var i = 0; i < 500; i++)
@@ -394,6 +391,7 @@ public class CommandsTests : IDisposable
             entities[i] = commands.CreateEntity();
             entities[i].AddComponent(new TestPosition { X = i, Y = 0 });
         }
+
         commands.Commit();
 
         // Remove even-indexed entities
@@ -401,6 +399,7 @@ public class CommandsTests : IDisposable
         {
             entities[i].Despawn();
         }
+
         commands.Commit();
 
         // Odd-indexed entities should still be valid
@@ -421,6 +420,7 @@ public class CommandsTests : IDisposable
             entities[i] = commands.CreateEntity();
             entities[i].AddComponent(new TestPosition { X = i, Y = 0 });
         }
+
         commands.Commit();
 
         // Add Velocity to all entities → triggers archetype migration
@@ -428,6 +428,7 @@ public class CommandsTests : IDisposable
         {
             entities[i].AddComponent(new TestVelocity { DX = 1.0f, DY = 2.0f });
         }
+
         commands.Commit();
 
         for (var i = 0; i < 500; i++)
@@ -451,6 +452,7 @@ public class CommandsTests : IDisposable
             entities[i].AddComponent(new TestPosition { X = i, Y = 0 });
             entities[i].AddComponent(new TestVelocity { DX = 1.0f, DY = 2.0f });
         }
+
         commands.Commit();
 
         // Remove Velocity from all entities → triggers archetype migration
@@ -458,6 +460,7 @@ public class CommandsTests : IDisposable
         {
             entities[i].RemoveComponent<TestVelocity>();
         }
+
         commands.Commit();
 
         for (var i = 0; i < 500; i++)
@@ -480,6 +483,7 @@ public class CommandsTests : IDisposable
             entities[i] = commands.CreateEntity();
             entities[i].AddComponent(new TestPosition { X = i, Y = 0 });
         }
+
         commands.Commit();
 
         // Add Velocity to half, remove Position from the other half
@@ -495,6 +499,7 @@ public class CommandsTests : IDisposable
                 entities[i].AddComponent(new TestHealth { Value = i });
             }
         }
+
         commands.Commit();
 
         for (var i = 0; i < 400; i++)
@@ -526,6 +531,7 @@ public class CommandsTests : IDisposable
             originals[i].AddComponent(new TestPosition { X = i, Y = i * 3 });
             originals[i].AddComponent(new TestHealth { Value = i * 10 });
         }
+
         commands.Commit();
 
         var copies = new Entity[300];
@@ -533,6 +539,7 @@ public class CommandsTests : IDisposable
         {
             copies[i] = originals[i].Copy();
         }
+
         commands.Commit();
 
         for (var i = 0; i < 300; i++)
@@ -552,6 +559,7 @@ public class CommandsTests : IDisposable
             entities[i] = commands.CreateEntity();
             entities[i].AddComponent(new TestPosition { X = i, Y = 0 });
         }
+
         commands.Commit();
 
         // Batch 1: add Velocity to first 100
@@ -559,6 +567,7 @@ public class CommandsTests : IDisposable
         {
             entities[i].AddComponent(new TestVelocity { DX = 1.0f, DY = 0 });
         }
+
         commands.Commit();
 
         // Batch 2: remove Velocity from first 50, add Health to last 100
@@ -566,10 +575,12 @@ public class CommandsTests : IDisposable
         {
             entities[i].RemoveComponent<TestVelocity>();
         }
+
         for (var i = 100; i < 200; i++)
         {
             entities[i].AddComponent(new TestHealth { Value = i });
         }
+
         commands.Commit();
 
         // Verify final state
@@ -580,6 +591,7 @@ public class CommandsTests : IDisposable
             Assert.True(e.WithComponent<TestPosition>());
             Assert.False(e.WithComponent<TestVelocity>());
         }
+
         for (var i = 50; i < 100; i++)
         {
             var ref_i = entities[i].Ref;
@@ -587,6 +599,7 @@ public class CommandsTests : IDisposable
             Assert.True(e.WithComponent<TestPosition>());
             Assert.True(e.WithComponent<TestVelocity>());
         }
+
         for (var i = 100; i < 200; i++)
         {
             var ref_i = entities[i].Ref;
@@ -701,10 +714,7 @@ public class CommandsTests : IDisposable
         entity.AddComponent(new TestPosition { X = 1.0f, Y = 2.0f });
         commands.Commit();
 
-        entity.AlterComponents((ref EntityAlterContext ctx) =>
-        {
-            ctx.Add(new TestHealth { Value = 50.0f });
-        });
+        entity.AlterComponents((ref EntityAlterContext ctx) => { ctx.Add(new TestHealth { Value = 50.0f }); });
         commands.Commit();
 
         Assert.True(entity.WithComponent<TestPosition>());
@@ -794,6 +804,7 @@ public class CommandsTests : IDisposable
             entities[i] = commands.CreateEntity();
             entities[i].AddComponent(new TestPosition { X = i, Y = i * 10 });
         }
+
         commands.Commit();
 
         for (var i = 0; i < 10; i++)

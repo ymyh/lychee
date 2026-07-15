@@ -1,5 +1,3 @@
-using lychee.interfaces;
-
 namespace lychee.Tests;
 
 public class TypeRegistrarTests

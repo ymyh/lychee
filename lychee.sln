@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee", "lychee\lychee.csp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee_sg", "lychee_sg\lychee_sg.csproj", "{B67951B5-50FC-4C3B-B963-75572F846827}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee_game", "lychee_game\lychee_game.csproj", "{6F8BF5E4-76CB-4413-889F-5048634EE6B3}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee.Tests", "lychee.Tests\lychee.Tests.csproj", "{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}"
 EndProject
 Global
@@ -45,18 +43,6 @@ Global
 		{B67951B5-50FC-4C3B-B963-75572F846827}.Release|x64.Build.0 = Release|Any CPU
 		{B67951B5-50FC-4C3B-B963-75572F846827}.Release|x86.ActiveCfg = Release|Any CPU
 		{B67951B5-50FC-4C3B-B963-75572F846827}.Release|x86.Build.0 = Release|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|x64.Build.0 = Debug|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Debug|x86.Build.0 = Debug|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|x64.ActiveCfg = Release|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|x64.Build.0 = Release|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|x86.ActiveCfg = Release|Any CPU
-		{6F8BF5E4-76CB-4413-889F-5048634EE6B3}.Release|x86.Build.0 = Release|Any CPU
 		{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}.Debug|x64.ActiveCfg = Debug|Any CPU

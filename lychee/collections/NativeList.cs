@@ -20,6 +20,8 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
 
     private static readonly nuint Alignment = (nuint)TypeUtils.GetOrGuessAlignment<T>();
 
+    private static readonly bool IsDisposableElement = typeof(T).GetInterface(typeof(IDisposable).FullName!) != null;
+
 #region Public Properties
 
     /// <summary>
@@ -647,7 +649,7 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
         {
             if (data != null)
             {
-                if (typeof(T).GetInterface(typeof(IDisposable).FullName!) != null)
+                if (IsDisposableElement)
                 {
                     ForEach((ref x) => { (x as IDisposable)!.Dispose(); });
                 }

@@ -578,6 +578,98 @@ public static class Program
 }
 ```
 
+## Hive
+
+`Hive<T>` (`lychee.collections`) is a block-based sequence container for `unmanaged` element types, modelled after the
+upcoming C++26 `std::hive`. It targets workloads where elements are inserted and removed continuously while external
+code keeps long-lived references to them — particles, projectiles, subscriptions, network connections, and similar
+frequently created and destroyed objects.
+
+### Why use it
+
+| Property | `Hive<T>` | `NativeList<T>` | `SparseMap<T>` |
+|---|---|---|---|
+| Element address stays stable across insert / remove | ✅ | ❌ (grows by moving) | ⚠️ (removals swap elements) |
+| Removal moves other elements | ❌ | ✅ | ✅ |
+| Random access | ❌ | ✅ | ✅ (by key) |
+| Extra metadata per element | 1 skipfield slot (2 bytes) | none | key + index |
+| Iteration order | physical block order | insertion order | dense order |
+
+Elements live inside fixed native blocks that are never relocated, so a `T*` obtained from `GetPointer` keeps
+pointing at the same element no matter how many insertions, removals, `Reserve` or `TrimCapacity()` calls happen.
+Removals leave a hole behind instead of moving other elements, and later insertions reuse those holes.
+
+### Basic usage
+
+```csharp
+using lychee.collections;
+
+public struct Projectile
+{
+    public int Damage;
+    public float TimeToLive;
+}
+
+var projectileHive = new Hive<Projectile>();
+
+var handle = projectileHive.Add(new Projectile { Damage = 10, TimeToLive = 2.0f });
+
+// The raw pointer is stable until the element is removed.
+unsafe
+{
+    Projectile* projectile = projectileHive.GetPointer(handle);
+    projectile->TimeToLive -= deltaTime;
+}
+
+// ... later, after many insertions and removals ...
+if (projectileHive.IsAlive(handle))
+{
+    ref var projectile = ref projectileHive.GetReference(handle);
+    projectile.Damage *= 2;
+}
+```
+
+`ref` accesses from `GetReference` are only valid for immediate use. Store a `T*` (long-lived access) or a
+`HiveHandle` (survives even `Splice`-style block reuse) when the reference has to outlive the call.
+
+### Removing while iterating
+
+`Enumerator` exposes `RemoveCurrent()`, which corresponds to the C++ idiom `it = hive.erase(it)`:
+
+```csharp
+var enumerator = projectileHive.GetEnumerator();
+while (enumerator.MoveNext())
+{
+    if (enumerator.Current.TimeToLive <= 0f)
+    {
+        enumerator.RemoveCurrent();
+    }
+}
+```
+
+`RemoveCurrent()` removes the element the enumerator sits on; the following `MoveNext()` lands on the element after
+the removed one. Use `Remove(handle)` when the element is already known.
+
+### Capacity semantics
+
+- `Capacity` is the sum of every block capacity, including reserved blocks, unused tail space and holes. It is
+  **not** the number of elements the hive can hold contiguously.
+- `Reserve(count)` only grows `Capacity`. It never invalidates pointers.
+- `TrimCapacity()` / `TrimCapacity(count)` only release reserved blocks. They never invalidate pointers.
+- `Clear()` drops every element but keeps the blocks, so `Capacity` is unchanged and no pointer is invalidated.
+- `BlockCapacityLimits` controls the smallest and largest block; `BlockCapacityDefaultLimits` and
+  `BlockCapacityHardLimits` expose the defaults and the hard bounds.
+
+### Important limitations
+
+- Iteration order is the physical order of elements inside the blocks and is unrelated to insertion order. The
+  container is not randomly accessible.
+- A `HiveHandle` is permanently dead once its block is emptied, even if the hive later recycles that block, because
+  a recycled block receives a fresh identifier. A handle whose block is still active can, however, alias a newly
+  inserted element if its slot is reused — the skipfield tracks slot occupancy, not element identity. Store your own
+  identity inside the element when you need to distinguish elements across removals.
+- `ShrinkToFit`, `Reshape`, `Splice`, `Sort`, `Unique`, reverse iteration and block views are not implemented yet.
+
 ## System Requirements
 
 - .NET 10.0

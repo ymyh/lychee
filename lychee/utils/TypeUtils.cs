@@ -156,9 +156,6 @@ public static class TypeUtils
     /// the maximum field alignment for structs with fields.</returns>
     public static int GetOrGuessAlignment<T>() where T : unmanaged
     {
-        unsafe
-        {
-            return GetOrGuessAlignment(typeof(T));
-        }
+        return GetOrGuessAlignment(typeof(T));
     }
 }

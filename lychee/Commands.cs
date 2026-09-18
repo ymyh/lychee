@@ -451,11 +451,10 @@ public sealed class Commands(App app)
     }
 
     /// <summary>
-    /// Gets a reference to a component of the current entity.
-    /// Requires SetCurrentEntity to be called first.
+    /// Gets a reference to a component of the given entity.
     /// </summary>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>A reference to the component. Returns null-ref if SetCurrentEntity was not called or the entity doesn't have this component.</returns>
+    /// <returns>A reference to the component.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T GetEntityComponent<T>(Archetype archetype, EntityPos entityPos) where T : unmanaged, IComponent
     {

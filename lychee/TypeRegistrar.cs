@@ -110,7 +110,7 @@ public sealed class TypeRegistrar
     }
 
     /// <summary>
-    /// Registers a component bundle type using reflection.
+    /// Registers a component bundle type.
     /// The bundle must be an unmanaged type with at least one instance field.
     /// Subsequent registrations of the same bundle type are ignored.
     /// </summary>
@@ -146,6 +146,16 @@ public sealed class TypeRegistrar
         return !TypeUtils.IsValueTuple<T>()
             ? throw new ArgumentException("Type parameter T must be a value tuple", nameof(T))
             : TypeUtils.GetTupleTypes<T>().Select(t => Register(t)).ToArray();
+    }
+
+    /// <summary>
+    /// Registers an enum type and returns its unique type identifier.
+    /// </summary>
+    /// <typeparam name="T">The target enum type.</typeparam>
+    /// <returns>The unique type identifier assigned to this enum type.</returns>
+    public int RegisterEnum<T>() where T : Enum
+    {
+        return RegisterEnum(typeof(T));
     }
 
     /// <summary>
@@ -282,6 +292,29 @@ public sealed class TypeRegistrar
 
             typeList.Add(new(size, (int)alignment));
         }
+
+        return typeList.Count - 1;
+    }
+
+    internal int RegisterEnum(Type type)
+    {
+        if (!type.IsEnum)
+        {
+            throw new ArgumentException("Type must be an enum", nameof(type));
+        }
+
+        using var wg = typeListLock.EnterWriteLock();
+        var typeList = wg.Data;
+
+        if (typeToIdDict.TryGetValue(type, out var value))
+        {
+            return value;
+        }
+
+        typeToIdDict.TryAdd(type, typeList.Count);
+        idToTypeDict.TryAdd(typeList.Count, type);
+
+        typeList.Add(new(Marshal.SizeOf(type.GetEnumUnderlyingType()), Marshal.SizeOf(type.GetEnumUnderlyingType())));
 
         return typeList.Count - 1;
     }

@@ -146,6 +146,17 @@ internal enum TestSet
     SetC,
 }
 
+/// <summary>
+/// A flags enum, used to cover set values that have no declared name of their own.
+/// </summary>
+[Flags]
+internal enum FlagsTestSet
+{
+    None = 0,
+    SetA = 1,
+    SetB = 2,
+}
+
 #endregion
 
 public class SystemOrderTests : IDisposable
@@ -407,6 +418,12 @@ public class SystemOrderTests : IDisposable
         app.SystemSets.AddSystemSet<TestSet>();
 
         app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetB);
+
+        var parentInfo = MakeSetInfo(TestSet.SetA);
+        var childInfo = MakeSetInfo(TestSet.SetB);
+
+        Assert.Equal(parentInfo, app.SystemSets.GetParent(childInfo));
+        Assert.Null(app.SystemSets.GetParent(parentInfo));
     }
 
     [Fact]
@@ -433,6 +450,251 @@ public class SystemOrderTests : IDisposable
             .FirstOrDefault(kv => kv.Key.Name == nameof(TestSet.SetA));
 
         Assert.False(setAEntry.Value);
+    }
+
+#endregion
+
+#region SystemSets Configuration Internals
+
+    [Fact]
+    public void SystemSets_IsRegistered_TracksRegistration()
+    {
+        Assert.False(app.SystemSets.IsRegistered(typeof(TestSet)));
+        Assert.False(app.SystemSets.IsRegistered(typeof(FlagsTestSet)));
+
+        app.SystemSets.AddSystemSet<TestSet>();
+
+        Assert.True(app.SystemSets.IsRegistered(typeof(TestSet)));
+        Assert.False(app.SystemSets.IsRegistered(typeof(FlagsTestSet)));
+    }
+
+    [Fact]
+    public void SystemSets_Version_IncreasesOnGraphChange()
+    {
+        var before = app.SystemSets.Version;
+
+        app.SystemSets.AddSystemSet<TestSet>();
+        var afterRegister = app.SystemSets.Version;
+
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        var afterOrder = app.SystemSets.Version;
+
+        app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetC);
+        var afterNesting = app.SystemSets.Version;
+
+        Assert.True(afterRegister > before);
+        Assert.True(afterOrder > afterRegister);
+        Assert.True(afterNesting > afterOrder);
+    }
+
+    [Fact]
+    public void SystemSets_Version_UnchangedWhenConfigurationRepeats()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetC);
+
+        var version = app.SystemSets.Version;
+
+        // Repeating the exact same configuration must not report a change.
+        app.SystemSets.AddSystemSet<TestSet>();
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetC);
+
+        Assert.Equal(version, app.SystemSets.Version);
+    }
+
+    [Fact]
+    public void SystemSets_Version_UnchangedByPredicateConfiguration()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+
+        var version = app.SystemSets.Version;
+
+        app.SystemSets.ConfigureSetPredicate(TestSet.SetA, _ => true);
+        app.SystemSets.ComputeAllPredicates();
+
+        // Predicates are re-evaluated every execution, so they never invalidate the set graph.
+        Assert.Equal(version, app.SystemSets.Version);
+    }
+
+    [Fact]
+    public void SystemSets_ConfigureSetOrder_DuplicateConstraint_DoesNotThrow()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+
+        Assert.Single(app.SystemSets.OrderEdges);
+    }
+
+    [Fact]
+    public void SystemSets_OrderEdges_ReflectsBothDirections()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.SystemSets.ConfigureSetOrder(TestSet.SetC, Order.After, TestSet.SetB);
+
+        var edges = app.SystemSets.OrderEdges.ToList();
+
+        var setA = MakeSetInfo(TestSet.SetA);
+        var setB = MakeSetInfo(TestSet.SetB);
+        var setC = MakeSetInfo(TestSet.SetC);
+
+        // `Order.After` must be stored as the same "before" edge, not as a reverse edge.
+        Assert.Equal(2, edges.Count);
+        Assert.Contains((setA, setB), edges);
+        Assert.Contains((setB, setC), edges);
+    }
+
+    [Fact]
+    public void SystemSets_ConfigureSetInSet_SelfNesting_Throws()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetA));
+
+        Assert.Contains(nameof(TestSet.SetA), exception.Message);
+    }
+
+    [Fact]
+    public void SystemSets_ConfigureSetInSet_DirectCycle_Throws()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+        app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetB);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            app.SystemSets.ConfigureSetInSet(TestSet.SetB, TestSet.SetA));
+
+        // The message must name the sets taking part in the cycle.
+        Assert.Contains(nameof(TestSet.SetA), exception.Message);
+        Assert.Contains(nameof(TestSet.SetB), exception.Message);
+
+        // The rejected nesting must not be written.
+        Assert.Null(app.SystemSets.GetParent(MakeSetInfo(TestSet.SetA)));
+    }
+
+    [Fact]
+    public void SystemSets_ConfigureSetInSet_IndirectCycle_Throws()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+        app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetB);
+        app.SystemSets.ConfigureSetInSet(TestSet.SetB, TestSet.SetC);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            app.SystemSets.ConfigureSetInSet(TestSet.SetC, TestSet.SetA));
+    }
+
+    [Fact]
+    public void SystemSets_FlagsCombinationValue_IsUsableAsSet()
+    {
+        app.SystemSets.AddSystemSet<FlagsTestSet>();
+
+        // A flag combination has no declared name of its own; it must still be usable instead of
+        // crashing later on a null name.
+        app.SystemSets.ConfigureSetPredicate(FlagsTestSet.SetA | FlagsTestSet.SetB, _ => true);
+        app.SystemSets.ComputeAllPredicates();
+
+        Assert.Single(app.SystemSets.SetPredicateResultDict);
+    }
+
+    [Fact]
+    public void SystemSets_ConfigureSetOrder_DisjointConstraints_AreIndependent()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+        app.SystemSets.AddSystemSet<FlagsTestSet>();
+
+        // Two independent ordering chains must coexist: neither implies anything about the other,
+        // and neither is a cycle.
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.SystemSets.ConfigureSetOrder(FlagsTestSet.SetA, Order.Before, FlagsTestSet.SetB);
+
+        Assert.Equal(2, app.SystemSets.OrderEdges.Count());
+    }
+
+#endregion
+
+#region Helpers
+
+    private SetInfo MakeSetInfo(TestSet set)
+    {
+        return new(app.TypeRegistrar.GetTypeId<TestSet>(), set.ToString());
+    }
+
+#endregion
+
+#region App Set Facades
+
+    [Fact]
+    public void App_AddSystemSet_RegistersSetType()
+    {
+        // This public entry point used to throw: it registered the enum through Marshal.SizeOf.
+        app.AddSystemSet<TestSet>();
+
+        Assert.True(app.SystemSets.IsRegistered(typeof(TestSet)));
+
+        // The registration must be usable through the facades.
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+    }
+
+    [Fact]
+    public void App_ConfigureSetOrder_TakesEffectForLaterSystems()
+    {
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+
+        var schedule = new DefaultSchedule(app, "Test");
+
+        // Added in the opposite order to what the set constraint requires.
+        schedule.AddSystem(new RecordingSystem("B"), new SystemDescriptor { Sets = [TestSet.SetB] });
+        schedule.AddSystem(new RecordingSystem("A"), new SystemDescriptor { Sets = [TestSet.SetA] });
+
+        schedule.Execute();
+
+        var order = ExecutionRecorder.GetOrder().ToList();
+
+        Assert.True(order.IndexOf("A") < order.IndexOf("B"));
+    }
+
+    [Fact]
+    public void App_ConfigureSetPredicate_SkipsSystemsInSet()
+    {
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetPredicate(TestSet.SetB, _ => false);
+
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"), new SystemDescriptor { Sets = [TestSet.SetA] });
+        schedule.AddSystem(new RecordingSystem("B"), new SystemDescriptor { Sets = [TestSet.SetB] });
+
+        schedule.Execute();
+
+        Assert.Equal(["A"], ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void App_ConfigureSetInSet_ChildInheritsParentPredicate()
+    {
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetInSet(TestSet.SetA, TestSet.SetC);
+        app.ConfigureSetPredicate(TestSet.SetA, _ => false);
+
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("C"), new SystemDescriptor { Sets = [TestSet.SetC] });
+
+        schedule.Execute();
+
+        Assert.Empty(ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void App_SystemSets_IsNotExposedPublicly()
+    {
+        // Set configuration is meant to go through the App facades, so the field must not be public.
+        // A public-only lookup returning null is the assertion.
+        Assert.Null(typeof(App).GetField("SystemSets"));
     }
 
 #endregion

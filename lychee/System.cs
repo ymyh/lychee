@@ -50,27 +50,27 @@ public sealed class SystemDescriptor
     /// Specifies a system that this system should execute after.
     /// Use this to define execution order dependencies between systems.
     /// </summary>
-    public ISystem? AddAfter { get; set; }
+    public ISystem? AddAfter { get; internal set; }
 
     /// <summary>
     /// The number of threads to use for parallel execution.
     /// This value is only used when multithreaded in <see cref="AutoImplSystemAttribute"/> is set to true; otherwise, it is ignored.
     /// Must be a positive value when used.
     /// </summary>
-    public int ThreadCount { get; set; } = 0;
+    public int ThreadCount { get; init; } = 0;
 
     /// <summary>
     /// The number of entities each thread should process in parallel execution.
     /// This value is only used when multithreaded in <see cref="AutoImplSystemAttribute"/> is set to true; otherwise, it is ignored.
     /// Must be a positive value when used.
     /// </summary>
-    public int GroupSize { get; set; } = 0;
+    public int GroupSize { get; init; } = 0;
 
     /// <summary>
     /// The system sets this system belongs to.
     /// Systems in the same set can be ordered relative to each other via <see cref="SystemSets.ConfigureSetOrder{TS1, TS2}"/>.
     /// </summary>
-    public Enum[] Sets { get; set; } = [];
+    public Enum[] Sets { get; init; } = [];
 }
 
 public sealed class SystemFilterInfo

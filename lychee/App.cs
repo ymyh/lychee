@@ -1,5 +1,7 @@
 ﻿using lychee.interfaces;
 using lychee.systems;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ThreadPool = lychee.threading.ThreadPool;
 
 namespace lychee;
@@ -24,6 +26,13 @@ public sealed class AppDescriptor
     /// A larger capacity allows for more queued tasks but may increase memory usage. The default value is 64.
     /// </summary>
     public int ThreadPoolQueueCapacity { get; set; } = 64;
+
+    /// <summary>
+    /// The logger factory the framework uses to report diagnostics such as ambiguous scheduling or oversized
+    /// set expansion. It defaults to <see cref="NullLoggerFactory.Instance"/>, which discards every message at
+    /// zero cost, so logging stays opt-in. Assign a real factory to observe the diagnostics.
+    /// </summary>
+    public ILoggerFactory LoggerFactory { get; set; } = NullLoggerFactory.Instance;
 }
 
 /// <summary>
@@ -49,6 +58,12 @@ public sealed class App : IDisposable
 
 #endregion
 
+#region Internal Properties
+
+    internal ILoggerFactory LoggerFactory { get; }
+
+#endregion
+
 #endregion
 
 #region Private Fields
@@ -67,6 +82,9 @@ public sealed class App : IDisposable
     /// <param name="descriptor">The app descriptor.</param>
     public App(AppDescriptor descriptor)
     {
+        // Assigned first: the default schedule built below creates its logger from this factory.
+        LoggerFactory = descriptor.LoggerFactory;
+
         World = new(TypeRegistrar, descriptor.ChunkSizeHint);
         SystemSchedules = new(this);
         ResourcePool = new(TypeRegistrar);
@@ -261,9 +279,60 @@ public sealed class App : IDisposable
         return state;
     }
 
+    /// <summary>
+    /// Registers an enum type as a set dimension, so its values can be used with the other set configuration
+    /// methods. Registering the same type again has no effect.
+    /// </summary>
+    /// <typeparam name="T">The enum type whose values identify sets.</typeparam>
     public void AddSystemSet<T>() where T : Enum
     {
-        var typeId = TypeRegistrar.Register<T>();
+        SystemSets.AddSystemSet<T>();
+    }
+
+    /// <summary>
+    /// Constrains every system in one set to run before (or after) every system in another set.
+    /// Declaring the same constraint again has no effect.
+    /// </summary>
+    /// <typeparam name="TS1">The enum type of the first set.</typeparam>
+    /// <typeparam name="TS2">The enum type of the second set.</typeparam>
+    /// <param name="s1">The first set.</param>
+    /// <param name="order">Whether <paramref name="s1"/> runs before or after <paramref name="s2"/>.</param>
+    /// <param name="s2">The second set.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when either set type has not been registered, or when the constraint would create a cycle.
+    /// </exception>
+    public void ConfigureSetOrder<TS1, TS2>(TS1 s1, Order order, TS2 s2) where TS1 : Enum where TS2 : Enum
+    {
+        SystemSets.ConfigureSetOrder(s1, order, s2);
+    }
+
+    /// <summary>
+    /// Attaches a predicate to a set. Systems belonging to the set (or to any of its children) only run while
+    /// the predicate returns true.
+    /// </summary>
+    /// <typeparam name="T">The enum type of the set.</typeparam>
+    /// <param name="set">The set to attach the predicate to.</param>
+    /// <param name="predicate">The predicate, evaluated once per execution against the resource pool.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the set type has not been registered.</exception>
+    public void ConfigureSetPredicate<T>(T set, Func<ResourcePool, bool> predicate) where T : Enum
+    {
+        SystemSets.ConfigureSetPredicate(set, predicate);
+    }
+
+    /// <summary>
+    /// Nests one set inside another: the child inherits the parent's predicate, and constraints applied to the
+    /// parent also cover the child. A set has at most one parent.
+    /// </summary>
+    /// <typeparam name="TS1">The enum type of the parent set.</typeparam>
+    /// <typeparam name="TS2">The enum type of the child set.</typeparam>
+    /// <param name="parent">The set that contains <paramref name="child"/>.</param>
+    /// <param name="child">The set contained in <paramref name="parent"/>.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when either set type has not been registered, or when nesting would create a cycle.
+    /// </exception>
+    public void ConfigureSetInSet<TS1, TS2>(TS1 parent, TS2 child) where TS1 : Enum where TS2 : Enum
+    {
+        SystemSets.ConfigureSetInSet(parent, child);
     }
 
     /// <summary>

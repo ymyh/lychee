@@ -341,6 +341,169 @@ public class DirectedAcyclicGraphTests
 
 #endregion
 
+#region TryAddEdge
+
+    [Fact]
+    public void TryAddEdge_NewEdge_ReturnsTrueAndCreatesRelationship()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+
+        var added = graph.TryAddEdge(a, b);
+
+        Assert.True(added);
+        Assert.Contains(b, a.Children);
+        Assert.Contains(a, b.Parents);
+    }
+
+    [Fact]
+    public void TryAddEdge_DuplicateEdge_ReturnsFalseAndKeepsSingleRelationship()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+
+        Assert.True(graph.TryAddEdge(a, b));
+        Assert.False(graph.TryAddEdge(a, b));
+
+        Assert.Single(a.Children);
+        Assert.Single(b.Parents);
+    }
+
+    [Fact]
+    public void TryAddEdge_SameNode_ThrowsArgumentException()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+
+        Assert.Throws<ArgumentException>(() => graph.TryAddEdge(a, a));
+    }
+
+    [Fact]
+    public void TryAddEdge_NodeNotInGraph_ThrowsArgumentException()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = new DAGNode<int>(2); // not added to graph
+
+        Assert.Throws<ArgumentException>(() => graph.TryAddEdge(a, b));
+    }
+
+    [Fact]
+    public void TryAddEdge_RepeatedConfiguration_GraphStaysUsable()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+        var c = graph.AddNode(new DAGNode<int>(3));
+
+        // The same pair of constraints configured twice must be a no-op the second time.
+        for (var i = 0; i < 2; i++)
+        {
+            graph.TryAddEdge(a, b);
+            graph.TryAddEdge(b, c);
+        }
+
+        var list = graph.AsList();
+
+        Assert.Equal(3, list.Count);
+        Assert.Equal(0, list[0].Group);
+        Assert.Equal(1, list[1].Group);
+        Assert.Equal(2, list[2].Group);
+    }
+
+#endregion
+
+#region Edges
+
+    [Fact]
+    public void Edges_EmptyGraph_YieldsNothing()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+
+        Assert.Empty(graph.Edges);
+    }
+
+    [Fact]
+    public void Edges_NodesWithoutEdges_YieldNothing()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        graph.AddNode(new DAGNode<int>(1));
+        graph.AddNode(new DAGNode<int>(2));
+
+        Assert.Empty(graph.Edges);
+    }
+
+    [Fact]
+    public void Edges_LinearChain_YieldsEdgesInOrder()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+        var c = graph.AddNode(new DAGNode<int>(3));
+
+        graph.AddEdge(a, b);
+        graph.AddEdge(b, c);
+
+        var edges = graph.Edges.ToList();
+
+        Assert.Equal(2, edges.Count);
+        Assert.Equal((a, b), edges[0]);
+        Assert.Equal((b, c), edges[1]);
+    }
+
+    [Fact]
+    public void Edges_MatchesParentsAndChildren()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+        var c = graph.AddNode(new DAGNode<int>(3));
+        var d = graph.AddNode(new DAGNode<int>(4));
+
+        graph.AddEdge(a, b);
+        graph.AddEdge(a, c);
+        graph.AddEdge(b, d);
+        graph.AddEdge(c, d);
+
+        var edges = graph.Edges.ToList();
+
+        // Every enumerated edge is present in `Children` and mirrored in `Parents`.
+        foreach (var (from, to) in edges)
+        {
+            Assert.Contains(to, from.Children);
+            Assert.Contains(from, to.Parents);
+        }
+
+        // Every parent/child relation is enumerated exactly once.
+        var relationCount = graph.Nodes.Sum(node => node.Children.Count);
+
+        Assert.Equal(4, edges.Count);
+        Assert.Equal(relationCount, edges.Count);
+        Assert.Equal(edges.Count, edges.Distinct().Count());
+    }
+
+    [Fact]
+    public void Edges_AfterRemoveEdge_NoLongerYieldsRemovedEdge()
+    {
+        var graph = new DirectedAcyclicGraph<int>();
+        var a = graph.AddNode(new DAGNode<int>(1));
+        var b = graph.AddNode(new DAGNode<int>(2));
+        var c = graph.AddNode(new DAGNode<int>(3));
+
+        graph.AddEdge(a, b);
+        graph.AddEdge(a, c);
+        graph.RemoveEdge(a, b);
+
+        var edges = graph.Edges.ToList();
+
+        Assert.Single(edges);
+        Assert.Equal((a, c), edges[0]);
+    }
+
+#endregion
+
 #region IEnumerable
 
     [Fact]

@@ -4,6 +4,7 @@ using lychee.collections;
 using lychee.components;
 using lychee.interfaces;
 using lychee.utils;
+using Microsoft.Extensions.Logging;
 
 namespace lychee;
 
@@ -80,6 +81,8 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly App app;
 
+    private readonly ILogger logger;
+
     private readonly List<Commands> entityCommanders = [];
 
     private bool isFrozen;
@@ -96,6 +99,7 @@ public abstract class BasicSchedule : ISchedule
         Name = name;
         CommitPoint = commitPoint;
         ExecutionMode = executionMode;
+        logger = app.LoggerFactory.CreateLogger($"lychee.schedule.{name}");
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
 
@@ -313,7 +317,7 @@ public abstract class BasicSchedule : ISchedule
         isFrozen = false;
 
         var list = ExecutionGraph.AsList();
-        DAGNode<SystemInfo> addAfterNode = list[0];
+        var addAfterNode = list[0];
         var currentGroup = -1;
         var setConstrained = false;
         var afterNodes = new List<DAGNode<SystemInfo>>();
@@ -326,15 +330,18 @@ public abstract class BasicSchedule : ISchedule
             foreach (var set in systemSets)
             {
                 foreach (var s in app.SystemSets.GetSetsBefore(set))
+                {
                     setsBefore.Add(s);
+                }
+
                 foreach (var s in app.SystemSets.GetSetsAfter(set))
+                {
                     setsAfter.Add(s);
+                }
             }
 
-            foreach (var n in list)
+            foreach (var n in list.Skip(1))
             {
-                if (n == list[0]) continue;
-
                 foreach (var es in n.Data.EffectiveSets)
                 {
                     if (setsBefore.Contains(es))
@@ -348,10 +355,8 @@ public abstract class BasicSchedule : ISchedule
                 }
             }
 
-            foreach (var n in list)
+            foreach (var n in list.Skip(1))
             {
-                if (n == list[0]) continue;
-
                 foreach (var es in n.Data.EffectiveSets)
                 {
                     if (setsAfter.Contains(es))
@@ -369,13 +374,8 @@ public abstract class BasicSchedule : ISchedule
             CollectDescendants(an, afterNodeDescendants);
         }
 
-        foreach (var n in list)
+        foreach (var n in list.Skip(1))
         {
-            if (n == list[0])
-            {
-                continue;
-            }
-
             if (descriptor.AddAfter != null)
             {
                 if (n.Data.System == descriptor.AddAfter)
@@ -387,7 +387,7 @@ public abstract class BasicSchedule : ISchedule
                 continue;
             }
 
-            if (n != list[0] && CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
+            if (CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
             {
                 if (n.Parents.Count > 0)
                 {

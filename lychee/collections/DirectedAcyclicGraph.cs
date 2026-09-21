@@ -74,6 +74,14 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     public int Count => Nodes.Count;
 
     /// <summary>
+    /// Enumerates every edge in the graph as a <c>(From, To)</c> pair, where <c>From</c> is the parent
+    /// (the node that must run first) and <c>To</c> is the child.
+    /// This is a live read-only view over the current structure, not a copy: it walks the node list and each
+    /// node's children on demand, so do not modify the graph while enumerating it.
+    /// </summary>
+    public IEnumerable<(DAGNode<T> From, DAGNode<T> To)> Edges => EnumerateEdges();
+
+    /// <summary>
     /// Reusable queue for validation (cached to avoid per-call allocation).
     /// </summary>
     private readonly Queue<DAGNode<T>> validationQueue = [];
@@ -172,25 +180,44 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     /// </exception>
     public void AddEdge(DAGNode<T> from, DAGNode<T> to)
     {
+        if (!TryAddEdge(from, to))
+        {
+            throw new ArgumentException("Can't add edge because `from` already has a child `to`");
+        }
+    }
+
+    /// <summary>
+    /// Adds a directed edge from one node to another, unless the edge is already present.
+    /// Use this when the same constraint may be declared repeatedly and a duplicate is not an error.
+    /// </summary>
+    /// <param name="from">The source node of the edge.</param>
+    /// <param name="to">The destination node of the edge.</param>
+    /// <returns>True when a new edge was added; false when the edge already existed.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="from"/> or <paramref name="to"/> is not in the graph,
+    /// or when <paramref name="from"/> equals <paramref name="to"/>.
+    /// </exception>
+    public bool TryAddEdge(DAGNode<T> from, DAGNode<T> to)
+    {
         if (from == to)
         {
             throw new ArgumentException("Can't add edge because `from` is the same as `to`");
         }
 
-        if (Nodes.Contains(from) && Nodes.Contains(to))
+        if (!Nodes.Contains(from) || !Nodes.Contains(to))
         {
-            if (from.Children.Contains(to))
-            {
-                throw new ArgumentException("Can't add edge because `from` already has a child `to`");
-            }
+            throw new ArgumentException("Can't add edge because at least one of the nodes is not in the graph");
+        }
 
-            from.Children.Add(to);
-            to.Parents.Add(from);
-        }
-        else
+        if (from.Children.Contains(to))
         {
-            throw new ArgumentException("Can't add edge because at lease one of the nodes is not in the graph");
+            return false;
         }
+
+        from.Children.Add(to);
+        to.Parents.Add(from);
+
+        return true;
     }
 
     /// <summary>
@@ -271,6 +298,21 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
             action(node);
         }
     }
+
+#region Private Methods
+
+    private IEnumerable<(DAGNode<T> From, DAGNode<T> To)> EnumerateEdges()
+    {
+        foreach (var node in Nodes)
+        {
+            foreach (var child in node.Children)
+            {
+                yield return (node, child);
+            }
+        }
+    }
+
+#endregion
 
 #region IEnumerable Implementation
 

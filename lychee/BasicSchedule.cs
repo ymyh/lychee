@@ -50,6 +50,28 @@ public abstract class BasicSchedule : ISchedule
         MultiThread,
     }
 
+    /// <summary>
+    /// Defines how a schedule reports systems that access the same data in conflicting ways without being
+    /// ordered by the configuration.
+    /// </summary>
+    public enum AmbiguityDetectionEnum
+    {
+        /// <summary>
+        /// Skips the check. <see cref="Ambiguities"/> stays empty.
+        /// </summary>
+        Ignore,
+
+        /// <summary>
+        /// Logs a warning for every such pair and collects it in <see cref="Ambiguities"/>.
+        /// </summary>
+        Warn,
+
+        /// <summary>
+        /// Throws as soon as building the schedule finds such a pair.
+        /// </summary>
+        Error
+    }
+
 #region Public Properties
 
     /// <summary>
@@ -71,6 +93,20 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     public ExecutionModeEnum ExecutionMode { get; set; }
 
+    /// <summary>
+    /// Gets or sets how this schedule reports systems that conflict without an ordering constraint between
+    /// them. Their order is then decided by the schedule itself, by placing them in different layers.
+    /// </summary>
+    public AmbiguityDetectionEnum AmbiguityDetection { get; set; } = AmbiguityDetectionEnum.Warn;
+
+    /// <summary>
+    /// The conflicting pairs no recorded constraint orders, as of the last build. Every pair listed here was
+    /// separated by the schedule rather than by the configuration, so naming them with an explicit constraint
+    /// is what fixes the order. Empty while <see cref="AmbiguityDetection"/> is
+    /// <see cref="AmbiguityDetectionEnum.Ignore"/>.
+    /// </summary>
+    public IReadOnlyList<(ISystem A, ISystem B)> Ambiguities => ambiguitiesList;
+
 #endregion
 
 #region Private Fields
@@ -80,6 +116,12 @@ public abstract class BasicSchedule : ISchedule
     /// nothing here touches the graph.
     /// </summary>
     private readonly List<SystemInfo> pendingSystems = [];
+
+    /// <summary>
+    /// The conflicting pairs the last build reported, in the order they were found. Filled only by a build and
+    /// cleared by <see cref="ClearSystems"/>.
+    /// </summary>
+    private readonly List<(ISystem A, ISystem B)> ambiguitiesList = [];
 
     private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
 
@@ -119,8 +161,6 @@ public abstract class BasicSchedule : ISchedule
         logger = app.LoggerFactory.CreateLogger($"lychee.schedule.{name}");
 
         this.app.World.ArchetypeManager.ArchetypeCreated += () => { needConfigure = true; };
-
-        ExecutionGraph.AddNode(new());
     }
 
 #endregion
@@ -165,35 +205,74 @@ public abstract class BasicSchedule : ISchedule
     /// <returns>The system instance that was added.</returns>
     public T AddSystem<[SystemConcept] T>(T system, SystemDescriptor? descriptor = null) where T : ISystem
     {
-        DoAddSystem(system, descriptor ?? new());
+        DoAddSystem(system, descriptor ?? new(), []);
         return system;
     }
 
     /// <summary>
-    /// Adds multiple systems to the schedule in the order specified by a nested value tuple.
-    /// Systems at the same nesting level may execute in parallel if their access patterns allow.
+    /// Adds multiple systems to the schedule in the order specified by a value tuple. Each element of the tuple
+    /// is a group that runs entirely after the previous one, and a nested tuple is a single group: the systems
+    /// inside it are left unordered, so they run in parallel unless they conflict.
     /// All systems must have a default constructor.
     /// </summary>
-    /// <typeparam name="T">A value tuple containing system types. Nested tuples create hierarchical ordering.</typeparam>
-    /// <param name="addAfter">Optional. The system after which the first system should execute.</param>
+    /// <typeparam name="T">A value tuple containing system types.</typeparam>
+    /// <param name="addAfter">Optional. The system after which the first group should execute.</param>
     /// <exception cref="ArgumentException">Thrown when T is not a value tuple or contains non-system types.</exception>
     /// <example>
     /// <code>
-    /// // SysA executes first
-    /// // SysB and SysC execute in parallel (if compatible) after SysA
-    /// // SysD executes after both SysB and SysC complete
+    /// // SysA runs first, then SysB and SysC run in parallel (if compatible), then SysD runs.
     /// schedule.AddSystems&lt;(SysA, (SysB, SysC), SysD)&gt;();
     /// </code>
     /// </example>
     public void AddSystems<T>(ISystem? addAfter = null)
     {
-        AddSystems(typeof(T), addAfter);
+        var groupList = new List<SystemEntry[]>();
+
+        foreach (var type in TypeUtils.GetTupleTypes(typeof(T)))
+        {
+            var systemList = new List<ISystem>();
+
+            CollectGroup(type, typeof(T), systemList);
+            groupList.Add([.. systemList.Select(system => new SystemEntry(system, null))]);
+        }
+
+        AddSystemGroups(addAfter, [.. groupList]);
     }
 
     /// <summary>
     /// Adds multiple systems to the schedule. Each argument is an array of systems representing
     /// a parallel group. Systems within the same array may execute in parallel if their access
-    /// patterns allow. Sequential arrays execute in order.
+    /// patterns allow. Every member of a group runs after every member of the previous group.
+    /// A member may carry a <see cref="SystemDescriptor"/> by writing it as a system/descriptor pair, which is
+    /// how a system added this way joins sets, picks up an <see cref="SystemDescriptor.AddAfter"/> dependency or
+    /// gets a thread count.
+    /// </summary>
+    /// <param name="systemGroups">
+    /// Variable number of system arrays. Each array represents a group of systems that can run in parallel,
+    /// and each member is a plain system or a system together with its descriptor.
+    /// </param>
+    /// <example>
+    /// <code>
+    /// // SysA and SysB run in parallel (if compatible); SysC runs after both of them.
+    /// schedule.AddSystems([new SysA(), new SysB()], [new SysC()]);
+    ///
+    /// // A group that needs descriptors lists every member as a system/descriptor pair.
+    /// schedule.AddSystems(
+    ///     [(new SysA(), null), (new SysB(), new SystemDescriptor { Sets = [Stage.Sim] })],
+    ///     [(new SysC(), null)]);
+    /// </code>
+    /// </example>
+    public void AddSystems(params SystemEntry[][] systemGroups)
+    {
+        AddSystemGroups(null, systemGroups);
+    }
+
+    /// <summary>
+    /// Adds multiple systems to the schedule. Each argument is an array of systems representing
+    /// a parallel group. Systems within the same array may execute in parallel if their access
+    /// patterns allow. Every member of a group runs after every member of the previous group.
+    /// Every system is added with the default descriptor; use the <see cref="SystemEntry"/> overload to give
+    /// one a descriptor.
     /// </summary>
     /// <param name="systemGroups">
     /// Variable number of system arrays. Each array represents a group of systems that can run in parallel.
@@ -202,63 +281,42 @@ public abstract class BasicSchedule : ISchedule
     /// <code>
     /// // SysA and SysB run in parallel (if compatible)
     /// // SysC runs after both SysA and SysB complete
-    /// schedule.AddSystems(null, [new SysA(), new SysB()], [new SysC()]);
+    /// schedule.AddSystems([new SysA(), new SysB()], [new SysC()]);
     /// </code>
     /// </example>
     public void AddSystems(params ISystem[][] systemGroups)
     {
-        var groupIndex = 0;
-
-        foreach (var group in systemGroups)
-        {
-            if (group.Length == 0)
-            {
-                continue;
-            }
-
-            foreach (var system in group)
-            {
-                DoAddSystem(system, new(), groupIndex);
-            }
-
-            groupIndex++;
-        }
+        // A null group is carried into the shared loop below, which is where it is reported.
+        AddSystemGroups(null, [.. systemGroups.Select(group => group == null ? null : Array.ConvertAll(group, system => new SystemEntry(system, null)))]);
     }
 
     /// <summary>
-    /// Adds multiple systems to the schedule. Each argument is an array of systems representing
-    /// a parallel group. Systems within the same array may execute in parallel if their access
-    /// patterns allow. Sequential arrays execute in order.
+    /// Adds the groups of the array form one after another, which is what makes every member of a group run
+    /// after every member of the group before it.
     /// </summary>
-    /// <param name="addAfter">Optional. The system after which the first system should execute.</param>
-    /// <param name="systemGroups">
-    /// Variable number of system arrays. Each array represents a group of systems that can run in parallel.
-    /// </param>
-    /// <example>
-    /// <code>
-    /// // SysA and SysB run in parallel (if compatible)
-    /// // SysC runs after both SysA and SysB complete
-    /// schedule.AddSystems(null, [new SysA(), new SysB()], [new SysC()]);
-    /// </code>
-    /// </example>
-    public void AddSystems(ISystem? addAfter, params ISystem[][] systemGroups)
+    /// <param name="addAfter">The system the first group should execute after, if any.</param>
+    /// <param name="systemGroups">The groups to add, in order. An empty group is skipped.</param>
+    /// <exception cref="ArgumentException">Thrown when a group is null: that is a mistake, not an empty group.</exception>
+    private void AddSystemGroups(ISystem? addAfter, SystemEntry[]?[] systemGroups)
     {
-        var groupIndex = 0;
+        var previousSystems = Array.Empty<ISystem>();
 
-        foreach (var group in systemGroups)
+        for (var i = 0; i < systemGroups.Length; i++)
         {
+            var group = systemGroups[i] ?? throw new ArgumentException($"System group at index {i} is null", nameof(systemGroups));
+
             if (group.Length == 0)
             {
                 continue;
             }
 
-            foreach (var system in group)
+            foreach (var entry in group)
             {
-                // The supplied system orders the first group; every later group is ordered by its group index.
-                DoAddSystem(system, new() { AddAfter = groupIndex == 0 ? addAfter : null }, groupIndex);
+                DoAddSystem(entry.System, entry.Descriptor ?? new(), addAfter == null ? previousSystems : [.. previousSystems, addAfter]);
             }
 
-            groupIndex++;
+            previousSystems = [.. group.Select(entry => entry.System)];
+            addAfter = null;
         }
     }
 
@@ -269,6 +327,7 @@ public abstract class BasicSchedule : ISchedule
     public void ClearSystems()
     {
         pendingSystems.Clear();
+        ambiguitiesList.Clear();
         ExecutionGraph.Clear();
         frozenDagNodes = [];
         multiThreadResults = [];
@@ -280,10 +339,14 @@ public abstract class BasicSchedule : ISchedule
     /// Execution calls this automatically when something changed; calling it explicitly right after
     /// configuration surfaces ordering problems (a cycle, an unregistered set) at configuration time instead
     /// of at run time. Calling it again without any change does nothing.
+    /// Systems are packed into the fewest layers the conflicts allow, so only the constraints the caller
+    /// actually declared decide which system runs before which; conflicting pairs left unordered are separated
+    /// by the schedule itself and reported through <see cref="AmbiguityDetection"/>.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when a system declares a set type that was never registered, or when the recorded set ordering or
-    /// nesting contains a cycle.
+    /// Thrown when a system declares a set type that was never registered, when the recorded set ordering or
+    /// nesting contains a cycle, or when <see cref="AmbiguityDetection"/> is
+    /// <see cref="AmbiguityDetectionEnum.Error"/> and a conflicting pair has no ordering constraint.
     /// </exception>
     /// <exception cref="InvalidGraphException">Thrown when the declared constraints cannot all be satisfied.</exception>
     public void Build()
@@ -300,15 +363,11 @@ public abstract class BasicSchedule : ISchedule
         frozenDagNodes = [];
         multiThreadResults = [];
 
-        // The graph has to keep exactly one entry point: it is Nodes[0], which both the layer stripping and the
-        // configuration pass rely on as the virtual root every system without a predecessor hangs off.
-        var rootNode = ExecutionGraph.AddNode(new());
-
         var nodeList = new List<DAGNode<SystemInfo>>(pendingSystems.Count);
         var systemIndexDict = new Dictionary<ISystem, int>(ReferenceEqualityComparer.Instance);
         var membersDict = new Dictionary<SetInfo, List<DAGNode<SystemInfo>>>();
 
-        // 1) Expand the sets of every system and record which systems belong to which set.
+        // Expand the sets of every system and record which systems belong to which set.
         for (var i = 0; i < pendingSystems.Count; i++)
         {
             var info = pendingSystems[i];
@@ -331,7 +390,7 @@ public abstract class BasicSchedule : ISchedule
             }
         }
 
-        // 2) Set ordering: every member of the earlier set runs before every member of the later one.
+        // Set ordering: every member of the earlier set runs before every member of the later one.
         var expansionEdgeCount = 0;
 
         foreach (var (before, after) in app.SystemSets.OrderEdges)
@@ -347,43 +406,34 @@ public abstract class BasicSchedule : ISchedule
             ScheduleLog.SetExpansionLarge(logger, Name, expansionEdgeCount, SetExpansionEdgeThreshold);
         }
 
-        // 3) Explicit dependencies declared through SystemDescriptor.AddAfter.
+        // Dependencies declared while adding: SystemDescriptor.AddAfter, and the order of the groups of
+        // AddSystems. Both are recorded as "the systems this one runs after", so one loop covers them.
         for (var i = 0; i < pendingSystems.Count; i++)
         {
-            var addAfter = pendingSystems[i].AddAfter;
-
-            if (addAfter != null && systemIndexDict.TryGetValue(addAfter, out var index))
+            foreach (var previousSystem in pendingSystems[i].PreviousSystems)
             {
-                ExecutionGraph.TryAddEdge(nodeList[index], nodeList[i]);
+                if (systemIndexDict.TryGetValue(previousSystem, out var index))
+                {
+                    ExecutionGraph.TryAddEdge(nodeList[index], nodeList[i]);
+                }
             }
         }
 
-        // 3') Groups declared through the array form of AddSystems run one after another.
-        AddGroupIndexEdges(nodeList);
+        // Report the conflicting pairs the recorded constraints leave unordered. Only explicit constraints
+        // are in the graph at this point, so a conflicting pair sharing a layer is a pair that nothing but
+        // this schedule decides about.
+        DetectAmbiguities(ResolveOrder());
 
-        // 4) Systems that touch the same parameter in a conflicting way keep their declaration order.
-        AddConflictEdges(nodeList);
+        // Give every system the earliest layer it can take: after all of its explicit predecessors, and never
+        // sharing a layer with a system it conflicts with. Systems that only read the same data, or that
+        // touch disjoint data, share a layer instead of being serialized by their declaration order.
+        var layerDict = AssignConflictAwareLayers(nodeList);
 
-        // 5) Layer the result. Every system without a predecessor hangs off the virtual root, so the graph
-        //     always has exactly one entry point no matter how many independent systems it holds.
-        foreach (var node in nodeList)
-        {
-            if (node.Parents.Count == 0)
-            {
-                ExecutionGraph.TryAddEdge(rootNode, node);
-            }
-        }
+        // Write the layering back as edges, so the conflict order travels the same way as every other
+        // constraint and the layers below come out of the graph rather than from a private side table.
+        AddConflictEdges(nodeList, layerDict);
 
-        List<DAGNode<SystemInfo>> orderedList;
-
-        try
-        {
-            orderedList = ExecutionGraph.AsList();
-        }
-        catch (InvalidGraphException)
-        {
-            throw new InvalidGraphException(DescribeUnsatisfiableOrdering(rootNode));
-        }
+        var orderedList = ResolveOrder();
 
         var declarationIndexDict = new Dictionary<SystemInfo, int>(pendingSystems.Count);
 
@@ -395,7 +445,6 @@ public abstract class BasicSchedule : ISchedule
         // Systems in the same layer have no constraint between them; keep their declaration order so that the
         // same configuration always produces the same order, even though it is not promised.
         frozenDagNodes = orderedList
-            .Skip(1)
             .OrderBy(node => node.Group)
             .ThenBy(node => declarationIndexDict[node.Data])
             .Freeze()
@@ -415,27 +464,36 @@ public abstract class BasicSchedule : ISchedule
 
 #region Private methods
 
-    private void AddSystems(Type tupleType, ISystem? addAfter)
+    /// <summary>
+    /// Collects the systems of one group: a system type on its own, or every system of a nested tuple, which is
+    /// a single group however deeply it is nested.
+    /// </summary>
+    /// <param name="type">The system type or value tuple to collect from.</param>
+    /// <param name="tupleType">The tuple being walked, for the error message.</param>
+    /// <param name="groupList">The list the systems found are appended to.</param>
+    /// <exception cref="ArgumentException">Thrown when the tuple contains something that is not a system type.</exception>
+    private static void CollectGroup(Type type, Type tupleType, List<ISystem> groupList)
     {
-        var types = TypeUtils.GetTupleTypes(tupleType);
-
-        foreach (var type in types)
+        if (type.IsAssignableTo(typeof(ISystem)))
         {
-            if (type.IsAssignableTo(typeof(ISystem)))
-            {
-                var system = (type.GetConstructor([])!.Invoke([]) as ISystem)!;
-                DoAddSystem(system, new() { AddAfter = addAfter });
-                addAfter = system;
-            }
-            else if (TypeUtils.IsValueTuple(type))
-            {
-                AddSystems(type, addAfter);
-            }
-            else
-            {
-                throw new ArgumentException($"Type {type} in {tupleType} is not a system type");
-            }
+            groupList.Add(InstantiateSystem(type));
+            return;
         }
+
+        if (!TypeUtils.IsValueTuple(type))
+        {
+            throw new ArgumentException($"Type {type} in {tupleType} is not a system type");
+        }
+
+        foreach (var nestedType in TypeUtils.GetTupleTypes(type))
+        {
+            CollectGroup(nestedType, tupleType, groupList);
+        }
+    }
+
+    private static ISystem InstantiateSystem(Type type)
+    {
+        return (ISystem)type.GetConstructor([])!.Invoke([])!;
     }
 
     private (Type[] all, Type[] any, Type[] none) GetSystemFilter(ISystem system)
@@ -454,7 +512,13 @@ public abstract class BasicSchedule : ISchedule
         return ([], [], [typeof(Disabled)]);
     }
 
-    private void DoAddSystem(ISystem system, SystemDescriptor descriptor, int groupIndex = -1)
+    /// <summary>
+    /// Records a system as declared, together with everything it was told to run after.
+    /// </summary>
+    /// <param name="system">The system to record.</param>
+    /// <param name="descriptor">Its descriptor, which may add a dependency of its own.</param>
+    /// <param name="previousSystems">The systems of the group it was declared in after, empty when there is none.</param>
+    private void DoAddSystem(ISystem system, SystemDescriptor descriptor, ISystem[] previousSystems)
     {
         if (CheckIfMultiThread(system))
         {
@@ -473,7 +537,7 @@ public abstract class BasicSchedule : ISchedule
             AllFilter = allFilter,
             AnyFilter = anyFilter,
             NoneFilter = noneFilter,
-        }, descriptor.Sets, descriptor.AddAfter, groupIndex));
+        }, descriptor.Sets, descriptor.AddAfter == null ? previousSystems : [.. previousSystems, descriptor.AddAfter]));
 
         // The recorded systems no longer match the resolved graph; the next Build has to redo it.
         builtVersion = -1;
@@ -502,49 +566,22 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
-    /// Orders the groups declared through the array form of AddSystems: each group runs entirely after the
-    /// previous one.
+    /// Orders conflicting systems the way the layers were assigned, so the graph reproduces the layering that
+    /// <see cref="AssignConflictAwareLayers"/> decided. A write conflicts with everything, a read only with
+    /// writes.
     /// </summary>
-    private void AddGroupIndexEdges(List<DAGNode<SystemInfo>> nodeList)
-    {
-        var groupDict = new Dictionary<int, List<DAGNode<SystemInfo>>>();
-
-        for (var i = 0; i < pendingSystems.Count; i++)
-        {
-            var groupIndex = pendingSystems[i].GroupIndex;
-
-            if (groupIndex < 0)
-            {
-                continue;
-            }
-
-            if (!groupDict.TryGetValue(groupIndex, out var groupNodes))
-            {
-                groupNodes = [];
-                groupDict[groupIndex] = groupNodes;
-            }
-
-            groupNodes.Add(nodeList[i]);
-        }
-
-        // Group indexes are handed out without gaps, so the chain stops at the first index that is missing.
-        for (var groupIndex = 1; groupDict.ContainsKey(groupIndex); groupIndex++)
-        {
-            AddGroupEdges(groupDict[groupIndex - 1], groupDict[groupIndex]);
-        }
-    }
-
-    /// <summary>
-    /// Orders systems that access the same parameter in a conflicting way by declaration order, so the
-    /// resolution stays deterministic when no explicit constraint covers them.
-    /// A write conflicts with everything, a read only with writes.
-    /// </summary>
-    private void AddConflictEdges(List<DAGNode<SystemInfo>> nodeList)
+    private void AddConflictEdges(List<DAGNode<SystemInfo>> nodeList, Dictionary<DAGNode<SystemInfo>, int> layerDict)
     {
         var lastWriterDict = new Dictionary<Type, int>();
         var readerDict = new Dictionary<Type, List<int>>();
 
-        for (var i = 0; i < pendingSystems.Count; i++)
+        // Systems are visited layer by layer, so every edge added here points forward in the layering and can
+        // never close a cycle. The sort is stable, which keeps systems of one layer in declaration order.
+        var visitOrderList = Enumerable.Range(0, nodeList.Count)
+            .OrderBy(index => layerDict[nodeList[index]])
+            .ToList();
+
+        foreach (var i in visitOrderList)
         {
             foreach (var parameter in pendingSystems[i].Parameters)
             {
@@ -580,33 +617,227 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
-    /// Describes the systems the virtual root cannot reach: they are part of an ordering cycle, or ordered
-    /// after one. Naming them turns a generic graph failure into something that can be acted on.
+    /// Packs the systems into layers: each takes the earliest layer that comes after everything it was
+    /// explicitly ordered behind and that holds no system it conflicts with. Systems that only read the same
+    /// data, or that touch disjoint data, therefore share a layer and run in parallel.
+    /// The result is a deterministic function of the constraints and the declaration order, but it is a greedy
+    /// packing: it keeps the layers few without promising the minimum.
+    /// The graph must be acyclic; <see cref="ResolveOrder"/> has already checked that.
     /// </summary>
-    private string DescribeUnsatisfiableOrdering(DAGNode<SystemInfo> rootNode)
+    /// <returns>The layer of every node, the first one being zero.</returns>
+    private Dictionary<DAGNode<SystemInfo>, int> AssignConflictAwareLayers(List<DAGNode<SystemInfo>> nodeList)
     {
-        var reachedSet = new HashSet<DAGNode<SystemInfo>>();
-        var pendingStack = new Stack<DAGNode<SystemInfo>>();
+        var declarationIndexDict = new Dictionary<DAGNode<SystemInfo>, int>(nodeList.Count);
 
-        reachedSet.Add(rootNode);
-        pendingStack.Push(rootNode);
-
-        while (pendingStack.Count > 0)
+        for (var i = 0; i < nodeList.Count; i++)
         {
-            foreach (var child in pendingStack.Pop().Children)
+            declarationIndexDict[nodeList[i]] = i;
+        }
+
+        var layerDict = new Dictionary<DAGNode<SystemInfo>, int>(ExecutionGraph.Count);
+        var inDegreeDict = new Dictionary<DAGNode<SystemInfo>, int>(ExecutionGraph.Count);
+        var readyQueue = new PriorityQueue<DAGNode<SystemInfo>, int>();
+        var writerLayerDict = new Dictionary<Type, HashSet<int>>();
+        var readerLayerDict = new Dictionary<Type, HashSet<int>>();
+
+        foreach (var node in ExecutionGraph.Nodes)
+        {
+            var inDegree = node.Parents.Count;
+            inDegreeDict[node] = inDegree;
+
+            if (inDegree == 0)
             {
-                if (reachedSet.Add(child))
+                // Placing the earliest declared ready system first keeps the packing reproducible.
+                readyQueue.Enqueue(node, declarationIndexDict[node]);
+            }
+        }
+
+        while (readyQueue.Count > 0)
+        {
+            var node = readyQueue.Dequeue();
+            var layer = 0;
+
+            foreach (var parent in node.Parents)
+            {
+                layer = Math.Max(layer, layerDict[parent] + 1);
+            }
+
+            while (IsLayerBlocked(node.Data, layer, writerLayerDict, readerLayerDict))
+            {
+                layer++;
+            }
+
+            layerDict[node] = layer;
+            RegisterLayerUsage(node.Data, layer, writerLayerDict, readerLayerDict);
+
+            foreach (var child in node.Children)
+            {
+                inDegreeDict[child]--;
+
+                if (inDegreeDict[child] == 0)
                 {
-                    pendingStack.Push(child);
+                    readyQueue.Enqueue(child, declarationIndexDict[child]);
                 }
             }
         }
 
-        var unreachableNames = ExecutionGraph.Nodes
-            .Where(node => node.Data != null && !reachedSet.Contains(node))
-            .Select(node => DescribeSystem(node.Data!));
+        return layerDict;
+    }
 
-        return $"Schedule '{Name}' cannot be ordered with these constraints: {string.Join(", ", unreachableNames)} form an ordering cycle or depend on one";
+    /// <summary>
+    /// Returns whether a layer already holds a system that would conflict with <paramref name="info"/>: a
+    /// writer of a parameter blocks any use of it, a reader blocks only a write.
+    /// </summary>
+    private static bool IsLayerBlocked(SystemInfo info, int layer, Dictionary<Type, HashSet<int>> writerLayerDict, Dictionary<Type, HashSet<int>> readerLayerDict)
+    {
+        foreach (var parameter in info.Parameters)
+        {
+            if (GetOrAddLayerSet(writerLayerDict, parameter.Type).Contains(layer))
+            {
+                return true;
+            }
+
+            if (!parameter.ReadOnly && GetOrAddLayerSet(readerLayerDict, parameter.Type).Contains(layer))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Records the layer as used by <paramref name="info"/>, as a reader or as a writer of each of its
+    /// parameters, so that later systems can tell whether a layer is still free for them.
+    /// </summary>
+    private static void RegisterLayerUsage(SystemInfo info, int layer, Dictionary<Type, HashSet<int>> writerLayerDict, Dictionary<Type, HashSet<int>> readerLayerDict)
+    {
+        foreach (var parameter in info.Parameters)
+        {
+            GetOrAddLayerSet(parameter.ReadOnly ? readerLayerDict : writerLayerDict, parameter.Type).Add(layer);
+        }
+    }
+
+    /// <summary>
+    /// Gets the layers a parameter type is already used in, creating the set on first use.
+    /// </summary>
+    private static HashSet<int> GetOrAddLayerSet(Dictionary<Type, HashSet<int>> layerSetDict, Type parameterType)
+    {
+        if (!layerSetDict.TryGetValue(parameterType, out var layerSet))
+        {
+            layerSet = [];
+            layerSetDict[parameterType] = layerSet;
+        }
+
+        return layerSet;
+    }
+
+    /// <summary>
+    /// Reports the conflicting pairs no recorded constraint orders, and collects them in
+    /// <see cref="Ambiguities"/>. Only explicit constraints are in the graph when this runs, so two systems in
+    /// one layer are unreachable from each other: nothing but this schedule decides which of them goes first.
+    /// </summary>
+    private void DetectAmbiguities(List<DAGNode<SystemInfo>> explicitOrderList)
+    {
+        ambiguitiesList.Clear();
+
+        if (AmbiguityDetection == AmbiguityDetectionEnum.Ignore)
+        {
+            return;
+        }
+
+        // The nodes come out layer by layer, so a change of group starts the next layer.
+        var layerGroupList = new List<(int Group, List<SystemInfo> Members)>();
+
+        foreach (var node in explicitOrderList)
+        {
+            if (layerGroupList.Count == 0 || layerGroupList[^1].Group != node.Group)
+            {
+                layerGroupList.Add((node.Group, []));
+            }
+
+            layerGroupList[^1].Members.Add(node.Data);
+        }
+
+        foreach (var (group, members) in layerGroupList)
+        {
+            for (var i = 0; i < members.Count; i++)
+            {
+                for (var j = i + 1; j < members.Count; j++)
+                {
+                    var parameterType = FindConflictingParameterType(members[i], members[j]);
+
+                    if (parameterType == null)
+                    {
+                        continue;
+                    }
+
+                    if (AmbiguityDetection == AmbiguityDetectionEnum.Error)
+                    {
+                        throw new InvalidOperationException($"Schedule '{Name}' has ambiguous systems in group {group}: {DescribeSystem(members[i])} and {DescribeSystem(members[j])} both access {parameterType.Name} with no ordering constraint between them");
+                    }
+
+                    ScheduleLog.AmbiguousSystems(logger, Name, group, DescribeSystem(members[i]), DescribeSystem(members[j]), parameterType.Name);
+                    ambiguitiesList.Add((members[i].System, members[j].System));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Layers the graph and returns its nodes in execution order, replacing the generic graph failure with a
+    /// message that names the systems that could not be ordered.
+    /// </summary>
+    private List<DAGNode<SystemInfo>> ResolveOrder()
+    {
+        try
+        {
+            return ExecutionGraph.AsList();
+        }
+        catch (InvalidGraphException)
+        {
+            throw new InvalidGraphException(DescribeUnsatisfiableOrdering());
+        }
+    }
+
+    /// <summary>
+    /// Describes the systems that cannot be ordered: they are part of an ordering cycle, or ordered after one.
+    /// Naming them turns a generic graph failure into something that can be acted on.
+    /// </summary>
+    private string DescribeUnsatisfiableOrdering()
+    {
+        // A topological sort that cannot finish leaves behind exactly the nodes in a cycle and the nodes behind
+        // them, which is the set worth naming.
+        var inDegreeDict = new Dictionary<DAGNode<SystemInfo>, int>(ExecutionGraph.Count);
+        var readyQueue = new Queue<DAGNode<SystemInfo>>();
+
+        foreach (var node in ExecutionGraph.Nodes)
+        {
+            var inDegree = node.Parents.Count;
+            inDegreeDict[node] = inDegree;
+
+            if (inDegree == 0)
+            {
+                readyQueue.Enqueue(node);
+            }
+        }
+
+        while (readyQueue.Count > 0)
+        {
+            foreach (var child in readyQueue.Dequeue().Children)
+            {
+                if (--inDegreeDict[child] == 0)
+                {
+                    readyQueue.Enqueue(child);
+                }
+            }
+        }
+
+        var stuckNames = ExecutionGraph.Nodes
+            .Where(node => inDegreeDict[node] > 0)
+            .Select(node => DescribeSystem(node.Data));
+
+        return $"Schedule '{Name}' cannot be ordered with these constraints: {string.Join(", ", stuckNames)} form an ordering cycle or depend on one";
     }
 
     private static string DescribeSystem(SystemInfo info)
@@ -701,13 +932,7 @@ public abstract class BasicSchedule : ISchedule
 
     private void Configure()
     {
-        ExecutionGraph.ForEach(x =>
-        {
-            if (x != ExecutionGraph.Root)
-            {
-                x.Data.System.ConfigureAG(app, x.Data.FilterInfo);
-            }
-        });
+        ExecutionGraph.ForEach(x => x.Data.System.ConfigureAG(app, x.Data.FilterInfo));
     }
 
     private void Commit()
@@ -768,27 +993,28 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
-    /// Returns whether two systems access the same parameter in a way that forbids running them at the same
-    /// time: a shared parameter counts unless both sides only read it, so read plus write is a conflict and
-    /// write plus write is one too.
-    /// Used to report systems that ended up in the same layer without any ordering constraint between them,
-    /// which means their relative order is left to the scheduler.
+    /// Finds the component both systems touch in a way that forbids running them at the same time: a shared
+    /// parameter counts unless both sides only read it, so read plus write is a conflict and write plus write is
+    /// one too.
     /// </summary>
-    private static bool HasConflict(SystemInfo systemA, SystemInfo systemB)
+    /// <returns>The component type they conflict on, or null when they can share a layer.</returns>
+    private static Type? FindConflictingParameterType(SystemInfo systemA, SystemInfo systemB)
     {
-        // Only the parameter type may be hashed: entries that conflict are the ones with the same type, and
-        // they must land in the same bucket for the equality check below to ever see them.
-        return systemA.Parameters.Intersect(systemB.Parameters,
-            EqualityComparer<SystemParameterInfo>.Create((a, b) =>
+        foreach (var parameterA in systemA.Parameters)
+        {
+            foreach (var parameterB in systemB.Parameters)
             {
-                var same = a.Type == b.Type;
-                if (same && a.ReadOnly && b.ReadOnly)
+                if (parameterA.Type != parameterB.Type || (parameterA.ReadOnly && parameterB.ReadOnly))
                 {
-                    return false;
+                    continue;
                 }
 
-                return same;
-            }, info => info.Type.GetHashCode())).Any();
+                // Component parameters arrive as by-ref types, which is not how the component is written down.
+                return parameterA.Type.IsByRef ? parameterA.Type.GetElementType()! : parameterA.Type;
+            }
+        }
+
+        return null;
     }
 
 #endregion

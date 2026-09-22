@@ -53,7 +53,8 @@ public struct FrozenDAGNode<T>(DAGNode<T> node)
 }
 
 /// <summary>
-/// Represents a directed acyclic graph (DAG) with a single entry point and multiple possible exit points.
+/// Represents a directed acyclic graph (DAG) with any number of entry points and multiple possible exit points.
+/// Independent chains are as valid as a single tree: nothing in the graph requires one shared root.
 /// </summary>
 /// <typeparam name="T">The type of data stored in the graph nodes.</typeparam>
 public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
@@ -62,11 +63,6 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     /// Gets the collection of all nodes in the graph.
     /// </summary>
     public List<DAGNode<T>> Nodes { get; } = [];
-
-    /// <summary>
-    /// Gets the root node (entry point) of the graph.
-    /// </summary>
-    public DAGNode<T> Root => Nodes[0];
 
     /// <summary>
     /// Gets the number of nodes in the graph.
@@ -92,7 +88,8 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     private readonly Dictionary<DAGNode<T>, int> validationInDegreeDict = [];
 
     /// <summary>
-    /// Returns true if the graph is a valid DAG: has exactly one root node and contains no cycles.
+    /// Returns true if the graph is a valid DAG: it contains no cycles, so its nodes can be put in a topological
+    /// order. Any number of entry points is fine.
     /// </summary>
     public bool Valid
     {
@@ -109,31 +106,17 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
             queue.Clear();
             inDegreeDict.Clear();
 
-            DAGNode<T>? root = null;
-
             foreach (var node in Nodes)
             {
                 var inDegree = node.Parents.Count;
+                inDegreeDict[node] = inDegree;
 
                 if (inDegree == 0)
                 {
-                    if (root != null)
-                    {
-                        return false;
-                    }
-
-                    root = node;
+                    queue.Enqueue(node);
                 }
-
-                inDegreeDict[node] = inDegree;
             }
 
-            if (root == null)
-            {
-                return false;
-            }
-
-            queue.Enqueue(root);
             var visited = 0;
 
             while (queue.Count > 0)
@@ -232,18 +215,16 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     }
 
     /// <summary>
-    /// Performs topological sorting to return nodes in a valid execution order.
+    /// Performs topological sorting to return nodes in a valid execution order, grouping them into layers along
+    /// the way: every node gets a <see cref="DAGNode{T}.Group"/>, and two nodes share one exactly when neither
+    /// can reach the other. Without edges that means one layer holding the whole graph; with several independent
+    /// chains it means every chain starts in the same first layer.
     /// For a more efficient structure, use <see cref="DirectedAcyclicGraphExtensions.Freeze{T}"/>.
     /// </summary>
     /// <returns>A topologically sorted list of nodes.</returns>
-    /// <exception cref="InvalidGraphException">Thrown when the graph contains a cycle or more than one root node.</exception>
+    /// <exception cref="InvalidGraphException">Thrown when the graph contains a cycle.</exception>
     public List<DAGNode<T>> AsList()
     {
-        if (Nodes.Count(n => n.Parents.Count == 0) > 1)
-        {
-            throw new InvalidGraphException("Graph contains more than one root node");
-        }
-
         var inDegree = Nodes.ToDictionary(node => node, node => node.Parents.Count);
         var queue = new Queue<DAGNode<T>>(Nodes.Where(n => inDegree[n] == 0));
         var result = new List<DAGNode<T>>(Nodes.Count);

@@ -443,16 +443,207 @@ checks if the state has changed and removes all entities whose `StateScoped<T>.V
 
 ### System Ordering and Parallel Execution
 
-Use tuple syntax to control System execution order and parallelism:
+Systems run in layers. One layer is executed to completion before the next one starts, and the systems inside a
+layer run in parallel. Two things decide what goes into which layer:
+
+1. **The constraints you declare** — they are the only source of order.
+2. **Conflicts** — two systems conflict when they touch the same component and at least one of them writes it.
+   Conflicting systems are never put in the same layer.
+
+Everything else is packed greedily, so systems that do not conflict share a layer. Declaration order is **not** a
+constraint: it only breaks ties inside a layer, so the same configuration always produces the same order.
+
+Declaring a constraint:
+
+| Constraint | Declare it with |
+|---|---|
+| One system after another | `schedule.AddSystem(new SysB(), new SystemDescriptor { AddAfter = sysA })` |
+| A group after another group | `schedule.AddSystems([new SysA()], [new SysB()])` — every member of group *k* runs after every member of group *k-1* |
+| A whole set after another set | `app.ConfigureSetOrder(Stage.Physics, Order.Before, Stage.Render)` — see [System Sets](#system-sets) |
 
 ```csharp
-// InitSystem executes first
-// MoveSystem and RotateSystem execute in parallel (if component access is compatible)
-// RenderSystem executes last
-gamePlugin.Update.AddSystems<(InitSystem, (MoveSystem, RotateSystem), RenderSystem)>();
+// WritePositionSystem writes Position, ReadPositionSystem reads it — declared W, R, W, R.
+schedule.AddSystem<WritePositionSystem>();
+schedule.AddSystem<ReadPositionSystem>();
+schedule.AddSystem<WritePositionSystem>();
+schedule.AddSystem<ReadPositionSystem>();
+schedule.Build();
+
+// The two readers share a layer even though a writer was declared between them:
+//   layer 1: the first writer
+//   layer 2: both readers
+//   layer 3: the second writer
 ```
 
-**Parallelism rule**: Systems can execute in parallel if and only if they only read the same data (no write conflicts).
+**Which of two conflicting systems runs first is decided by the schedule when you have not decided it.** In the
+example above the second reader runs in layer 2, *before* the writer that was declared before it, so it reads the
+value of the first writer. Reading the layers back is the way to see this:
+
+```csharp
+foreach (var node in schedule.ExecutionGraph.AsList())
+{
+    Console.WriteLine($"{node.Data.System.GetType().Name} -> layer {node.Group}");
+}
+```
+
+When the order matters, declare it. Either constrain the pair, or declare the writer before the readers:
+
+```csharp
+// R runs after W, so it reads what W wrote.
+var writer = schedule.AddSystem<WritePositionSystem>();
+schedule.AddSystem(new ReadPositionSystem(), new SystemDescriptor { AddAfter = writer });
+
+// Both readers run after W and in parallel with each other.
+var secondWriter = schedule.AddSystem<WritePositionSystem>();
+schedule.AddSystem(new ReadPositionSystem(), new SystemDescriptor { AddAfter = secondWriter });
+schedule.AddSystem(new ReadPositionSystem(), new SystemDescriptor { AddAfter = secondWriter });
+```
+
+> A reader declared *before* a writer and a reader declared *after* it do different work: the first sees the value
+> from before the write, the second sees the value after it. That is exactly why their order cannot be left to the
+> schedule once it stops being declaration order — state it with a constraint.
+
+A group of the array form may give any of its members a descriptor, by writing that member as a system/descriptor
+pair. It is the only way a system added through `AddSystems` can join a set, pick up an `AddAfter` dependency or get
+a thread count, since a member written on its own is added with the default descriptor:
+
+```csharp
+// The group lists every member as a pair once any of them needs a descriptor.
+schedule.AddSystems(
+    [(new SysA(), null), (new SysB(), new SystemDescriptor { Sets = [Stage.Physics] })]);
+```
+
+The tuple form of `AddSystems` describes the same grouping in types instead of instances: each element of the tuple
+is a group, and a nested tuple is a single parallel group. It cannot carry descriptors, so use the array form when
+a system needs one.
+
+```csharp
+// SysA runs first, then SysB and SysC run in parallel (if compatible), then SysD runs.
+schedule.AddSystems<(SysA, (SysB, SysC), SysD)>();
+```
+
+The systems of the tuple form are constructed for you, so they need a default constructor; when the instances
+already exist, use the array form above.
+
+### System Sets
+
+A set groups systems so that you can constrain a whole set at once. Sets are backed by an enum — one enum per
+classification dimension:
+
+```csharp
+enum Stage   { PreUpdate, Update, PostUpdate }
+enum Feature { Input, Physics, Presentation }
+```
+
+Register each enum once, then put systems in sets through their descriptor:
+
+```csharp
+app.AddSystemSet<Stage>();
+app.AddSystemSet<Feature>();
+
+schedule.AddSystem<MoveSystem>(new SystemDescriptor { Sets = [Stage.Update, Feature.Physics] });
+schedule.AddSystem<PollInputSystem>(new SystemDescriptor { Sets = [Stage.Update, Feature.Input] });
+```
+
+**Ordering**: every system in the first set (and in its child sets) runs before every system in the second one:
+
+```csharp
+app.ConfigureSetOrder(Feature.Input, Order.Before, Feature.Physics);
+```
+
+**Nesting**: a child set is a member of its parent *and* inherits the parent's predicate. A set has at most one
+parent:
+
+```csharp
+app.ConfigureSetInSet(Stage.Update, Feature.Physics);
+```
+
+**Predicates**: a predicate on a set applies to every system in it, and to every system in its child sets:
+
+```csharp
+app.ConfigureSetPredicate(Stage.PostUpdate, pool => pool.Get<FrameStats>().HasWork);
+```
+
+Notes:
+
+- **Constraints may be declared at any time** — before or after the systems they affect. They are recorded, not
+  applied, so `ConfigureSetOrder` after `AddSystem` works exactly like setting it up front. See
+  [When the Schedule Is Resolved](#when-the-schedule-is-resolved).
+- **Use several enums instead of nesting a set under several parents.** A system may belong to as many sets as you
+  like (`Sets = [Stage.Update, Feature.Physics]`), and orthogonal dimensions are better expressed as orthogonal
+  enums than as a set with multiple parents.
+- A set of an enum type that was never registered is an error, reported when the schedule is resolved.
+
+### When the Schedule Is Resolved
+
+Adding systems and configuring sets only *records* what you asked for. The execution graph is resolved from those
+records in one pass, by `Build()`:
+
+- Automatically, the first time the schedule executes (and again whenever something changed).
+- Explicitly, whenever you call `schedule.Build()`. Doing this right after configuring surfaces ordering problems
+  at configuration time instead of mid-frame.
+
+```csharp
+schedule.AddSystem<MovementSystem>(new SystemDescriptor { Sets = [Stage.Update] });
+
+schedule.Build();          // Optional. Reports a bad configuration now rather than on the first frame.
+Console.WriteLine(schedule.IsBuilt);   // true
+```
+
+`Build()` can throw `InvalidOperationException` — for a set type that was never registered, for a cycle in the set
+ordering or nesting, or for a conflicting pair when ambiguity detection is set to `Error` — and
+`InvalidGraphException` when the declared constraints cannot all be satisfied. `ExecutionGraph` is empty until the
+schedule is built; `IsBuilt` tells you whether it currently matches the recorded configuration.
+`schedule.ClearSystems()` discards the systems and the resolved graph.
+
+### Ambiguity Detection
+
+When two systems conflict and nothing constrains their order, the schedule separates them on its own. Which one runs
+first is then the schedule's decision and not yours, so it is reported:
+
+```csharp
+var schedule = new DefaultSchedule(app, "Update")
+{
+    AmbiguityDetection = BasicSchedule.AmbiguityDetectionEnum.Warn   // the default
+};
+
+schedule.AddSystem<WritePositionSystem>();
+schedule.AddSystem<ReadPositionSystem>();
+schedule.Build();
+
+foreach (var (a, b) in schedule.Ambiguities)
+{
+    Console.WriteLine($"{a.GetType().Name} and {b.GetType().Name} conflict without an ordering constraint");
+}
+```
+
+| `AmbiguityDetection` | Behaviour |
+|---|---|
+| `Ignore` | Nothing is checked; `Ambiguities` stays empty |
+| `Warn` (default) | Every such pair is logged and collected in `Ambiguities` |
+| `Error` | `Build()` throws as soon as it finds one |
+
+The setting is per schedule, so a schedule that has to be strict (a physics step) and one that does not (startup
+wiring) can differ. The fix for a reported pair is to constrain it: give one of the systems an ordering constraint,
+or declare the writer before the readers.
+
+### Compatibility Notes
+
+The scheduling resolver was rewritten; three behaviours are deliberately different from earlier versions.
+
+- **Groups from `AddSystems` are ordered more strictly.** Every member of group *k* runs after every member of group
+  *k-1*, where it used to depend on the first member of group *k-1* only. Systems that accidentally ran in parallel
+  before are now ordered, which matches what this section always documented.
+- **`ExecutionGraph` is a result, not a running record.** It used to be filled in as systems were added; it is now
+  empty until the schedule is resolved. Read it after `Build()` or after the first execution, and use `IsBuilt` to
+  know whether it is up to date.
+- **A conflicting pair's order no longer follows declaration order.** Conflicting systems are guaranteed different
+  layers, but *which* of the two comes first is decided by the packing when no constraint covers the pair. To fix
+  the order — and with it which write each reader observes — declare a constraint.
+- **`AddSystems` no longer takes a leading `addAfter`.** Ordering a whole group after one system is now expressed on
+  that system's descriptor, and a group member may carry a descriptor by being written as a system/descriptor pair.
+  Calling it as `AddSystems(afterSystem, [..], [..])` no longer compiles; write the dependency on the descriptor of
+  the group's members instead.
 
 ### Schedule Configuration
 

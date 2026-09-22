@@ -33,8 +33,7 @@ public sealed class SystemInfo(
     SystemParameterInfo[] parameters,
     SystemFilterInfo filterInfo,
     Enum[] directSets,
-    ISystem? addAfter,
-    int groupIndex)
+    ISystem[] previousSystems)
 {
     internal readonly ISystem System = system;
 
@@ -49,16 +48,11 @@ public sealed class SystemInfo(
     internal readonly Enum[] DirectSets = directSets;
 
     /// <summary>
-    /// The system this one was declared to run after, or null. Kept here instead of being consumed while
-    /// adding, so that reusing a descriptor for several systems cannot drop the dependency.
+    /// Every system this one was declared to run after, from <c>SystemDescriptor.AddAfter</c> and from the group
+    /// order of <c>AddSystems</c>. Recorded here rather than turned into edges while adding, so that a
+    /// descriptor reused for several systems cannot drop the dependency and the resolution stays in one place.
     /// </summary>
-    internal readonly ISystem? AddAfter = addAfter;
-
-    /// <summary>
-    /// The index of the group this system was declared in through the array form of <c>AddSystems</c>,
-    /// or -1 when it was added any other way. Each group runs entirely after the previous one.
-    /// </summary>
-    internal readonly int GroupIndex = groupIndex;
+    internal readonly ISystem[] PreviousSystems = previousSystems;
 
     internal bool Predicate = true;
 
@@ -78,7 +72,7 @@ public sealed class SystemDescriptor
     /// Specifies a system that this system should execute after.
     /// Use this to define execution order dependencies between systems.
     /// </summary>
-    public ISystem? AddAfter { get; internal set; }
+    public ISystem? AddAfter { get; init; }
 
     /// <summary>
     /// The number of threads to use for parallel execution.
@@ -99,6 +93,31 @@ public sealed class SystemDescriptor
     /// Systems in the same set can be ordered relative to each other via <see cref="SystemSets.ConfigureSetOrder{TS1, TS2}"/>.
     /// </summary>
     public Enum[] Sets { get; init; } = [];
+}
+
+/// <summary>
+/// A system together with the descriptor to add it with. The implicit conversion from a system/descriptor pair
+/// lets the array form of <c>AddSystems</c> take a descriptor where one is needed and nothing where it is not:
+/// <code>
+/// schedule.AddSystems([(new SysA(), null), (new SysB(), new SystemDescriptor { Sets = [Stage.Sim] })]);
+/// </code>
+/// </summary>
+/// <param name="System">The system instance to add.</param>
+/// <param name="Descriptor">The descriptor to add it with, or null to add it with the default one.</param>
+public readonly record struct SystemEntry(ISystem System, SystemDescriptor? Descriptor)
+{
+#region Implicit Conversions
+
+    /// <summary>
+    /// Wraps a system together with the descriptor to add it with.
+    /// </summary>
+    /// <param name="entry">The system and its descriptor.</param>
+    public static implicit operator SystemEntry((ISystem System, SystemDescriptor? Descriptor) entry)
+    {
+        return new(entry.System, entry.Descriptor);
+    }
+
+#endregion
 }
 
 public sealed class SystemFilterInfo

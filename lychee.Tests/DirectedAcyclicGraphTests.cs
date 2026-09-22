@@ -42,21 +42,6 @@ public class DirectedAcyclicGraphTests
     }
 
 #endregion
-
-#region Root
-
-    [Fact]
-    public void Root_ReturnsFirstNode()
-    {
-        var graph = new DirectedAcyclicGraph<int>();
-        var node = new DAGNode<int>(42);
-        graph.AddNode(node);
-
-        Assert.Same(node, graph.Root);
-    }
-
-#endregion
-
 #region AddEdge
 
     [Fact]
@@ -189,17 +174,18 @@ public class DirectedAcyclicGraphTests
     }
 
     [Fact]
-    public void Valid_MultipleRoots_ReturnsFalse()
+    public void Valid_MultipleRoots_ReturnsTrue()
     {
         var graph = new DirectedAcyclicGraph<int>();
         var a = graph.AddNode(new DAGNode<int>(1));
         var b = graph.AddNode(new DAGNode<int>(2));
         var c = graph.AddNode(new DAGNode<int>(3));
 
+        // Two independent chains meeting at c: acyclic, so valid, however many entry points it has.
         graph.AddEdge(a, c);
         graph.AddEdge(b, c);
 
-        Assert.False(graph.Valid);
+        Assert.True(graph.Valid);
     }
 
     [Fact]
@@ -277,13 +263,23 @@ public class DirectedAcyclicGraphTests
     }
 
     [Fact]
-    public void AsList_MultipleRoots_ThrowsInvalidGraphException()
+    public void AsList_MultipleRoots_ListsEveryRootInTheFirstLayer()
     {
         var graph = new DirectedAcyclicGraph<int>();
         var a = graph.AddNode(new DAGNode<int>(1));
         var b = graph.AddNode(new DAGNode<int>(2));
+        var child = graph.AddNode(new DAGNode<int>(3));
 
-        Assert.Throws<InvalidGraphException>(() => graph.AsList());
+        graph.AddEdge(a, child);
+        graph.AddEdge(b, child);
+
+        var list = graph.AsList();
+
+        // Both entry points are unordered with respect to each other, so they share the first layer.
+        Assert.Equal(3, list.Count);
+        Assert.Equal(0, a.Group);
+        Assert.Equal(0, b.Group);
+        Assert.True(child.Group > a.Group);
     }
 
     [Fact]
@@ -633,9 +629,8 @@ public class DirectedAcyclicGraphTests
         Assert.True(graph.Valid);
 
         graph.RemoveEdge(a, b);
-        // After removing the only edge, a is the only root (b has no parents)
-        // Actually, both a and b have no parents now → two roots → invalid
-        Assert.False(graph.Valid);
+        // Removing the only edge leaves a and b as two independent entry points, which is still a legal DAG.
+        Assert.True(graph.Valid);
 
         graph.AddEdge(a, b);
         Assert.True(graph.Valid);
@@ -720,7 +715,7 @@ public class DirectedAcyclicGraphTests
         graph.AddNode(new DAGNode<int>(3));
 
         Assert.Equal(1, graph.Count);
-        Assert.Equal(3, graph.Root.Data);
+        Assert.Equal(3, graph.Nodes[0].Data);
     }
 
     [Fact]
@@ -779,8 +774,8 @@ public class DirectedAcyclicGraphTests
         graph.AddEdge(a, b);
         graph.RemoveEdge(a, b);
 
-        // Both a and b have no parents now → two roots → invalid
-        Assert.False(graph.Valid);
+        // Both a and b have no parents now, so the graph has two entry points — which is a legal DAG.
+        Assert.True(graph.Valid);
     }
 
     [Fact]

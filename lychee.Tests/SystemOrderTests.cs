@@ -1,5 +1,6 @@
 using lychee.collections;
 using lychee.interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace lychee.Tests;
 
@@ -148,6 +149,42 @@ internal enum TestSet
 }
 
 /// <summary>
+/// An <see cref="ILoggerFactory"/> that keeps every formatted message, so a test can assert a schedule really
+/// reached the log instead of trusting that it called something.
+/// </summary>
+internal sealed class RecordingLoggerFactory : ILoggerFactory
+{
+    public List<string> Messages { get; } = [];
+
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new RecordingLogger(Messages);
+    }
+
+    public void AddProvider(ILoggerProvider provider) { }
+
+    public void Dispose() { }
+
+    private sealed class RecordingLogger(List<string> messages) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            messages.Add(formatter(state, exception));
+        }
+    }
+}
+
+/// <summary>
 /// A flags enum, used to cover set values that have no declared name of their own.
 /// </summary>
 [Flags]
@@ -156,6 +193,24 @@ internal enum FlagsTestSet
     None = 0,
     SetA = 1,
     SetB = 2,
+}
+
+/// <summary>
+/// A parameterless system, for the tuple form of <c>AddSystems</c>, which constructs the systems itself.
+/// The tests using it only look at how many systems ended up in each layer, so one type is enough.
+/// </summary>
+internal sealed class TupleFormSystem : ISystem
+{
+    public void InitializeAG(App app, SystemDescriptor descriptor) { }
+
+    public void ConfigureAG(App app, SystemFilterInfo filterInfo) { }
+
+    public Commands[] ExecuteAG()
+    {
+        return [];
+    }
+
+    private static void Execute() { }
 }
 
 #endregion
@@ -224,10 +279,31 @@ public class SystemOrderTests : IDisposable
     {
         var schedule = new DefaultSchedule(app, "Test");
 
-        schedule.AddSystems(addAfter: null, [new RecordingSystem("A")], [new RecordingSystem("B")], [new RecordingSystem("C")]);
+        schedule.AddSystems([new RecordingSystem("A")], [new RecordingSystem("B")], [new RecordingSystem("C")]);
         schedule.Execute();
 
         Assert.Equal(["A", "B", "C"], ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void AddSystems_SeparateCalls_DoNotOrderEachOther()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var a = new RecordingSystem("A");
+        var b = new RecordingSystem("B");
+        var c = new RecordingSystem("C");
+        var d = new RecordingSystem("D");
+
+        // Two independent calls. Each one orders its own groups and nothing else, so the calls must not be
+        // chained onto each other just because they both start counting at their first group.
+        schedule.AddSystems([a], [b]);
+        schedule.AddSystems([c], [d]);
+
+        schedule.Build();
+
+        Assert.Equal(NodeOf(schedule, a).Group, NodeOf(schedule, c).Group);
+        Assert.Equal(NodeOf(schedule, b).Group, NodeOf(schedule, d).Group);
+        Assert.True(NodeOf(schedule, a).Group < NodeOf(schedule, b).Group);
     }
 
     [Fact]
@@ -235,7 +311,7 @@ public class SystemOrderTests : IDisposable
     {
         var schedule = new DefaultSchedule(app, "Test");
 
-        schedule.AddSystems(addAfter: null, [new RecordingSystem("X")], [new RecordingSystem("Y")], [new RecordingSystem("Z")]);
+        schedule.AddSystems([new RecordingSystem("X")], [new RecordingSystem("Y")], [new RecordingSystem("Z")]);
         schedule.Execute();
 
         Assert.Equal(["X", "Y", "Z"], ExecutionRecorder.GetOrder());
@@ -252,7 +328,7 @@ public class SystemOrderTests : IDisposable
 
         // ReadSystem<TestPosition> and ReadSystem<TestVelocity> have different types
         // so CanRunParallel should allow them to be in the same group
-        schedule.AddSystems(addAfter: null,
+        schedule.AddSystems(
             [new ReadSystem<TestPosition>("ReadPos"), new ReadSystem<TestVelocity>("ReadVel")]
         );
 
@@ -270,7 +346,7 @@ public class SystemOrderTests : IDisposable
         var schedule = new DefaultSchedule(app, "Test");
 
         // Both write TestPosition — cannot run in parallel
-        schedule.AddSystems(addAfter: null,
+        schedule.AddSystems(
             [new WriteSystem<TestPosition>("Write1")],
             [new WriteSystem<TestPosition>("Write2")]
         );
@@ -287,7 +363,7 @@ public class SystemOrderTests : IDisposable
 
         // ReadPos + ReadVel can be parallel (different types, both readonly)
         // WritePos must be after both (writes a type that ReadPos reads)
-        schedule.AddSystems(addAfter: null,
+        schedule.AddSystems(
             [new ReadSystem<TestPosition>("ReadPos"), new ReadSystem<TestVelocity>("ReadVel")],
             [new WriteSystem<TestPosition>("WritePos")]
         );
@@ -302,6 +378,110 @@ public class SystemOrderTests : IDisposable
         // ReadPos and ReadVel before WritePos
         Assert.True(readPosIdx < writePosIdx);
         Assert.True(readVelIdx < writePosIdx);
+    }
+
+#endregion
+
+#region AddSystems Tuple Syntax
+
+    /// <summary>
+    /// Reads how many systems each layer holds, in layer order, so a test can assert on the shape of the layering
+    /// without telling the identical systems apart.
+    /// </summary>
+    private static int[] LayerSizes(DefaultSchedule schedule)
+    {
+        return schedule.ExecutionGraph.AsList()
+            .GroupBy(node => node.Group)
+            .Select(group => group.Count())
+            .ToArray();
+    }
+
+    [Fact]
+    public void AddSystems_TupleForm_FlatTupleRunsSequentially()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.AddSystems<(TupleFormSystem, TupleFormSystem, TupleFormSystem)>();
+
+        schedule.Build();
+
+        Assert.Equal([1, 1, 1], LayerSizes(schedule));
+    }
+
+    [Fact]
+    public void AddSystems_TupleForm_NestedTupleRunsAsOneGroup()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.AddSystems<(TupleFormSystem, (TupleFormSystem, TupleFormSystem), TupleFormSystem)>();
+
+        schedule.Build();
+
+        // The two systems of the nested tuple have nothing ordering them, so they share a layer, while the outer
+        // elements still run one after another.
+        Assert.Equal([1, 2, 1], LayerSizes(schedule));
+    }
+
+#endregion
+
+#region AddSystems with Descriptors
+
+    [Fact]
+    public void AddSystems_EntryForm_GroupsRunInOrder()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.AddSystems(
+            [(new RecordingSystem("A"), null), (new RecordingSystem("B"), null)],
+            [(new RecordingSystem("C"), null)]);
+        schedule.Execute();
+
+        // Every member of the second group runs after both members of the first one.
+        Assert.Equal(["A", "B", "C"], ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void AddSystems_EntryForm_DescriptorSetsAreApplied()
+    {
+        app.SystemSets.AddSystemSet<TestSet>();
+        app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+
+        var schedule = new DefaultSchedule(app, "Test");
+
+        // SetB is declared first, so only the descriptor's sets can put InA ahead of InB.
+        schedule.AddSystems(
+        [
+            (new RecordingSystem("InB"), new SystemDescriptor { Sets = [TestSet.SetB] }),
+            (new RecordingSystem("InA"), new SystemDescriptor { Sets = [TestSet.SetA] }),
+        ]);
+        schedule.Execute();
+
+        Assert.Equal(["InA", "InB"], ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void AddSystems_EntryForm_DescriptorAddAfterIsApplied()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var writer = new RecordingSystem("W");
+
+        // The reader comes first in the group and still has to run after the writer.
+        schedule.AddSystems(
+            [(new RecordingSystem("R"), new SystemDescriptor { AddAfter = writer }), (writer, null)]);
+        schedule.Execute();
+
+        Assert.Equal(["W", "R"], ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void AddSystems_NullGroup_Throws()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        // A null group is a mistake rather than an empty one, so it is reported instead of being skipped.
+        var exception = Assert.Throws<ArgumentException>(() => schedule.AddSystems(null!, [new RecordingSystem("A")]));
+
+        Assert.Contains("null", exception.Message);
     }
 
 #endregion
@@ -621,6 +801,29 @@ public class SystemOrderTests : IDisposable
         Assert.Equal(2, app.SystemSets.OrderEdges.Count());
     }
 
+    [Fact]
+    public void SetIdentity_SameNamedMembersOfDifferentEnums_DoNotCollide()
+    {
+        app.AddSystemSet<TestSet>();
+        app.AddSystemSet<FlagsTestSet>();
+
+        // TestSet.SetA and FlagsTestSet.SetA share a member name, so they only stay apart because a set identity
+        // carries the enum type id as well.
+        app.ConfigureSetOrder(FlagsTestSet.SetA, Order.Before, FlagsTestSet.SetB);
+
+        var schedule = new DefaultSchedule(app, "Test");
+        var inTestSet = new RecordingSystem("A");
+        var inFlagsSet = new RecordingSystem("B");
+
+        schedule.AddSystem(inTestSet, new SystemDescriptor { Sets = [TestSet.SetA] });
+        schedule.AddSystem(inFlagsSet, new SystemDescriptor { Sets = [FlagsTestSet.SetB] });
+
+        schedule.Build();
+
+        // The constraint covers the FlagsTestSet pair only, so the two systems are unrelated and share a layer.
+        Assert.Equal(NodeOf(schedule, inTestSet).Group, NodeOf(schedule, inFlagsSet).Group);
+    }
+
 #endregion
 
 #region Helpers
@@ -635,7 +838,7 @@ public class SystemOrderTests : IDisposable
     /// </summary>
     private static DAGNode<SystemInfo> NodeOf(DefaultSchedule schedule, ISystem system)
     {
-        return schedule.ExecutionGraph.AsList().First(node => node.Data != null && ReferenceEquals(node.Data.System, system));
+        return schedule.ExecutionGraph.AsList().First(node => ReferenceEquals(node.Data.System, system));
     }
 
 #endregion
@@ -771,7 +974,7 @@ public class SystemOrderTests : IDisposable
         schedule.Build();
 
         Assert.True(schedule.IsBuilt);
-        Assert.Equal(3, schedule.ExecutionGraph.Count);
+        Assert.Equal(2, schedule.ExecutionGraph.Count);
     }
 
     [Fact]
@@ -928,7 +1131,7 @@ public class SystemOrderTests : IDisposable
         var a2 = new RecordingSystem("A2");
         var b1 = new RecordingSystem("B1");
 
-        schedule.AddSystems(addAfter: null, [a1, a2], [b1]);
+        schedule.AddSystems([a1, a2], [b1]);
         schedule.Build();
 
         var a1Node = NodeOf(schedule, a1);
@@ -1243,8 +1446,7 @@ public class SystemOrderTests : IDisposable
 
         var list = schedule.ExecutionGraph.AsList();
 
-        // Root + 1 system
-        Assert.Equal(2, list.Count);
+        Assert.Single(list);
     }
 
     [Fact]
@@ -1260,8 +1462,7 @@ public class SystemOrderTests : IDisposable
 
         var list = schedule.ExecutionGraph.AsList();
 
-        // Root + 3 systems
-        Assert.Equal(4, list.Count);
+        Assert.Equal(3, list.Count);
     }
 
     [Fact]
@@ -1281,14 +1482,14 @@ public class SystemOrderTests : IDisposable
     }
 
     [Fact]
-    public void ExecutionGraph_EmptySchedule_BuildsRootOnly()
+    public void ExecutionGraph_EmptySchedule_IsEmpty()
     {
         var schedule = new DefaultSchedule(app, "Test");
 
         schedule.Build();
 
-        // An empty schedule still resolves to a single root, and executing it does nothing.
-        Assert.Equal(1, schedule.ExecutionGraph.Count);
+        // Nothing was added, so there is nothing to order — no placeholder node to carry around.
+        Assert.Equal(0, schedule.ExecutionGraph.Count);
         Assert.True(schedule.IsBuilt);
     }
 
@@ -1305,7 +1506,6 @@ public class SystemOrderTests : IDisposable
         schedule.Build();
 
         Assert.Equal(firstNodes, schedule.ExecutionGraph.Nodes);
-        Assert.Same(firstNodes[0], schedule.ExecutionGraph.Root);
     }
 
 #endregion
@@ -1432,6 +1632,227 @@ public class SystemOrderTests : IDisposable
         var order = ExecutionRecorder.GetOrder();
         Assert.Equal(3, order.Count);
         Assert.All(order, name => Assert.Equal("A", name));
+    }
+
+#endregion
+
+#region Conflict Aware Layering
+
+    [Fact]
+    public void Build_SystemsThatOnlyRead_MergeIntoSameLayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var w1 = new WriteSystem<TestPosition>("W1");
+        var r1 = new ReadSystem<TestPosition>("R1");
+        var w2 = new WriteSystem<TestPosition>("W2");
+        var r2 = new ReadSystem<TestPosition>("R2");
+
+        schedule.AddSystem(w1);
+        schedule.AddSystem(r1);
+        schedule.AddSystem(w2);
+        schedule.AddSystem(r2);
+
+        schedule.Build();
+
+        // R1 and R2 only read, so nothing needs them apart, not even the writer declared between them.
+        Assert.Equal(NodeOf(schedule, r1).Group, NodeOf(schedule, r2).Group);
+        Assert.True(NodeOf(schedule, w1).Group < NodeOf(schedule, r1).Group);
+        Assert.True(NodeOf(schedule, w2).Group > NodeOf(schedule, r2).Group);
+    }
+
+    [Fact]
+    public void Build_SystemWithoutConflicts_JoinsTheFirstLayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var writer = new WriteSystem<TestPosition>("W");
+        var untouched = new WriteSystem<TestHealth>("H");
+
+        schedule.AddSystem(writer);
+        schedule.AddSystem(untouched);
+
+        schedule.Build();
+
+        Assert.Equal(NodeOf(schedule, writer).Group, NodeOf(schedule, untouched).Group);
+    }
+
+    [Fact]
+    public void Build_ConflictingSystems_NeverShareALayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var first = new WriteSystem<TestPosition>("W1");
+        var second = new WriteSystem<TestPosition>("W2");
+
+        schedule.AddSystem(first);
+        schedule.AddSystem(second);
+
+        schedule.Build();
+
+        Assert.NotEqual(NodeOf(schedule, first).Group, NodeOf(schedule, second).Group);
+    }
+
+    [Fact]
+    public void AddAfter_PinsTheOrderOfAConflictingPair()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var w1 = new WriteSystem<TestPosition>("W1");
+        var r1 = new ReadSystem<TestPosition>("R1");
+        var w2 = new WriteSystem<TestPosition>("W2");
+        var r2 = new ReadSystem<TestPosition>("R2");
+
+        schedule.AddSystem(w1);
+        schedule.AddSystem(r1);
+        schedule.AddSystem(w2);
+        // Declaring the constraint is what keeps R2 out of R1's layer: without it the packing is free to lift
+        // R2 up next to R1, which would make it read the value from before W2 instead of after it.
+        schedule.AddSystem(r2, new SystemDescriptor { AddAfter = w2 });
+
+        schedule.Build();
+
+        Assert.True(NodeOf(schedule, r2).Group > NodeOf(schedule, w2).Group);
+    }
+
+    [Fact]
+    public void SetOrder_OppositeToDeclarationOrder_IsHonored()
+    {
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+
+        var schedule = new DefaultSchedule(app, "Test");
+        var a = new WriteSystem<TestPosition>("A");
+        var b = new WriteSystem<TestPosition>("B");
+
+        // The declared order says B first, the set constraint says A first: the explicit constraint wins,
+        // instead of the two of them meeting in a cycle.
+        schedule.AddSystem(b, new SystemDescriptor { Sets = [TestSet.SetB] });
+        schedule.AddSystem(a, new SystemDescriptor { Sets = [TestSet.SetA] });
+
+        schedule.Build();
+
+        Assert.True(NodeOf(schedule, a).Group < NodeOf(schedule, b).Group);
+    }
+
+    [Fact]
+    public void AddAfterPointingAtALaterDeclaration_IsHonored()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var a = new WriteSystem<TestPosition>("A");
+        var b = new WriteSystem<TestPosition>("B");
+
+        schedule.AddSystem(a, new SystemDescriptor { AddAfter = b });
+        schedule.AddSystem(b);
+
+        schedule.Build();
+
+        Assert.True(NodeOf(schedule, b).Group < NodeOf(schedule, a).Group);
+    }
+
+#endregion
+
+#region Conflict Diagnosis
+
+    [Fact]
+    public void Ambiguities_UnorderedConflictingPair_IsReported()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var writer = new WriteSystem<TestPosition>("W");
+        var reader = new ReadSystem<TestPosition>("R");
+
+        schedule.AddSystem(writer);
+        schedule.AddSystem(reader);
+
+        schedule.Build();
+
+        var pair = Assert.Single(schedule.Ambiguities);
+        Assert.Same(writer, pair.A);
+        Assert.Same(reader, pair.B);
+    }
+
+    [Fact]
+    public void Ambiguities_ExplicitlyOrderedPair_IsNotReported()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var writer = new WriteSystem<TestPosition>("W");
+        var reader = new ReadSystem<TestPosition>("R");
+
+        schedule.AddSystem(writer);
+        schedule.AddSystem(reader, new SystemDescriptor { AddAfter = writer });
+
+        schedule.Build();
+
+        Assert.Empty(schedule.Ambiguities);
+    }
+
+    [Fact]
+    public void Ambiguities_NonConflictingSystems_AreNotReported()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.AddSystem(new ReadSystem<TestPosition>("R1"));
+        schedule.AddSystem(new ReadSystem<TestPosition>("R2"));
+
+        schedule.Build();
+
+        Assert.Empty(schedule.Ambiguities);
+    }
+
+    [Fact]
+    public void AmbiguityDetection_Ignore_ReportsNothing()
+    {
+        var schedule = new DefaultSchedule(app, "Test") { AmbiguityDetection = BasicSchedule.AmbiguityDetectionEnum.Ignore };
+
+        schedule.AddSystem(new WriteSystem<TestPosition>("W"));
+        schedule.AddSystem(new ReadSystem<TestPosition>("R"));
+
+        schedule.Build();
+
+        Assert.Empty(schedule.Ambiguities);
+    }
+
+    [Fact]
+    public void AmbiguityDetection_Error_Throws()
+    {
+        var schedule = new DefaultSchedule(app, "Test") { AmbiguityDetection = BasicSchedule.AmbiguityDetectionEnum.Error };
+
+        schedule.AddSystem(new WriteSystem<TestPosition>("W"));
+        schedule.AddSystem(new ReadSystem<TestPosition>("R"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => schedule.Build());
+
+        Assert.Contains("Test", exception.Message);
+        Assert.Contains(nameof(TestPosition), exception.Message);
+    }
+
+    [Fact]
+    public void AmbiguityDetection_Warn_WritesToTheLogger()
+    {
+        var loggerFactory = new RecordingLoggerFactory();
+
+        using var loggedApp = new App(new AppDescriptor { LoggerFactory = loggerFactory });
+        var schedule = new DefaultSchedule(loggedApp, "Test");
+
+        schedule.AddSystem(new WriteSystem<TestPosition>("W"));
+        schedule.AddSystem(new ReadSystem<TestPosition>("R"));
+
+        schedule.Build();
+
+        var message = Assert.Single(loggerFactory.Messages);
+        Assert.Contains("Test", message);
+        Assert.Contains(nameof(TestPosition), message);
+    }
+
+    [Fact]
+    public void Ambiguities_ClearSystems_Clears()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.AddSystem(new WriteSystem<TestPosition>("W"));
+        schedule.AddSystem(new ReadSystem<TestPosition>("R"));
+        schedule.Build();
+        Assert.NotEmpty(schedule.Ambiguities);
+
+        schedule.ClearSystems();
+
+        Assert.Empty(schedule.Ambiguities);
     }
 
 #endregion

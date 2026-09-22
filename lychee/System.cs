@@ -28,7 +28,13 @@ public struct SystemParameterInfo(Type type, bool readOnly, bool isResource)
     public readonly bool IsResource = isResource;
 }
 
-public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters, SystemFilterInfo filterInfo, SetInfo[] setInfo)
+public sealed class SystemInfo(
+    ISystem system,
+    SystemParameterInfo[] parameters,
+    SystemFilterInfo filterInfo,
+    Enum[] directSets,
+    ISystem? addAfter,
+    int groupIndex)
 {
     internal readonly ISystem System = system;
 
@@ -36,9 +42,31 @@ public sealed class SystemInfo(ISystem system, SystemParameterInfo[] parameters,
 
     internal readonly SystemFilterInfo FilterInfo = filterInfo;
 
+    /// <summary>
+    /// The raw sets declared on the descriptor, unchanged: still the enum values, not resolved identities and
+    /// without their ancestors. Resolving them is what <see cref="EffectiveSets"/> holds after a build.
+    /// </summary>
+    internal readonly Enum[] DirectSets = directSets;
+
+    /// <summary>
+    /// The system this one was declared to run after, or null. Kept here instead of being consumed while
+    /// adding, so that reusing a descriptor for several systems cannot drop the dependency.
+    /// </summary>
+    internal readonly ISystem? AddAfter = addAfter;
+
+    /// <summary>
+    /// The index of the group this system was declared in through the array form of <c>AddSystems</c>,
+    /// or -1 when it was added any other way. Each group runs entirely after the previous one.
+    /// </summary>
+    internal readonly int GroupIndex = groupIndex;
+
     internal bool Predicate = true;
 
-    internal SetInfo[] EffectiveSets { get; set; } = setInfo;
+    /// <summary>
+    /// The sets this system belongs to plus all of their ancestors. Filled in every time the schedule is
+    /// built, never read before that.
+    /// </summary>
+    internal SetInfo[] EffectiveSets = [];
 }
 
 /// <summary>

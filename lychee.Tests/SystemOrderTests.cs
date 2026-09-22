@@ -1,3 +1,4 @@
+using lychee.collections;
 using lychee.interfaces;
 
 namespace lychee.Tests;
@@ -427,14 +428,19 @@ public class SystemOrderTests : IDisposable
     }
 
     [Fact]
-    public void SystemSets_CycleDetection_Throws()
+    public void SystemSets_CycleDetection_ThrowsAtValidationNotAtConfiguration()
     {
         app.SystemSets.AddSystemSet<TestSet>();
 
+        // Configuration only records: a contradictory pair is accepted here...
         app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.SystemSets.ConfigureSetOrder(TestSet.SetB, Order.Before, TestSet.SetA);
 
-        Assert.Throws<InvalidOperationException>(() =>
-            app.SystemSets.ConfigureSetOrder(TestSet.SetB, Order.Before, TestSet.SetA));
+        // ...and reported when the constraints are resolved.
+        var exception = Assert.Throws<InvalidOperationException>(() => app.SystemSets.Validate());
+
+        Assert.Contains(nameof(TestSet.SetA), exception.Message);
+        Assert.Contains(nameof(TestSet.SetB), exception.Message);
     }
 
     [Fact]
@@ -550,42 +556,40 @@ public class SystemOrderTests : IDisposable
     }
 
     [Fact]
-    public void SystemSets_ConfigureSetInSet_SelfNesting_Throws()
+    public void SystemSets_ConfigureSetInSet_SelfNesting_IsReportedAtValidation()
     {
         app.SystemSets.AddSystemSet<TestSet>();
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetA));
+        app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetA);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => app.SystemSets.Validate());
 
         Assert.Contains(nameof(TestSet.SetA), exception.Message);
     }
 
     [Fact]
-    public void SystemSets_ConfigureSetInSet_DirectCycle_Throws()
+    public void SystemSets_ConfigureSetInSet_DirectCycle_IsReportedAtValidation()
     {
         app.SystemSets.AddSystemSet<TestSet>();
         app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetB);
+        app.SystemSets.ConfigureSetInSet(TestSet.SetB, TestSet.SetA);
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            app.SystemSets.ConfigureSetInSet(TestSet.SetB, TestSet.SetA));
+        var exception = Assert.Throws<InvalidOperationException>(() => app.SystemSets.Validate());
 
-        // The message must name the sets taking part in the cycle.
+        // The message must name the sets taking part in the cycle, and the whole chain.
         Assert.Contains(nameof(TestSet.SetA), exception.Message);
         Assert.Contains(nameof(TestSet.SetB), exception.Message);
-
-        // The rejected nesting must not be written.
-        Assert.Null(app.SystemSets.GetParent(MakeSetInfo(TestSet.SetA)));
     }
 
     [Fact]
-    public void SystemSets_ConfigureSetInSet_IndirectCycle_Throws()
+    public void SystemSets_ConfigureSetInSet_IndirectCycle_IsReportedAtValidation()
     {
         app.SystemSets.AddSystemSet<TestSet>();
         app.SystemSets.ConfigureSetInSet(TestSet.SetA, TestSet.SetB);
         app.SystemSets.ConfigureSetInSet(TestSet.SetB, TestSet.SetC);
+        app.SystemSets.ConfigureSetInSet(TestSet.SetC, TestSet.SetA);
 
-        Assert.Throws<InvalidOperationException>(() =>
-            app.SystemSets.ConfigureSetInSet(TestSet.SetC, TestSet.SetA));
+        Assert.Throws<InvalidOperationException>(() => app.SystemSets.Validate());
     }
 
     [Fact]
@@ -612,6 +616,8 @@ public class SystemOrderTests : IDisposable
         app.SystemSets.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
         app.SystemSets.ConfigureSetOrder(FlagsTestSet.SetA, Order.Before, FlagsTestSet.SetB);
 
+        app.SystemSets.Validate();
+
         Assert.Equal(2, app.SystemSets.OrderEdges.Count());
     }
 
@@ -622,6 +628,14 @@ public class SystemOrderTests : IDisposable
     private SetInfo MakeSetInfo(TestSet set)
     {
         return new(app.TypeRegistrar.GetTypeId<TestSet>(), set.ToString());
+    }
+
+    /// <summary>
+    /// Finds the resolved node of a system, so a test can assert on the layer it landed in.
+    /// </summary>
+    private static DAGNode<SystemInfo> NodeOf(DefaultSchedule schedule, ISystem system)
+    {
+        return schedule.ExecutionGraph.AsList().First(node => node.Data != null && ReferenceEquals(node.Data.System, system));
     }
 
 #endregion
@@ -695,6 +709,250 @@ public class SystemOrderTests : IDisposable
         // Set configuration is meant to go through the App facades, so the field must not be public.
         // A public-only lookup returning null is the assertion.
         Assert.Null(typeof(App).GetField("SystemSets"));
+    }
+
+#endregion
+
+#region Deferred Resolution
+
+    [Fact]
+    public void SetOrder_ConfiguredAfterSystemsWereAdded_StillApplies()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.AddSystem(new RecordingSystem("B"), new SystemDescriptor { Sets = [TestSet.SetB] });
+        schedule.AddSystem(new RecordingSystem("A"), new SystemDescriptor { Sets = [TestSet.SetA] });
+
+        // Both the registration and the constraint come after the systems: resolution happens later, so the
+        // order must still be honoured.
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+
+        schedule.Execute();
+
+        var order = ExecutionRecorder.GetOrder().ToList();
+
+        Assert.True(order.IndexOf("A") < order.IndexOf("B"));
+    }
+
+    [Fact]
+    public void SetOrder_ConfiguredAfterFirstExecution_RebuildsAndApplies()
+    {
+        app.AddSystemSet<TestSet>();
+
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("B"), new SystemDescriptor { Sets = [TestSet.SetB] });
+        schedule.AddSystem(new RecordingSystem("A"), new SystemDescriptor { Sets = [TestSet.SetA] });
+
+        schedule.Execute();
+        ExecutionRecorder.Clear();
+
+        // Changing set configuration after the graph was resolved invalidates it.
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        schedule.Execute();
+
+        var order = ExecutionRecorder.GetOrder().ToList();
+
+        Assert.True(order.IndexOf("A") < order.IndexOf("B"));
+    }
+
+    [Fact]
+    public void Build_ConfigurationChangeAfterBuild_IsResolvedAgain()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"));
+
+        schedule.Build();
+        Assert.True(schedule.IsBuilt);
+
+        schedule.AddSystem(new RecordingSystem("B"));
+        Assert.False(schedule.IsBuilt);
+
+        schedule.Build();
+
+        Assert.True(schedule.IsBuilt);
+        Assert.Equal(3, schedule.ExecutionGraph.Count);
+    }
+
+    [Fact]
+    public void Build_UnregisteredSet_Throws()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"), new SystemDescriptor { Sets = [TestSet.SetA] });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => schedule.Build());
+
+        Assert.Contains(nameof(TestSet), exception.Message);
+    }
+
+    [Fact]
+    public void Build_MutualAddAfter_ReportsTheCycleWithSetNames()
+    {
+        app.AddSystemSet<TestSet>();
+
+        var schedule = new DefaultSchedule(app, "Test");
+        var a = new RecordingSystem("A");
+        var b = new RecordingSystem("B");
+
+        schedule.AddSystem(a, new SystemDescriptor { Sets = [TestSet.SetA], AddAfter = b });
+        schedule.AddSystem(b, new SystemDescriptor { Sets = [TestSet.SetB], AddAfter = a });
+
+        var exception = Assert.Throws<InvalidGraphException>(() => schedule.Build());
+
+        // The message has to name what takes part in the cycle, otherwise there is nothing to act on.
+        Assert.Contains(nameof(TestSet.SetA), exception.Message);
+        Assert.Contains(nameof(TestSet.SetB), exception.Message);
+    }
+
+    [Fact]
+    public void Build_SetOrderCycleBetweenUsedSets_ReportsTheSets()
+    {
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.ConfigureSetOrder(TestSet.SetB, Order.Before, TestSet.SetA);
+
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"), new SystemDescriptor { Sets = [TestSet.SetA] });
+        schedule.AddSystem(new RecordingSystem("B"), new SystemDescriptor { Sets = [TestSet.SetB] });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => schedule.Build());
+
+        Assert.Contains(nameof(TestSet.SetA), exception.Message);
+        Assert.Contains(nameof(TestSet.SetB), exception.Message);
+    }
+
+    [Fact]
+    public void Build_SetOrderCycleWithoutMembers_IsStillReported()
+    {
+        app.AddSystemSet<TestSet>();
+        app.ConfigureSetOrder(TestSet.SetA, Order.Before, TestSet.SetB);
+        app.ConfigureSetOrder(TestSet.SetB, Order.Before, TestSet.SetA);
+
+        // Nothing belongs to these sets, so the cycle constrains nothing at all. It is still a contradiction
+        // in the configuration and must not be accepted just because it happens to be inert.
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"));
+
+        Assert.Throws<InvalidOperationException>(() => schedule.Build());
+    }
+
+    [Fact]
+    public void ClearSystems_ThenExecute_DoesNotRunTheOldSystems()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"));
+        schedule.Execute();
+        ExecutionRecorder.Clear();
+
+        schedule.ClearSystems();
+        schedule.Execute();
+
+        Assert.Empty(ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void Conflict_TwoWritersOfTheSameComponent_RunInDifferentLayers()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var first = new WriteSystem<TestPosition>("W1");
+        var second = new WriteSystem<TestPosition>("W2");
+
+        schedule.AddSystem(first);
+        schedule.AddSystem(second);
+        schedule.Build();
+
+        Assert.True(NodeOf(schedule, first).Group < NodeOf(schedule, second).Group);
+    }
+
+    [Fact]
+    public void NoConflict_TwoParameterlessSystems_ShareALayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var first = new RecordingSystem("A");
+        var second = new RecordingSystem("B");
+
+        schedule.AddSystem(first);
+        schedule.AddSystem(second);
+        schedule.Build();
+
+        Assert.Equal(NodeOf(schedule, first).Group, NodeOf(schedule, second).Group);
+    }
+
+    [Fact]
+    public void Conflict_WriteAfterRead_RunsInALaterLayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var reader = new ReadSystem<TestPosition>("R");
+        var writer = new WriteSystem<TestPosition>("W");
+
+        schedule.AddSystem(reader);
+        schedule.AddSystem(writer);
+        schedule.Build();
+
+        Assert.True(NodeOf(schedule, reader).Group < NodeOf(schedule, writer).Group);
+    }
+
+    [Fact]
+    public void Conflict_ReadAfterWrite_RunsInALaterLayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var writer = new WriteSystem<TestPosition>("W");
+        var reader = new ReadSystem<TestPosition>("R");
+
+        schedule.AddSystem(writer);
+        schedule.AddSystem(reader);
+        schedule.Build();
+
+        Assert.True(NodeOf(schedule, writer).Group < NodeOf(schedule, reader).Group);
+    }
+
+    [Fact]
+    public void NoConflict_TwoReadersOfTheSameComponent_ShareALayer()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var first = new ReadSystem<TestPosition>("R1");
+        var second = new ReadSystem<TestPosition>("R2");
+
+        schedule.AddSystem(first);
+        schedule.AddSystem(second);
+        schedule.Build();
+
+        Assert.Equal(NodeOf(schedule, first).Group, NodeOf(schedule, second).Group);
+    }
+
+    [Fact]
+    public void AddSystems_ArraySyntax_EveryMemberOfAGroupPrecedesTheNextGroup()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        var a1 = new RecordingSystem("A1");
+        var a2 = new RecordingSystem("A2");
+        var b1 = new RecordingSystem("B1");
+
+        schedule.AddSystems(addAfter: null, [a1, a2], [b1]);
+        schedule.Build();
+
+        var a1Node = NodeOf(schedule, a1);
+        var a2Node = NodeOf(schedule, a2);
+        var b1Node = NodeOf(schedule, b1);
+
+        Assert.Equal(a1Node.Group, a2Node.Group);
+        Assert.True(a1Node.Group < b1Node.Group);
+        Assert.True(a2Node.Group < b1Node.Group);
+    }
+
+    [Fact]
+    public void Build_SameLayerKeepsDeclarationOrder()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"));
+        schedule.AddSystem(new RecordingSystem("B"));
+        schedule.AddSystem(new RecordingSystem("C"));
+
+        schedule.Execute();
+
+        // No constraint and no conflict, so they share a layer; the order inside a layer is not promised but
+        // must stay stable, and declaration order is the one thing a reader can predict.
+        Assert.Equal(["A", "B", "C"], ExecutionRecorder.GetOrder());
     }
 
 #endregion
@@ -980,6 +1238,9 @@ public class SystemOrderTests : IDisposable
 
         schedule.AddSystem(new RecordingSystem("A"));
 
+        // The graph is a resolution product, so it only exists after a build.
+        schedule.Build();
+
         var list = schedule.ExecutionGraph.AsList();
 
         // Root + 1 system
@@ -995,6 +1256,8 @@ public class SystemOrderTests : IDisposable
         schedule.AddSystem(new RecordingSystem("B"));
         schedule.AddSystem(new RecordingSystem("C"));
 
+        schedule.Build();
+
         var list = schedule.ExecutionGraph.AsList();
 
         // Root + 3 systems
@@ -1009,12 +1272,40 @@ public class SystemOrderTests : IDisposable
         schedule.AddSystem(new RecordingSystem("A"));
         schedule.AddSystem(new RecordingSystem("B"));
 
+        schedule.Build();
         schedule.ClearSystems();
 
-        var list = schedule.ExecutionGraph.AsList();
+        // Clearing drops the resolved graph entirely; the next build recreates the root.
+        Assert.Equal(0, schedule.ExecutionGraph.Count);
+        Assert.False(schedule.IsBuilt);
+    }
 
-        // Only root remains
-        Assert.Single(list);
+    [Fact]
+    public void ExecutionGraph_EmptySchedule_BuildsRootOnly()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        schedule.Build();
+
+        // An empty schedule still resolves to a single root, and executing it does nothing.
+        Assert.Equal(1, schedule.ExecutionGraph.Count);
+        Assert.True(schedule.IsBuilt);
+    }
+
+    [Fact]
+    public void Build_RepeatedWithoutChanges_KeepsTheSameGraph()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+        schedule.AddSystem(new RecordingSystem("A"));
+        schedule.AddSystem(new RecordingSystem("B"));
+
+        schedule.Build();
+        var firstNodes = schedule.ExecutionGraph.Nodes.ToList();
+
+        schedule.Build();
+
+        Assert.Equal(firstNodes, schedule.ExecutionGraph.Nodes);
+        Assert.Same(firstNodes[0], schedule.ExecutionGraph.Root);
     }
 
 #endregion

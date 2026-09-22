@@ -87,15 +87,15 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// <summary>
     /// Constrains every system in one set to run before (or after) every system in another set.
     /// Declaring the same constraint again has no effect.
+    /// The constraint is only recorded here: whether it can be satisfied is decided when a schedule is built,
+    /// so that configuration never depends on the order in which constraints happen to be declared.
     /// </summary>
     /// <typeparam name="TS1">The enum type of the first set.</typeparam>
     /// <typeparam name="TS2">The enum type of the second set.</typeparam>
     /// <param name="s1">The first set.</param>
     /// <param name="order">Whether <paramref name="s1"/> runs before or after <paramref name="s2"/>.</param>
     /// <param name="s2">The second set.</param>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when either set type has not been registered, or when the constraint would create a cycle.
-    /// </exception>
+    /// <exception cref="InvalidOperationException">Thrown when either set type has not been registered.</exception>
     public void ConfigureSetOrder<TS1, TS2>(TS1 s1, Order order, TS2 s2) where TS1 : Enum where TS2 : Enum
     {
         var info1 = GetRegisteredSetInfo(s1);
@@ -105,13 +105,6 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
         var node2 = FindOrCreateNode(info2);
 
         var (from, to) = order == Order.Before ? (node1, node2) : (node2, node1);
-
-        // Independent ordering chains are legitimate, so a cycle is only a path that already leads back
-        // from `to` to `from`. Checking the root count instead would reject unrelated constraints.
-        if (HasPath(to, from))
-        {
-            throw new InvalidOperationException($"Cannot order set '{info1.Name}' {order.ToString().ToLower()} '{info2.Name}': would create a cycle");
-        }
 
         if (orderGraph.TryAddEdge(from, to))
         {
@@ -136,14 +129,13 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// <summary>
     /// Nests one set inside another: the child inherits the parent's predicate, and constraints applied to the
     /// parent also cover the child. A set has at most one parent.
+    /// Like set ordering, nesting is only recorded here and checked when a schedule is built.
     /// </summary>
     /// <typeparam name="TS1">The enum type of the parent set.</typeparam>
     /// <typeparam name="TS2">The enum type of the child set.</typeparam>
     /// <param name="parent">The set that contains <paramref name="child"/>.</param>
     /// <param name="child">The set contained in <paramref name="parent"/>.</param>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when either set type has not been registered, or when nesting would create a cycle.
-    /// </exception>
+    /// <exception cref="InvalidOperationException">Thrown when either set type has not been registered.</exception>
     public void ConfigureSetInSet<TS1, TS2>(TS1 parent, TS2 child) where TS1 : Enum where TS2 : Enum
     {
         var parentInfo = GetRegisteredSetInfo(parent);
@@ -153,8 +145,6 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
         {
             return;
         }
-
-        ThrowIfNestingWouldCreateCycle(parentInfo, childInfo);
 
         parentDict[childInfo] = parentInfo;
         Version++;
@@ -180,77 +170,22 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
         return parentDict.GetValueOrDefault(set);
     }
 
-    /// <summary>
-    /// Gets all sets that should execute before the specified set (transitive closure of orderGraph ancestors).
-    /// </summary>
-    public HashSet<SetInfo> GetSetsBefore(SetInfo set)
-    {
-        var node = orderGraph.FirstOrDefault(n => n.Data.Equals(set));
-        if (node == null)
-        {
-            return [];
-        }
-
-        var result = new HashSet<SetInfo>();
-        var queue = new Queue<DAGNode<SetInfo>>();
-
-        foreach (var parent in node.Parents)
-        {
-            queue.Enqueue(parent);
-        }
-
-        while (queue.Count > 0)
-        {
-            var current = queue.Dequeue();
-            if (result.Add(current.Data))
-            {
-                foreach (var parent in current.Parents)
-                {
-                    queue.Enqueue(parent);
-                }
-            }
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Gets all sets that should execute after the specified set (transitive closure of orderGraph descendants).
-    /// </summary>
-    public HashSet<SetInfo> GetSetsAfter(SetInfo set)
-    {
-        var node = orderGraph.FirstOrDefault(n => n.Data.Equals(set));
-        if (node == null)
-        {
-            return [];
-        }
-
-        var result = new HashSet<SetInfo>();
-        var queue = new Queue<DAGNode<SetInfo>>();
-
-        foreach (var child in node.Children)
-        {
-            queue.Enqueue(child);
-        }
-
-        while (queue.Count > 0)
-        {
-            var current = queue.Dequeue();
-            if (result.Add(current.Data))
-            {
-                foreach (var child in current.Children)
-                {
-                    queue.Enqueue(child);
-                }
-            }
-        }
-
-        return result;
-    }
-
 #endregion
 
 #region Internal Methods
+
+    /// <summary>
+    /// Checks the recorded constraints for contradictions. Configuration only records, so this is where an
+    /// impossible combination is reported, once, when a schedule resolves its graph.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the recorded ordering contains a cycle, or when the nesting does.
+    /// </exception>
+    internal void Validate()
+    {
+        ThrowIfOrderContainsCycle();
+        ThrowIfNestingContainsCycle();
+    }
 
     /// <summary>
     /// Returns whether the given enum type has been registered through <see cref="AddSystemSet{T}"/>.
@@ -261,6 +196,47 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     internal bool IsRegistered(Type enumType)
     {
         return registeredTypeIdSet.Contains(typeRegistrar.GetTypeId(enumType));
+    }
+
+    /// <summary>
+    /// Expands the sets declared on a system descriptor into the sets the system really belongs to: every
+    /// declared set plus its ancestors, so a system in a child set also answers to the parent's ordering and
+    /// predicate.
+    /// </summary>
+    /// <param name="directSets">The sets declared on a system descriptor.</param>
+    /// <returns>The declared sets together with their ancestors.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a declared set type has not been registered. Without this check the set would silently get
+    /// an identity that matches nothing, and every constraint on it would be dropped.
+    /// </exception>
+    internal SetInfo[] GetEffectiveSystemSets(Enum[] directSets)
+    {
+        var allSet = new HashSet<SetInfo>();
+
+        foreach (var set in directSets)
+        {
+            var type = set.GetType();
+
+            if (!IsRegistered(type))
+            {
+                throw new InvalidOperationException($"Set type '{type.Name}' has not been registered. Call AddSystemSet<{type.Name}>() first.");
+            }
+
+            // Nesting keeps a single parent, so the ancestry is a chain and walking upwards is enough.
+            var current = new SetInfo(typeRegistrar.GetTypeId(type), GetSetName(set));
+
+            while (current != null)
+            {
+                if (!allSet.Add(current))
+                {
+                    break;
+                }
+
+                current = parentDict.GetValueOrDefault(current);
+            }
+        }
+
+        return [.. allSet];
     }
 
 #endregion
@@ -283,9 +259,9 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// Gets the name that identifies a set. Flag combinations and values without a declared member have no name
     /// of their own, and fall back to their string form rather than leaving the name null.
     /// </summary>
-    private static string GetSetName<T>(T set) where T : Enum
+    private static string GetSetName(Enum set)
     {
-        return typeof(T).GetEnumName(set) ?? set.ToString();
+        return set.GetType().GetEnumName(set) ?? set.ToString();
     }
 
     private DAGNode<SetInfo> FindOrCreateNode(SetInfo info)
@@ -303,67 +279,71 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     }
 
     /// <summary>
-    /// Returns whether <paramref name="to"/> is reachable from <paramref name="from"/> by following children.
+    /// Throws when the recorded set ordering cannot be linearised. Ordering chains that are independent from
+    /// each other are legitimate, so this is a cycle test on the graph and not a "single root" test.
     /// </summary>
-    private static bool HasPath(DAGNode<SetInfo> from, DAGNode<SetInfo> to)
+    private void ThrowIfOrderContainsCycle()
     {
-        if (from == to)
+        var inDegreeDict = new Dictionary<DAGNode<SetInfo>, int>(orderGraph.Count);
+        var pendingQueue = new Queue<DAGNode<SetInfo>>();
+
+        foreach (var node in orderGraph.Nodes)
         {
-            return true;
-        }
+            var inDegree = node.Parents.Count;
+            inDegreeDict[node] = inDegree;
 
-        var pendingStack = new Stack<DAGNode<SetInfo>>();
-        var visitedSet = new HashSet<DAGNode<SetInfo>>();
-
-        pendingStack.Push(from);
-        visitedSet.Add(from);
-
-        while (pendingStack.Count > 0)
-        {
-            foreach (var child in pendingStack.Pop().Children)
+            if (inDegree == 0)
             {
-                if (child == to)
-                {
-                    return true;
-                }
-
-                if (visitedSet.Add(child))
-                {
-                    pendingStack.Push(child);
-                }
+                pendingQueue.Enqueue(node);
             }
         }
 
-        return false;
+        var visitedCount = 0;
+
+        while (pendingQueue.Count > 0)
+        {
+            foreach (var child in pendingQueue.Dequeue().Children)
+            {
+                if (--inDegreeDict[child] == 0)
+                {
+                    pendingQueue.Enqueue(child);
+                }
+            }
+
+            visitedCount++;
+        }
+
+        if (visitedCount != orderGraph.Count)
+        {
+            var cycleNames = orderGraph.Nodes.Where(node => inDegreeDict[node] > 0).Select(node => node.Data.Name);
+
+            throw new InvalidOperationException($"Set ordering contains a cycle: {string.Join(" -> ", cycleNames)}");
+        }
     }
 
     /// <summary>
-    /// Throws when making <paramref name="parentInfo"/> the parent of <paramref name="childInfo"/> would close a
-    /// cycle. Single-parent nesting makes the ancestry a chain, so following the parents upwards from the new
-    /// parent is enough to prove there is none.
+    /// Throws when the recorded nesting cannot be walked. Nesting keeps a single parent, so following the
+    /// parents upwards from every known set either ends or comes back to where it started.
     /// </summary>
-    private void ThrowIfNestingWouldCreateCycle(SetInfo parentInfo, SetInfo childInfo)
+    private void ThrowIfNestingContainsCycle()
     {
-        var chain = new List<string> { childInfo.Name };
-        var current = parentInfo;
-
-        while (true)
+        foreach (var child in parentDict.Keys)
         {
-            chain.Add(current.Name);
+            var chainList = new List<string>();
+            var chainSet = new HashSet<SetInfo>();
+            var current = child;
 
-            if (current.Equals(childInfo))
+            while (current != null)
             {
-                throw new InvalidOperationException($"Cannot put set '{childInfo.Name}' in '{parentInfo.Name}': would create a cycle ({string.Join(" -> ", chain)})");
+                chainList.Add(current.Name);
+
+                if (!chainSet.Add(current))
+                {
+                    throw new InvalidOperationException($"Set nesting contains a cycle: {string.Join(" -> ", chainList)}");
+                }
+
+                current = parentDict.GetValueOrDefault(current);
             }
-
-            var grandParent = parentDict.GetValueOrDefault(current);
-
-            if (grandParent == null)
-            {
-                return;
-            }
-
-            current = grandParent;
         }
     }
 

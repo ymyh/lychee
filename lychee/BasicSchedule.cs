@@ -75,6 +75,12 @@ public abstract class BasicSchedule : ISchedule
 
 #region Private Fields
 
+    /// <summary>
+    /// The systems added so far, in declaration order. The execution graph is resolved from this list, so
+    /// nothing here touches the graph.
+    /// </summary>
+    private readonly List<SystemInfo> pendingSystems = [];
+
     private FrozenDAGNode<SystemInfo>[][] frozenDagNodes = [];
 
     private Commands[][] multiThreadResults = [];
@@ -85,9 +91,20 @@ public abstract class BasicSchedule : ISchedule
 
     private readonly List<Commands> entityCommanders = [];
 
-    private bool isFrozen;
+    /// <summary>
+    /// The <see cref="SystemSets.Version"/> the execution graph was last resolved from, or -1 when the graph
+    /// does not correspond to the recorded systems (never built, or systems were added/cleared since).
+    /// </summary>
+    private int builtVersion = -1;
 
     private bool needConfigure = true;
+
+    /// <summary>
+    /// How many edges the expansion of set ordering into system ordering may produce before the schedule says
+    /// so. Two sets of 100 members already mean 10000 edges, which is the point where resolving through virtual
+    /// set nodes (linear instead of quadratic) starts to pay off.
+    /// </summary>
+    private const int SetExpansionEdgeThreshold = 10000;
 
 #endregion
 
@@ -190,7 +207,7 @@ public abstract class BasicSchedule : ISchedule
     /// </example>
     public void AddSystems(params ISystem[][] systemGroups)
     {
-        ISystem? addAfter = null;
+        var groupIndex = 0;
 
         foreach (var group in systemGroups)
         {
@@ -201,10 +218,10 @@ public abstract class BasicSchedule : ISchedule
 
             foreach (var system in group)
             {
-                DoAddSystem(system, new() { AddAfter = addAfter });
+                DoAddSystem(system, new(), groupIndex);
             }
 
-            addAfter = group[0];
+            groupIndex++;
         }
     }
 
@@ -226,6 +243,8 @@ public abstract class BasicSchedule : ISchedule
     /// </example>
     public void AddSystems(ISystem? addAfter, params ISystem[][] systemGroups)
     {
+        var groupIndex = 0;
+
         foreach (var group in systemGroups)
         {
             if (group.Length == 0)
@@ -235,21 +254,162 @@ public abstract class BasicSchedule : ISchedule
 
             foreach (var system in group)
             {
-                DoAddSystem(system, new() { AddAfter = addAfter });
+                // The supplied system orders the first group; every later group is ordered by its group index.
+                DoAddSystem(system, new() { AddAfter = groupIndex == 0 ? addAfter : null }, groupIndex);
             }
 
-            addAfter = group[0];
+            groupIndex++;
         }
     }
 
     /// <summary>
-    /// Removes all systems from the schedule and resets the execution graph.
+    /// Removes all systems from the schedule and discards the resolved execution graph.
+    /// The next execution resolves the schedule again, so nothing from the cleared state is executed.
     /// </summary>
     public void ClearSystems()
     {
+        pendingSystems.Clear();
         ExecutionGraph.Clear();
-        ExecutionGraph.AddNode(new());
+        frozenDagNodes = [];
+        multiThreadResults = [];
+        builtVersion = -1;
     }
+
+    /// <summary>
+    /// Resolves the recorded systems and set constraints into a layered execution graph, in one pass.
+    /// Execution calls this automatically when something changed; calling it explicitly right after
+    /// configuration surfaces ordering problems (a cycle, an unregistered set) at configuration time instead
+    /// of at run time. Calling it again without any change does nothing.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a system declares a set type that was never registered, or when the recorded set ordering or
+    /// nesting contains a cycle.
+    /// </exception>
+    /// <exception cref="InvalidGraphException">Thrown when the declared constraints cannot all be satisfied.</exception>
+    public void Build()
+    {
+        if (IsBuilt)
+        {
+            return;
+        }
+
+        // Configuration only records constraints, so this is the single place that decides whether they hold.
+        app.SystemSets.Validate();
+
+        ExecutionGraph.Clear();
+        frozenDagNodes = [];
+        multiThreadResults = [];
+
+        // The graph has to keep exactly one entry point: it is Nodes[0], which both the layer stripping and the
+        // configuration pass rely on as the virtual root every system without a predecessor hangs off.
+        var rootNode = ExecutionGraph.AddNode(new());
+
+        var nodeList = new List<DAGNode<SystemInfo>>(pendingSystems.Count);
+        var systemIndexDict = new Dictionary<ISystem, int>(ReferenceEqualityComparer.Instance);
+        var membersDict = new Dictionary<SetInfo, List<DAGNode<SystemInfo>>>();
+
+        // 1) Expand the sets of every system and record which systems belong to which set.
+        for (var i = 0; i < pendingSystems.Count; i++)
+        {
+            var info = pendingSystems[i];
+
+            info.EffectiveSets = app.SystemSets.GetEffectiveSystemSets(info.DirectSets);
+
+            var node = ExecutionGraph.AddNode(new(info));
+            nodeList.Add(node);
+            systemIndexDict.TryAdd(info.System, i);
+
+            foreach (var set in info.EffectiveSets)
+            {
+                if (!membersDict.TryGetValue(set, out var members))
+                {
+                    members = [];
+                    membersDict[set] = members;
+                }
+
+                members.Add(node);
+            }
+        }
+
+        // 2) Set ordering: every member of the earlier set runs before every member of the later one.
+        var expansionEdgeCount = 0;
+
+        foreach (var (before, after) in app.SystemSets.OrderEdges)
+        {
+            if (membersDict.TryGetValue(before, out var beforeNodes) && membersDict.TryGetValue(after, out var afterNodes))
+            {
+                expansionEdgeCount += AddGroupEdges(beforeNodes, afterNodes);
+            }
+        }
+
+        if (expansionEdgeCount > SetExpansionEdgeThreshold)
+        {
+            ScheduleLog.SetExpansionLarge(logger, Name, expansionEdgeCount, SetExpansionEdgeThreshold);
+        }
+
+        // 3) Explicit dependencies declared through SystemDescriptor.AddAfter.
+        for (var i = 0; i < pendingSystems.Count; i++)
+        {
+            var addAfter = pendingSystems[i].AddAfter;
+
+            if (addAfter != null && systemIndexDict.TryGetValue(addAfter, out var index))
+            {
+                ExecutionGraph.TryAddEdge(nodeList[index], nodeList[i]);
+            }
+        }
+
+        // 3') Groups declared through the array form of AddSystems run one after another.
+        AddGroupIndexEdges(nodeList);
+
+        // 4) Systems that touch the same parameter in a conflicting way keep their declaration order.
+        AddConflictEdges(nodeList);
+
+        // 5) Layer the result. Every system without a predecessor hangs off the virtual root, so the graph
+        //     always has exactly one entry point no matter how many independent systems it holds.
+        foreach (var node in nodeList)
+        {
+            if (node.Parents.Count == 0)
+            {
+                ExecutionGraph.TryAddEdge(rootNode, node);
+            }
+        }
+
+        List<DAGNode<SystemInfo>> orderedList;
+
+        try
+        {
+            orderedList = ExecutionGraph.AsList();
+        }
+        catch (InvalidGraphException)
+        {
+            throw new InvalidGraphException(DescribeUnsatisfiableOrdering(rootNode));
+        }
+
+        var declarationIndexDict = new Dictionary<SystemInfo, int>(pendingSystems.Count);
+
+        for (var i = 0; i < pendingSystems.Count; i++)
+        {
+            declarationIndexDict[pendingSystems[i]] = i;
+        }
+
+        // Systems in the same layer have no constraint between them; keep their declaration order so that the
+        // same configuration always produces the same order, even though it is not promised.
+        frozenDagNodes = orderedList
+            .Skip(1)
+            .OrderBy(node => node.Group)
+            .ThenBy(node => declarationIndexDict[node.Data])
+            .Freeze()
+            .AsExecutionGroup();
+
+        multiThreadResults = new Commands[frozenDagNodes.Select(x => x.Length).DefaultIfEmpty(0).Max()][];
+
+        builtVersion = app.SystemSets.Version;
+    }
+
+    /// <summary>
+    /// Whether the execution graph matches the current systems and set constraints.
+    /// </summary>
+    public bool IsBuilt => builtVersion == app.SystemSets.Version;
 
 #endregion
 
@@ -294,7 +454,7 @@ public abstract class BasicSchedule : ISchedule
         return ([], [], [typeof(Disabled)]);
     }
 
-    private void DoAddSystem(ISystem system, SystemDescriptor descriptor)
+    private void DoAddSystem(ISystem system, SystemDescriptor descriptor, int groupIndex = -1)
     {
         if (CheckIfMultiThread(system))
         {
@@ -307,175 +467,153 @@ public abstract class BasicSchedule : ISchedule
         system.InitializeAG(app, descriptor);
 
         var (allFilter, anyFilter, noneFilter) = GetSystemFilter(system);
-        var systemSets = GetEffectiveSystemSets(app.TypeRegistrar, descriptor, app.SystemSets);
-        var node = new DAGNode<SystemInfo>(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
+
+        pendingSystems.Add(new(system, ExtractSystemParamInfo(system, allFilter, anyFilter, noneFilter), new()
         {
             AllFilter = allFilter,
             AnyFilter = anyFilter,
             NoneFilter = noneFilter,
-        }, systemSets));
-        isFrozen = false;
+        }, descriptor.Sets, descriptor.AddAfter, groupIndex));
 
-        var list = ExecutionGraph.AsList();
-        var addAfterNode = list[0];
-        var currentGroup = -1;
-        var setConstrained = false;
-        var afterNodes = new List<DAGNode<SystemInfo>>();
+        // The recorded systems no longer match the resolved graph; the next Build has to redo it.
+        builtVersion = -1;
+    }
 
-        if (systemSets.Length > 0)
+    /// <summary>
+    /// Adds an ordering edge from every node of one group to every node of another, skipping pairs that are the
+    /// same node because a system can belong to both sets. Returns how many edges the expansion added.
+    /// </summary>
+    private int AddGroupEdges(List<DAGNode<SystemInfo>> fromNodes, List<DAGNode<SystemInfo>> toNodes)
+    {
+        var addedCount = 0;
+
+        foreach (var fromNode in fromNodes)
         {
-            var setsBefore = new HashSet<SetInfo>();
-            var setsAfter = new HashSet<SetInfo>();
-
-            foreach (var set in systemSets)
+            foreach (var toNode in toNodes)
             {
-                foreach (var s in app.SystemSets.GetSetsBefore(set))
+                if (fromNode != toNode && ExecutionGraph.TryAddEdge(fromNode, toNode))
                 {
-                    setsBefore.Add(s);
-                }
-
-                foreach (var s in app.SystemSets.GetSetsAfter(set))
-                {
-                    setsAfter.Add(s);
-                }
-            }
-
-            foreach (var n in list.Skip(1))
-            {
-                foreach (var es in n.Data.EffectiveSets)
-                {
-                    if (setsBefore.Contains(es))
-                    {
-                        if (!setConstrained || n.Group > addAfterNode.Group)
-                        {
-                            addAfterNode = n;
-                            setConstrained = true;
-                        }
-                    }
-                }
-            }
-
-            foreach (var n in list.Skip(1))
-            {
-                foreach (var es in n.Data.EffectiveSets)
-                {
-                    if (setsAfter.Contains(es))
-                    {
-                        afterNodes.Add(n);
-                    }
+                    addedCount++;
                 }
             }
         }
 
-        // Precompute all descendants of afterNodes to exclude them from addAfterNode candidates.
-        var afterNodeDescendants = new HashSet<DAGNode<SystemInfo>>();
-        foreach (var an in afterNodes)
-        {
-            CollectDescendants(an, afterNodeDescendants);
-        }
+        return addedCount;
+    }
 
-        foreach (var n in list.Skip(1))
+    /// <summary>
+    /// Orders the groups declared through the array form of AddSystems: each group runs entirely after the
+    /// previous one.
+    /// </summary>
+    private void AddGroupIndexEdges(List<DAGNode<SystemInfo>> nodeList)
+    {
+        var groupDict = new Dictionary<int, List<DAGNode<SystemInfo>>>();
+
+        for (var i = 0; i < pendingSystems.Count; i++)
         {
-            if (descriptor.AddAfter != null)
+            var groupIndex = pendingSystems[i].GroupIndex;
+
+            if (groupIndex < 0)
             {
-                if (n.Data.System == descriptor.AddAfter)
-                {
-                    currentGroup = n.Group;
-                    descriptor.AddAfter = null;
-                }
-
                 continue;
             }
 
-            if (CanRunParallel(n.Data, node.Data) && n.Group > currentGroup)
+            if (!groupDict.TryGetValue(groupIndex, out var groupNodes))
             {
-                if (n.Parents.Count > 0)
-                {
-                    var candidate = n.Parents[0];
-                    if (!setConstrained || candidate.Group > addAfterNode.Group)
-                    {
-                        addAfterNode = candidate;
-                    }
-                }
+                groupNodes = [];
+                groupDict[groupIndex] = groupNodes;
             }
-            else if (!setConstrained && !afterNodes.Contains(n) && !afterNodeDescendants.Contains(n))
-            {
-                addAfterNode = n;
-            }
+
+            groupNodes.Add(nodeList[i]);
         }
 
-        ExecutionGraph.AddNode(node);
-        ExecutionGraph.AddEdge(addAfterNode, node);
-
-        foreach (var afterNode in afterNodes)
+        // Group indexes are handed out without gaps, so the chain stops at the first index that is missing.
+        for (var groupIndex = 1; groupDict.ContainsKey(groupIndex); groupIndex++)
         {
-            if (afterNode.Parents.Count == 0)
+            AddGroupEdges(groupDict[groupIndex - 1], groupDict[groupIndex]);
+        }
+    }
+
+    /// <summary>
+    /// Orders systems that access the same parameter in a conflicting way by declaration order, so the
+    /// resolution stays deterministic when no explicit constraint covers them.
+    /// A write conflicts with everything, a read only with writes.
+    /// </summary>
+    private void AddConflictEdges(List<DAGNode<SystemInfo>> nodeList)
+    {
+        var lastWriterDict = new Dictionary<Type, int>();
+        var readerDict = new Dictionary<Type, List<int>>();
+
+        for (var i = 0; i < pendingSystems.Count; i++)
+        {
+            foreach (var parameter in pendingSystems[i].Parameters)
             {
-                // No parent yet, safe to add edge.
-                ExecutionGraph.AddEdge(node, afterNode);
-            }
-            else if (!IsReachableFrom(node, afterNode))
-            {
-                // Replace existing parent edge with the set ordering edge.
-                // Skip only if it would create a cycle (node already reachable from afterNode).
-                var oldParent = afterNode.Parents[0];
-                ExecutionGraph.RemoveEdge(oldParent, afterNode);
-                ExecutionGraph.AddEdge(node, afterNode);
+                if (!readerDict.TryGetValue(parameter.Type, out var readerList))
+                {
+                    readerList = [];
+                    readerDict[parameter.Type] = readerList;
+                }
+
+                // A read and a write both have to come after the last writer, and the writer chain is already
+                // ordered, so chaining onto the last writer is enough to be after every conflicting system.
+                if (lastWriterDict.TryGetValue(parameter.Type, out var lastWriter))
+                {
+                    ExecutionGraph.TryAddEdge(nodeList[lastWriter], nodeList[i]);
+                }
+
+                if (parameter.ReadOnly)
+                {
+                    readerList.Add(i);
+                    continue;
+                }
+
+                // A write also has to come after every read that happened since the last write.
+                foreach (var reader in readerList)
+                {
+                    ExecutionGraph.TryAddEdge(nodeList[reader], nodeList[i]);
+                }
+
+                readerList.Clear();
+                lastWriterDict[parameter.Type] = i;
             }
         }
     }
 
     /// <summary>
-    /// Checks if <paramref name="target"/> is reachable from <paramref name="start"/> by following Children edges.
-    /// Used to prevent creating cycles when adding Set ordering edges.
+    /// Describes the systems the virtual root cannot reach: they are part of an ordering cycle, or ordered
+    /// after one. Naming them turns a generic graph failure into something that can be acted on.
     /// </summary>
-    private static bool IsReachableFrom(DAGNode<SystemInfo> start, DAGNode<SystemInfo> target)
+    private string DescribeUnsatisfiableOrdering(DAGNode<SystemInfo> rootNode)
     {
-        var visited = new HashSet<DAGNode<SystemInfo>>();
-        var stack = new Stack<DAGNode<SystemInfo>>();
-        stack.Push(start);
+        var reachedSet = new HashSet<DAGNode<SystemInfo>>();
+        var pendingStack = new Stack<DAGNode<SystemInfo>>();
 
-        while (stack.Count > 0)
+        reachedSet.Add(rootNode);
+        pendingStack.Push(rootNode);
+
+        while (pendingStack.Count > 0)
         {
-            var current = stack.Pop();
-            if (!visited.Add(current))
+            foreach (var child in pendingStack.Pop().Children)
             {
-                continue;
-            }
-
-            if (current == target)
-            {
-                return true;
-            }
-
-            foreach (var child in current.Children)
-            {
-                stack.Push(child);
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Collects all descendant nodes of the given node by following Children edges.
-    /// </summary>
-    private static void CollectDescendants(DAGNode<SystemInfo> node, HashSet<DAGNode<SystemInfo>> result)
-    {
-        var stack = new Stack<DAGNode<SystemInfo>>();
-        stack.Push(node);
-
-        while (stack.Count > 0)
-        {
-            var current = stack.Pop();
-            foreach (var child in current.Children)
-            {
-                if (result.Add(child))
+                if (reachedSet.Add(child))
                 {
-                    stack.Push(child);
+                    pendingStack.Push(child);
                 }
             }
         }
+
+        var unreachableNames = ExecutionGraph.Nodes
+            .Where(node => node.Data != null && !reachedSet.Contains(node))
+            .Select(node => DescribeSystem(node.Data!));
+
+        return $"Schedule '{Name}' cannot be ordered with these constraints: {string.Join(", ", unreachableNames)} form an ordering cycle or depend on one";
+    }
+
+    private static string DescribeSystem(SystemInfo info)
+    {
+        var sets = info.DirectSets.Length > 0 ? string.Join(", ", info.DirectSets) : "none";
+
+        return $"{info.System.GetType().Name} (sets: {sets})";
     }
 
     private SystemParameterInfo[] ExtractSystemParamInfo(ISystem system, Type[] allFilter, Type[] anyFilter, Type[] noneFilter)
@@ -629,34 +767,17 @@ public abstract class BasicSchedule : ISchedule
         return attr?.MultiThreaded ?? false;
     }
 
-    private static SetInfo[] GetEffectiveSystemSets(TypeRegistrar typeRegistrar, SystemDescriptor descriptor, SystemSets systemSets)
+    /// <summary>
+    /// Returns whether two systems access the same parameter in a way that forbids running them at the same
+    /// time: a shared parameter counts unless both sides only read it, so read plus write is a conflict and
+    /// write plus write is one too.
+    /// Used to report systems that ended up in the same layer without any ordering constraint between them,
+    /// which means their relative order is left to the scheduler.
+    /// </summary>
+    private static bool HasConflict(SystemInfo systemA, SystemInfo systemB)
     {
-        var directSets = descriptor.Sets.Select(e =>
-        {
-            var type = e.GetType();
-            return new SetInfo(typeRegistrar.GetTypeId(type), type.GetEnumName(e)!);
-        }).ToArray();
-
-        var allSets = new HashSet<SetInfo>();
-        foreach (var set in directSets)
-        {
-            var current = set;
-            while (current != null)
-            {
-                if (!allSets.Add(current))
-                {
-                    break;
-                }
-
-                current = systemSets.GetParent(current);
-            }
-        }
-
-        return [.. allSets];
-    }
-
-    private static bool CanRunParallel(SystemInfo systemA, SystemInfo systemB)
-    {
+        // Only the parameter type may be hashed: entries that conflict are the ones with the same type, and
+        // they must land in the same bucket for the equality check below to ever see them.
         return systemA.Parameters.Intersect(systemB.Parameters,
             EqualityComparer<SystemParameterInfo>.Create((a, b) =>
             {
@@ -667,7 +788,7 @@ public abstract class BasicSchedule : ISchedule
                 }
 
                 return same;
-            }, info => HashCode.Combine(info.Type.GetHashCode(), info.ReadOnly))).Any();
+            }, info => info.Type.GetHashCode())).Any();
     }
 
 #endregion
@@ -681,22 +802,12 @@ public abstract class BasicSchedule : ISchedule
     protected void DoExecute()
     {
         app.SystemSets.ComputeAllPredicates();
+        Build();
 
-        if (!isFrozen)
+        if (needConfigure)
         {
-            frozenDagNodes = ExecutionGraph.AsList().Skip(1).Freeze().AsExecutionGroup();
-            isFrozen = true;
-
-            var maxGroupSize = frozenDagNodes.Select(x => x.Length).DefaultIfEmpty(0).Max();
-
-            multiThreadResults = new Commands[maxGroupSize][];
-            Array.Clear(multiThreadResults, 0, maxGroupSize);
-
-            if (needConfigure)
-            {
-                Configure();
-                needConfigure = false;
-            }
+            Configure();
+            needConfigure = false;
         }
 
         foreach (var group in frozenDagNodes)

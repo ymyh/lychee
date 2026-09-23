@@ -18,9 +18,13 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
 
     private int capacity;
 
+#region Private Static Fields
+
     private static readonly nuint Alignment = (nuint)TypeUtils.GetOrGuessAlignment<T>();
 
     private static readonly bool IsDisposableElement = typeof(T).GetInterface(typeof(IDisposable).FullName!) != null;
+
+#endregion
 
 #region Public Properties
 

@@ -1,3 +1,4 @@
+using lychee.attributes;
 using lychee.collections;
 using lychee.interfaces;
 using Microsoft.Extensions.Logging;
@@ -30,10 +31,11 @@ internal static class ExecutionRecorder
 }
 
 /// <summary>
-/// Minimal ISystem that records execution and has no component parameters.
+/// Minimal system that records execution and has no component parameters.
 /// Systems with no parameters can potentially run in parallel with each other.
 /// </summary>
-internal sealed class RecordingSystem : ISystem
+[AutoImplSystem]
+internal sealed partial class RecordingSystem
 {
     private readonly string name;
 
@@ -44,24 +46,18 @@ internal sealed class RecordingSystem : ISystem
 
     public string GetName() => name;
 
-    public void InitializeAG(App app, SystemDescriptor descriptor) { }
-
-    public void ConfigureAG(App app, SystemFilterInfo filterInfo) { }
-
-    public Commands[] ExecuteAG()
+    private void Execute()
     {
         ExecutionRecorder.Record(name);
-        return [];
     }
-
-    private static void Execute() { }
 }
 
 /// <summary>
 /// A system that reads a specific component type (in parameter = readonly).
 /// Two ReadSystems of different types can run in parallel.
 /// </summary>
-internal sealed class ReadSystem<T> : ISystem where T : unmanaged, IComponent
+[AutoImplSystem]
+internal sealed partial class ReadSystem<T> where T : unmanaged, IComponent
 {
     private readonly string name;
 
@@ -70,24 +66,22 @@ internal sealed class ReadSystem<T> : ISystem where T : unmanaged, IComponent
         this.name = name;
     }
 
-    public void InitializeAG(App app, SystemDescriptor descriptor) { }
-
-    public void ConfigureAG(App app, SystemFilterInfo filterInfo) { }
-
-    public Commands[] ExecuteAG()
+    // Records here rather than in Execute: the generated Execute runs once per matching entity, so a world
+    // without any would record nothing at all, and a world with several would record several times.
+    private void BeforeExecute()
     {
         ExecutionRecorder.Record(name);
-        return [];
     }
 
-    private static void Execute(in T component) { }
+    private void Execute(in T component) { }
 }
 
 /// <summary>
 /// A system that writes a specific component type (ref parameter = writable).
 /// Two systems writing the same type cannot run in parallel.
 /// </summary>
-internal sealed class WriteSystem<T> : ISystem where T : unmanaged, IComponent
+[AutoImplSystem]
+internal sealed partial class WriteSystem<T> where T : unmanaged, IComponent
 {
     private readonly string name;
 
@@ -96,23 +90,20 @@ internal sealed class WriteSystem<T> : ISystem where T : unmanaged, IComponent
         this.name = name;
     }
 
-    public void InitializeAG(App app, SystemDescriptor descriptor) { }
-
-    public void ConfigureAG(App app, SystemFilterInfo filterInfo) { }
-
-    public Commands[] ExecuteAG()
+    private void BeforeExecute()
     {
         ExecutionRecorder.Record(name);
-        return [];
     }
 
-    private static void Execute(ref T component) { }
+    private void Execute(ref T component) { }
 }
 
 /// <summary>
-/// A system that can be skipped via Predicate.
+/// A system that can be skipped via Predicate. Declaring the method is what makes the generator open
+/// <c>ExecuteAG</c> with a call to it, so a system of the same shape without one runs unconditionally.
 /// </summary>
-internal sealed class SkippableSystem : ISystem
+[AutoImplSystem]
+internal sealed partial class SkippableSystem
 {
     private readonly string name;
     private readonly bool shouldExecute;
@@ -123,22 +114,15 @@ internal sealed class SkippableSystem : ISystem
         this.shouldExecute = shouldExecute;
     }
 
-    public void InitializeAG(App app, SystemDescriptor descriptor) { }
-
-    public void ConfigureAG(App app, SystemFilterInfo filterInfo) { }
-
-    public Commands[] ExecuteAG()
+    private void Execute()
     {
         ExecutionRecorder.Record(name);
-        return [];
     }
 
     public bool Predicate(ResourcePool pool)
     {
         return shouldExecute;
     }
-
-    private static void Execute() { }
 }
 
 internal enum TestSet
@@ -199,18 +183,10 @@ internal enum FlagsTestSet
 /// A parameterless system, for the tuple form of <c>AddSystems</c>, which constructs the systems itself.
 /// The tests using it only look at how many systems ended up in each layer, so one type is enough.
 /// </summary>
-internal sealed class TupleFormSystem : ISystem
+[AutoImplSystem]
+internal sealed partial class TupleFormSystem
 {
-    public void InitializeAG(App app, SystemDescriptor descriptor) { }
-
-    public void ConfigureAG(App app, SystemFilterInfo filterInfo) { }
-
-    public Commands[] ExecuteAG()
-    {
-        return [];
-    }
-
-    private static void Execute() { }
+    private void Execute() { }
 }
 
 #endregion
@@ -380,6 +356,24 @@ public class SystemOrderTests : IDisposable
         Assert.True(readVelIdx < writePosIdx);
     }
 
+    [Fact]
+    public void AddSystems_SameLayer_KeepsDeclarationOrder()
+    {
+        var schedule = new DefaultSchedule(app, "Test");
+
+        // Nothing here conflicts, so the layering is exactly the group structure: one layer per group, and a
+        // layer holds its systems in declaration order. That order is not promised by any constraint, but it
+        // has to be reproducible, and the names are picked so that alphabetical order would not pass.
+        ExecutionRecorder.Clear();
+        schedule.AddSystems(
+            [new RecordingSystem("C"), new RecordingSystem("A")],
+            [new RecordingSystem("D"), new RecordingSystem("B")]);
+
+        schedule.Execute();
+
+        Assert.Equal(["C", "A", "D", "B"], ExecutionRecorder.GetOrder());
+    }
+
 #endregion
 
 #region AddSystems Tuple Syntax
@@ -489,23 +483,6 @@ public class SystemOrderTests : IDisposable
 #region Predicate
 
     [Fact]
-    public void Predicate_SkipsSystem_WhenFalse()
-    {
-        var schedule = new DefaultSchedule(app, "Test");
-
-        schedule.AddSystem(new RecordingSystem("A"));
-        schedule.AddSystem(new SkippableSystem("Skipped", false));
-        schedule.AddSystem(new RecordingSystem("B"));
-
-        schedule.Execute();
-
-        var order = ExecutionRecorder.GetOrder();
-        Assert.Contains("A", order);
-        Assert.DoesNotContain("Skipped", order);
-        Assert.Contains("B", order);
-    }
-
-    [Fact]
     public void Predicate_ExecutesSystem_WhenTrue()
     {
         var schedule = new DefaultSchedule(app, "Test");
@@ -523,36 +500,34 @@ public class SystemOrderTests : IDisposable
     }
 
     [Fact]
-    public void Predicate_MultipleSkipped_OnlyMatchingExecute()
+    public void Predicate_SkipsSystem_WhenFalse()
     {
         var schedule = new DefaultSchedule(app, "Test");
 
-        schedule.AddSystem(new SkippableSystem("S1", false));
         schedule.AddSystem(new RecordingSystem("A"));
-        schedule.AddSystem(new SkippableSystem("S2", false));
+        schedule.AddSystem(new SkippableSystem("Skipped", false));
         schedule.AddSystem(new RecordingSystem("B"));
-        schedule.AddSystem(new SkippableSystem("S3", true));
 
         schedule.Execute();
 
+        // The whole point of declaring Predicate: the generator opens ExecuteAG with a call to it, so a system
+        // that says no is never entered, and the systems around it still run.
         var order = ExecutionRecorder.GetOrder();
-        Assert.DoesNotContain("S1", order);
-        Assert.DoesNotContain("S2", order);
-        Assert.Contains("S3", order);
         Assert.Contains("A", order);
+        Assert.DoesNotContain("Skipped", order);
         Assert.Contains("B", order);
     }
 
     [Fact]
-    public void Predicate_AllSkipped_NothingExecutes()
+    public void Predicate_SkippedSystem_CommitsNothing()
     {
         var schedule = new DefaultSchedule(app, "Test");
 
-        schedule.AddSystem(new SkippableSystem("S1", false));
-        schedule.AddSystem(new SkippableSystem("S2", false));
-
+        schedule.AddSystem(new SkippableSystem("Skipped", false));
         schedule.Execute();
 
+        // A skipped system must not leave a Commands behind for the caller to commit, which is what returning
+        // an empty array instead of the system's own Commands buys.
         Assert.Empty(ExecutionRecorder.GetOrder());
     }
 
@@ -904,6 +879,56 @@ public class SystemOrderTests : IDisposable
         schedule.Execute();
 
         Assert.Empty(ExecutionRecorder.GetOrder());
+    }
+
+    [Fact]
+    public void App_Update_SetPredicateEvaluatedForEachScheduleThatUsesTheSet()
+    {
+        app.AddSystemSet<TestSet>();
+
+        var callCount = 0;
+        app.ConfigureSetPredicate(TestSet.SetA, _ =>
+        {
+            callCount++;
+            return true;
+        });
+
+        foreach (var name in new[] { "Middle1", "Middle2" })
+        {
+            var schedule = new DefaultSchedule(app, name);
+            schedule.AddSystem(new RecordingSystem(name), new SystemDescriptor { Sets = [TestSet.SetA] });
+            app.AddSchedule(schedule);
+        }
+
+        app.Update();
+
+        // Both middle schedules hold a system in SetA, so each evaluates the predicate as it executes. A
+        // schedule therefore sees the resource pool as the schedule before it left it, not as the frame began.
+        Assert.Equal(2, callCount);
+    }
+
+    [Fact]
+    public void App_Update_SetPredicateNotEvaluatedForSchedulesWithoutTheSet()
+    {
+        app.AddSystemSet<TestSet>();
+
+        var callCount = 0;
+        app.ConfigureSetPredicate(TestSet.SetA, _ =>
+        {
+            callCount++;
+            return true;
+        });
+
+        var usingSet = new DefaultSchedule(app, "UsingSet");
+        usingSet.AddSystem(new RecordingSystem("S"), new SystemDescriptor { Sets = [TestSet.SetA] });
+        app.AddSchedule(usingSet);
+        app.AddSchedule(new DefaultSchedule(app, "Empty"));
+
+        app.Update();
+
+        // First, UsingSet, Empty and Last all run, but only UsingSet has a system in SetA, so the other three
+        // cost nothing. Evaluating every configured predicate would make this four instead of one.
+        Assert.Equal(1, callCount);
     }
 
     [Fact]

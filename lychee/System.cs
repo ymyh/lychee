@@ -54,8 +54,6 @@ public sealed class SystemInfo(
     /// </summary>
     internal readonly ISystem[] PreviousSystems = previousSystems;
 
-    internal bool Predicate = true;
-
     /// <summary>
     /// The sets this system belongs to plus all of their ancestors. Filled in every time the schedule is
     /// built, never read before that.

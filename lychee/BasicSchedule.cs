@@ -127,6 +127,13 @@ public abstract class BasicSchedule : ISchedule
 
     private Commands[][] multiThreadResults = [];
 
+    /// <summary>
+    /// Every set the systems of this schedule belong to, resolved to include ancestors. A build fills it in, and
+    /// it is what lets the execution evaluate exactly the set predicates that can filter this schedule's
+    /// systems, and no others.
+    /// </summary>
+    private SetInfo[] usedSets = [];
+
     private readonly App app;
 
     private readonly ILogger logger;
@@ -331,6 +338,7 @@ public abstract class BasicSchedule : ISchedule
         ExecutionGraph.Clear();
         frozenDagNodes = [];
         multiThreadResults = [];
+        usedSets = [];
         builtVersion = -1;
     }
 
@@ -421,8 +429,14 @@ public abstract class BasicSchedule : ISchedule
 
         // Report the conflicting pairs the recorded constraints leave unordered. Only explicit constraints
         // are in the graph at this point, so a conflicting pair sharing a layer is a pair that nothing but
-        // this schedule decides about.
-        DetectAmbiguities(ResolveOrder());
+        // this schedule decides about. Skipping the check means skipping the ordering it reads, not just
+        // the reporting.
+        ambiguitiesList.Clear();
+
+        if (AmbiguityDetection != AmbiguityDetectionEnum.Ignore)
+        {
+            DetectAmbiguities(ResolveOrder());
+        }
 
         // Give every system the earliest layer it can take: after all of its explicit predecessors, and never
         // sharing a layer with a system it conflicts with. Systems that only read the same data, or that
@@ -433,24 +447,25 @@ public abstract class BasicSchedule : ISchedule
         // constraint and the layers below come out of the graph rather than from a private side table.
         AddConflictEdges(nodeList, layerDict);
 
-        var orderedList = ResolveOrder();
+        // Layering the graph is what gives every node its group, and it is also the check that the constraints
+        // can be satisfied at all. The list it returns holds the same nodes in execution order, which the
+        // grouping below does not need: nodeList already holds them in declaration order.
+        ResolveOrder();
 
-        var declarationIndexDict = new Dictionary<SystemInfo, int>(pendingSystems.Count);
+        frozenDagNodes = FreezeExecutionLayers(nodeList);
 
-        for (var i = 0; i < pendingSystems.Count; i++)
+        var maxLayerSize = 0;
+
+        foreach (var layer in frozenDagNodes)
         {
-            declarationIndexDict[pendingSystems[i]] = i;
+            maxLayerSize = Math.Max(maxLayerSize, layer.Length);
         }
 
-        // Systems in the same layer have no constraint between them; keep their declaration order so that the
-        // same configuration always produces the same order, even though it is not promised.
-        frozenDagNodes = orderedList
-            .OrderBy(node => node.Group)
-            .ThenBy(node => declarationIndexDict[node.Data])
-            .Freeze()
-            .AsExecutionGroup();
+        multiThreadResults = new Commands[maxLayerSize][];
 
-        multiThreadResults = new Commands[frozenDagNodes.Select(x => x.Length).DefaultIfEmpty(0).Max()][];
+        // The sets this schedule's systems belong to, already resolved to include ancestors, so the execution
+        // can evaluate their predicates without walking the nesting again.
+        usedSets = [.. membersDict.Keys];
 
         builtVersion = app.SystemSets.Version;
     }
@@ -617,6 +632,59 @@ public abstract class BasicSchedule : ISchedule
     }
 
     /// <summary>
+    /// Turns the laid-out graph into the layers the execution loop walks: one array of frozen nodes per layer,
+    /// in layer order, each holding its systems in declaration order.
+    /// Resolving the graph leaves every node carrying its layer as <see cref="DAGNode{T}.Group"/>, and
+    /// <paramref name="nodeList"/> holds the nodes in declaration order, so walking it once and dropping each
+    /// node into the bucket of its layer is all it takes. The result is the order a sort by layer and then by
+    /// declaration index would give, without the sort: layers come out in order because the buckets are
+    /// numbered by group, and a layer holds its systems in declaration order because that is the order they
+    /// were put in. Nothing else decides the order inside a layer, so it has to come from somewhere
+    /// reproducible, and declaration order is that somewhere.
+    /// </summary>
+    /// <param name="nodeList">The nodes of the resolved graph, in declaration order.</param>
+    /// <returns>One array of frozen nodes per layer, in layer order. Empty when there are no systems.</returns>
+    private static FrozenDAGNode<SystemInfo>[][] FreezeExecutionLayers(List<DAGNode<SystemInfo>> nodeList)
+    {
+        var maxGroup = -1;
+
+        foreach (var node in nodeList)
+        {
+            maxGroup = Math.Max(maxGroup, node.Group);
+        }
+
+        // Layers are numbered from zero without gaps, so indexing by group orders them and keeps each whole.
+        var layerList = new List<DAGNode<SystemInfo>>[maxGroup + 1];
+
+        for (var i = 0; i <= maxGroup; i++)
+        {
+            layerList[i] = [];
+        }
+
+        foreach (var node in nodeList)
+        {
+            layerList[node.Group].Add(node);
+        }
+
+        var frozenLayerList = new FrozenDAGNode<SystemInfo>[layerList.Length][];
+
+        for (var i = 0; i < layerList.Length; i++)
+        {
+            var layer = layerList[i];
+            var frozenLayer = new FrozenDAGNode<SystemInfo>[layer.Count];
+
+            for (var j = 0; j < layer.Count; j++)
+            {
+                frozenLayer[j] = new FrozenDAGNode<SystemInfo>(layer[j]);
+            }
+
+            frozenLayerList[i] = frozenLayer;
+        }
+
+        return frozenLayerList;
+    }
+
+    /// <summary>
     /// Packs the systems into layers: each takes the earliest layer that comes after everything it was
     /// explicitly ordered behind and that holds no system it conflicts with. Systems that only read the same
     /// data, or that touch disjoint data, therefore share a layer and run in parallel.
@@ -739,13 +807,6 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     private void DetectAmbiguities(List<DAGNode<SystemInfo>> explicitOrderList)
     {
-        ambiguitiesList.Clear();
-
-        if (AmbiguityDetection == AmbiguityDetectionEnum.Ignore)
-        {
-            return;
-        }
-
         // The nodes come out layer by layer, so a change of group starts the next layer.
         var layerGroupList = new List<(int Group, List<SystemInfo> Members)>();
 
@@ -1027,8 +1088,11 @@ public abstract class BasicSchedule : ISchedule
     /// </summary>
     protected void DoExecute()
     {
-        app.SystemSets.ComputeAllPredicates();
+        // Before the build there is no knowing which sets this schedule's systems belong to, and a build that
+        // fails has nothing worth evaluating predicates for, so the evaluation waits until the graph is resolved.
         Build();
+
+        app.SystemSets.ComputePredicates(usedSets);
 
         if (needConfigure)
         {
@@ -1038,21 +1102,6 @@ public abstract class BasicSchedule : ISchedule
 
         foreach (var group in frozenDagNodes)
         {
-            foreach (var frozenDagNode in group)
-            {
-                var predicate = frozenDagNode.Data.System.Predicate(app.ResourcePool);
-
-                foreach (var set in frozenDagNode.Data.EffectiveSets)
-                {
-                    if (app.SystemSets.SetPredicateResultDict.TryGetValue(set, out var setResult))
-                    {
-                        predicate &= setResult;
-                    }
-                }
-
-                frozenDagNode.Data.Predicate = predicate;
-            }
-
             var multiThread = false;
 
             for (var i = 0; i < group.Length; i++)
@@ -1061,7 +1110,20 @@ public abstract class BasicSchedule : ISchedule
                 var idx = i;
                 multiThreadResults[idx] = [];
 
-                if (!node.Data.Predicate)
+                // A system runs unless a set it belongs to says otherwise. The sets were resolved by the build,
+                // and their results by ComputePredicates, so this is only a lookup per set, done where the
+                // decision is used rather than in a pass of its own.
+                var predicate = true;
+
+                foreach (var set in node.Data.EffectiveSets)
+                {
+                    if (app.SystemSets.SetPredicateResultDict.TryGetValue(set, out var setResult))
+                    {
+                        predicate &= setResult;
+                    }
+                }
+
+                if (!predicate)
                 {
                     continue;
                 }

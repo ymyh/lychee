@@ -861,6 +861,54 @@ the removed one. Use `Remove(handle)` when the element is already known.
   identity inside the element when you need to distinguish elements across removals.
 - `ShrinkToFit`, `Reshape`, `Splice`, `Sort`, `Unique`, reverse iteration and block views are not implemented yet.
 
+## Performance Benchmarks
+
+`lychee.Benchmarks` is a [BenchmarkDotNet](https://benchmarkdotnet.org/) project that measures `Hive<T>` against
+`List<T>`.
+
+### Running
+
+```bash
+# Every benchmark (takes several minutes)
+dotnet run --project lychee.Benchmarks -c Release -- --filter '*'
+
+# A single class
+dotnet run --project lychee.Benchmarks -c Release -- --filter '*AddBenchmarks*'
+
+# List everything without running it
+dotnet run --project lychee.Benchmarks -c Release -- --list flat
+```
+
+**Always pass `-c Release`.** Reports land in `BenchmarkDotNet.Artifacts/`, which is git-ignored.
+
+The project is part of `lychee.sln` but **excluded from the solution build** (its `Build.0` entries were removed),
+so `dotnet build lychee.sln` and any CI that builds the solution never compile it. Build and run it explicitly
+with the commands above.
+
+### What is measured
+
+| Class | Question it answers |
+|---|---|
+| `AddBenchmarks` | block based growth vs array based growth; the cost of the free list fast path after a mass removal |
+| `RemoveBenchmarks` | O(1) hole based removal vs `List.RemoveAt` shifting removal |
+| `IterationBenchmarks` | jump based iteration vs contiguous iteration, and how much hole density costs (`HoleRatio` 0 / 0.25 / 0.5 / 0.9) |
+| `MutationDuringIterationBenchmarks` | `RemoveCurrent()` while walking vs `List.RemoveAll` |
+| `CapacityBenchmarks` | `Reserve` / `Clear` / `Clear` followed by a refill |
+| `ReferenceBenchmarks` | reading through a stable `T*`, and the cost of recovering a handle with `GetHandle` |
+
+### How to read the results
+
+- **`RemoveBenchmarks` is not a same-semantics comparison.** `Hive.Remove` leaves a hole and moves nothing, while
+  `List.RemoveAt` memmoves the tail on every removal. Those numbers describe two different cost models, not two
+  implementations of the same operation.
+- `List<T>` cannot express "stable reference" at all, so `ReferenceBenchmarks` compares against
+  `CollectionsMarshal.AsSpan`, the closest equivalent the BCL offers.
+- The mutating benchmarks need a fresh container per invocation, so they run with `InvocationCount=1`. That adds a
+  fixed per-invocation overhead of roughly 5–10 µs: trust the `Count = 100000` rows, and read the `Count = 1000`
+  rows for trends only.
+- `[MemoryDiagnoser]` reports **managed** allocations only. `NativeMemory.AlignedAlloc` is invisible to it — watch
+  `Capacity` and `BlockCount` when reasoning about native memory.
+
 ## System Requirements
 
 - .NET 10.0

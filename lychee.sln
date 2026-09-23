@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee_sg", "lychee_sg\lych
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee.Tests", "lychee.Tests\lychee.Tests.csproj", "{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lychee.Benchmarks", "lychee.Benchmarks\lychee.Benchmarks.csproj", "{0953C29C-DD03-4D05-8A7F-CC6FF699607C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,12 @@ Global
 		{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}.Release|x64.Build.0 = Release|Any CPU
 		{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}.Release|x86.ActiveCfg = Release|Any CPU
 		{0DFEE175-3F3F-4B92-90A5-4C9F4183F03E}.Release|x86.Build.0 = Release|Any CPU
+		{0953C29C-DD03-4D05-8A7F-CC6FF699607C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0953C29C-DD03-4D05-8A7F-CC6FF699607C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0953C29C-DD03-4D05-8A7F-CC6FF699607C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0953C29C-DD03-4D05-8A7F-CC6FF699607C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0953C29C-DD03-4D05-8A7F-CC6FF699607C}.Release|x64.ActiveCfg = Release|Any CPU
+		{0953C29C-DD03-4D05-8A7F-CC6FF699607C}.Release|x86.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -78,6 +78,21 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     public IEnumerable<(DAGNode<T> From, DAGNode<T> To)> Edges => EnumerateEdges();
 
     /// <summary>
+    /// The nodes of the graph by reference, so that adding an edge can tell whether its endpoints belong to the
+    /// graph without scanning <see cref="Nodes"/>. Maintained by <see cref="AddNode"/> and <see cref="Clear"/>,
+    /// which are the only ways a node enters or leaves the graph.
+    /// </summary>
+    private readonly HashSet<DAGNode<T>> nodeSet = [];
+
+    /// <summary>
+    /// The edges of the graph, which is what lets <see cref="TryAddEdge"/> reject a duplicate without scanning a
+    /// node's children. This turns adding an edge from work proportional to the graph into constant work, which
+    /// matters most when a caller expands a group ordering into one edge per pair of members.
+    /// Maintained by <see cref="TryAddEdge"/>, <see cref="RemoveEdge"/> and <see cref="Clear"/>.
+    /// </summary>
+    private readonly HashSet<(DAGNode<T> From, DAGNode<T> To)> edgeSet = [];
+
+    /// <summary>
     /// Reusable queue for validation (cached to avoid per-call allocation).
     /// </summary>
     private readonly Queue<DAGNode<T>> validationQueue = [];
@@ -148,6 +163,8 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     public DAGNode<T> AddNode(DAGNode<T> node)
     {
         Nodes.Add(node);
+        nodeSet.Add(node);
+
         return node;
     }
 
@@ -187,12 +204,12 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
             throw new ArgumentException("Can't add edge because `from` is the same as `to`");
         }
 
-        if (!Nodes.Contains(from) || !Nodes.Contains(to))
+        if (!nodeSet.Contains(from) || !nodeSet.Contains(to))
         {
             throw new ArgumentException("Can't add edge because at least one of the nodes is not in the graph");
         }
 
-        if (from.Children.Contains(to))
+        if (!edgeSet.Add((from, to)))
         {
             return false;
         }
@@ -212,6 +229,7 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     {
         from.Children.Remove(to);
         to.Parents.Remove(from);
+        edgeSet.Remove((from, to));
     }
 
     /// <summary>
@@ -266,6 +284,8 @@ public sealed class DirectedAcyclicGraph<T> : IEnumerable<DAGNode<T>>
     public void Clear()
     {
         Nodes.Clear();
+        nodeSet.Clear();
+        edgeSet.Clear();
     }
 
     /// <summary>
@@ -341,7 +361,7 @@ public static class DirectedAcyclicGraphExtensions
         /// <returns>A 2D array where each inner array contains nodes that can be executed in parallel.</returns>
         public FrozenDAGNode<T>[][] AsExecutionGroup()
         {
-            return nodes.GroupBy(x => new { x.Group }).Select(x => x.ToArray()).ToArray();
+            return nodes.GroupBy(x => x.Group).Select(x => x.ToArray()).ToArray();
         }
     }
 }

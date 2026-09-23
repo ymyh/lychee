@@ -60,6 +60,13 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
 
     private readonly DirectedAcyclicGraph<SetInfo> orderGraph = [];
 
+    /// <summary>
+    /// Indexes the nodes of <see cref="orderGraph"/> by their set, so that a set configured more than once is
+    /// found instead of searched for. Kept in step with the graph: nodes are only ever added by
+    /// <see cref="FindOrCreateNode"/>.
+    /// </summary>
+    private readonly Dictionary<SetInfo, DAGNode<SetInfo>> orderNodeDict = [];
+
     private readonly Dictionary<SetInfo, Predicate> setPredicateDict = [];
 
     private readonly Dictionary<SetInfo, SetInfo> parentDict = [];
@@ -118,7 +125,8 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// </summary>
     /// <typeparam name="T">The enum type of the set.</typeparam>
     /// <param name="set">The set to attach the predicate to.</param>
-    /// <param name="predicate">The predicate, evaluated once per execution against the resource pool.</param>
+    /// <param name="predicate">The predicate, evaluated once per frame against the resource pool, and shared by
+    /// every schedule that frame runs.</param>
     /// <exception cref="InvalidOperationException">Thrown when the set type has not been registered.</exception>
     public void ConfigureSetPredicate<T>(T set, Predicate predicate) where T : Enum
     {
@@ -153,6 +161,8 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// <summary>
     /// Evaluates every configured set predicate against the resource pool and caches the result, so the
     /// execution path can read them without invoking user code.
+    /// A caller that is about to run only part of its systems can ask for less with
+    /// <see cref="ComputePredicates(Enum[])"/>.
     /// </summary>
     public void ComputeAllPredicates()
     {
@@ -160,6 +170,18 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
         {
             SetPredicateResultDict[info] = func(resourcePool);
         }
+    }
+
+    /// <summary>
+    /// Evaluates the predicates of the given sets and caches the results, so the execution path can read them
+    /// without invoking user code. Ancestors are included, so a child set is evaluated with its parent's
+    /// predicate even when only the child was named, and a set without a predicate is simply left out.
+    /// </summary>
+    /// <param name="sets">The sets to evaluate, together with their ancestors.</param>
+    /// <exception cref="InvalidOperationException">Thrown when a set type has not been registered.</exception>
+    public void ComputePredicates(Enum[] sets)
+    {
+        ComputePredicates(GetEffectiveSystemSets(sets));
     }
 
     /// <summary>
@@ -173,6 +195,24 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
 #endregion
 
 #region Internal Methods
+
+    /// <summary>
+    /// Evaluates the predicates of the given sets and caches the results. This is the resolved form of
+    /// <see cref="ComputePredicates(Enum[])"/>: the sets arrive already expanded to include their ancestors, so
+    /// nothing has to be resolved again, which is what a schedule wants when it asks for exactly the sets its
+    /// own systems belong to. A set without a predicate is left out.
+    /// </summary>
+    /// <param name="sets">The sets to evaluate, resolved to set identities.</param>
+    internal void ComputePredicates(SetInfo[] sets)
+    {
+        foreach (var set in sets)
+        {
+            if (setPredicateDict.TryGetValue(set, out var func))
+            {
+                SetPredicateResultDict[set] = func(resourcePool);
+            }
+        }
+    }
 
     /// <summary>
     /// Checks the recorded constraints for contradictions. Configuration only records, so this is where an
@@ -261,19 +301,19 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// </summary>
     private static string GetSetName(Enum set)
     {
-        return set.GetType().GetEnumName(set) ?? set.ToString();
+        return set.ToString();
     }
 
     private DAGNode<SetInfo> FindOrCreateNode(SetInfo info)
     {
-        var existing = orderGraph.FirstOrDefault(n => n.Data.Equals(info));
-        if (existing != null)
+        if (orderNodeDict.TryGetValue(info, out var existing))
         {
             return existing;
         }
 
         var node = new DAGNode<SetInfo>(info);
         orderGraph.AddNode(node);
+        orderNodeDict[info] = node;
 
         return node;
     }
@@ -327,22 +367,36 @@ public sealed class SystemSets(TypeRegistrar typeRegistrar, ResourcePool resourc
     /// </summary>
     private void ThrowIfNestingContainsCycle()
     {
+        // Nesting gives a set at most one parent, so walking upwards from a set is a single path and needs no
+        // stack: seeing a set twice on the same path is the whole test.
+        // A set already proven to reach an end cannot be part of a cycle, so reaching one ends the walk early
+        // and everything below it is safe too. That is what keeps this linear in the number of sets.
+        var safeSet = new HashSet<SetInfo>();
+        var pathList = new List<SetInfo>();
+        var pathSet = new HashSet<SetInfo>();
+
         foreach (var child in parentDict.Keys)
         {
-            var chainList = new List<string>();
-            var chainSet = new HashSet<SetInfo>();
+            pathList.Clear();
+            pathSet.Clear();
+
             var current = child;
 
-            while (current != null)
+            while (current != null && !safeSet.Contains(current))
             {
-                chainList.Add(current.Name);
+                pathList.Add(current);
 
-                if (!chainSet.Add(current))
+                if (!pathSet.Add(current))
                 {
-                    throw new InvalidOperationException($"Set nesting contains a cycle: {string.Join(" -> ", chainList)}");
+                    throw new InvalidOperationException($"Set nesting contains a cycle: {string.Join(" -> ", pathList.Select(set => set.Name))}");
                 }
 
                 current = parentDict.GetValueOrDefault(current);
+            }
+
+            foreach (var set in pathList)
+            {
+                safeSet.Add(set);
             }
         }
     }

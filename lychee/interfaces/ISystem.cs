@@ -31,6 +31,13 @@ public interface ISystem
     /// </summary>
     /// <param name="pool">The resource pool from <see cref="App"/></param>
     /// <returns>whether the system should be executed.</returns>
+    /// <remarks>
+    /// This method is a declaration point, not a call site: the framework never invokes it through the
+    /// interface. Declaring it in a system makes the source generator open <c>ExecuteAG</c> with a call to it,
+    /// and a system that does not declare one pays nothing at all, not even the call.
+    /// It runs where <c>ExecuteAG</c> runs, which in a parallel schedule means a worker thread, so it must only
+    /// read the resource pool.
+    /// </remarks>
     public bool Predicate(ResourcePool pool)
     {
         return true;

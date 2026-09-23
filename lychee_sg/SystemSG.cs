@@ -24,6 +24,13 @@ namespace lychee_sg
 
         public bool HasBeforeExecute;
 
+        /// <summary>
+        /// Whether the system declares a <c>Predicate</c> method of its own. The declaration is what opts the
+        /// system in: a system without one gets no call at all in <c>ExecuteAG</c>, rather than a call that
+        /// always returns true.
+        /// </summary>
+        public bool HasPredicate;
+
         public bool MultiThread;
     }
 
@@ -145,6 +152,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
             var classDecl = (ClassDeclarationSyntax)context.Node;
             var hasBeforeExecute = false;
             var hasAfterExecute = false;
+            var hasPredicate = false;
             ParamInfo[] paramList = null;
 
             var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDecl);
@@ -216,6 +224,14 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                         var symbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
                         hasAfterExecute = symbol.Parameters.Length == 0;
                     }
+
+                    // Only the name is matched here, so that a Predicate with the wrong signature still produces
+                    // a call the compiler rejects, instead of being silently ignored.
+                    if (memberDecl.Kind() == SyntaxKind.MethodDeclaration &&
+                        methodDecl.Identifier.Text == "Predicate")
+                    {
+                        hasPredicate = true;
+                    }
                 }
             }
 
@@ -233,6 +249,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                 Params = paramList,
                 HasBeforeExecute = hasBeforeExecute,
                 HasAfterExecute = hasAfterExecute,
+                HasPredicate = hasPredicate,
                 MultiThread = multiThread,
             };
         }
@@ -366,9 +383,11 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                 body = $@"{declResourceCode}        Execute({execParams});";
             }
 
+            // An opting-out system returns no commands at all, so the caller neither collects nor commits
+            // anything for it, which is what skipping the call would have done.
             return $@"
     public unsafe Commands[] ExecuteAG()
-    {{{(systemInfo.HasBeforeExecute ? "\n        BeforeExecute();" : "")}
+    {{{(systemInfo.HasPredicate ? "\n        if (!Predicate(SystemDataAG.Pool)) return [];" : "")}{(systemInfo.HasBeforeExecute ? "\n        BeforeExecute();" : "")}
 {body}{(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
         return SystemDataAG.Commands;
     }}";

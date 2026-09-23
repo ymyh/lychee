@@ -312,7 +312,8 @@ public sealed class App : IDisposable
     /// </summary>
     /// <typeparam name="T">The enum type of the set.</typeparam>
     /// <param name="set">The set to attach the predicate to.</param>
-    /// <param name="predicate">The predicate, evaluated once per execution against the resource pool.</param>
+    /// <param name="predicate">The predicate, evaluated once per frame against the resource pool, and shared by
+    /// every schedule that frame runs.</param>
     /// <exception cref="InvalidOperationException">Thrown when the set type has not been registered.</exception>
     public void ConfigureSetPredicate<T>(T set, Func<ResourcePool, bool> predicate) where T : Enum
     {

@@ -50,6 +50,8 @@ public sealed class App : IDisposable
 
     public SystemSchedules SystemSchedules { get; }
 
+    public ILogger Logger { get; }
+
 #region Internal Fields
 
     internal readonly ThreadPool ThreadPool;
@@ -84,6 +86,7 @@ public sealed class App : IDisposable
     {
         // Assigned first: the default schedule built below creates its logger from this factory.
         LoggerFactory = descriptor.LoggerFactory;
+        Logger = LoggerFactory.CreateLogger($"lychee.app");
 
         World = new(TypeRegistrar, descriptor.ChunkSizeHint);
         SystemSchedules = new(this);
@@ -112,12 +115,13 @@ public sealed class App : IDisposable
     /// Events enable type-safe, decoupled communication between systems.
     /// </summary>
     /// <typeparam name="T">The event type.</typeparam>
-    public void AddEvent<T>()
+    /// <param name="timing">When events written during an update become readable.</param>
+    public void AddEvent<T>(EventPublishTiming timing = EventPublishTiming.UpdateEnd)
     {
         var ev = new Event<T>();
 
         ResourcePool.AddResource(ev);
-        World.AddEvent(ev);
+        World.AddEvent(ev, timing);
     }
 
     /// <summary>
@@ -346,14 +350,6 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Removes all system schedules from the application.
-    /// </summary>
-    public void ClearSchedules()
-    {
-        SystemSchedules.ClearSchedules();
-    }
-
-    /// <summary>
     /// Retrieves a system schedule by name.
     /// </summary>
     /// <param name="name">The schedule name.</param>
@@ -433,7 +429,7 @@ public sealed class App : IDisposable
     {
         if (SystemSchedules.Execute(scheduleEnd))
         {
-           World.SwapEvents();
+           World.SwapEvents(EventPublishTiming.UpdateEnd);
         }
     }
 

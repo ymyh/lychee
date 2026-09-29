@@ -24,13 +24,13 @@ public sealed class SystemSchedules
 
 #region Private Fields
 
+    private readonly App app;
+
     private readonly List<ISchedule> schedules = [];
 
     private readonly Dictionary<string, ISchedule> scheduleDict = [];
 
     private int lastScheduleIndex;
-
-    private bool needClear;
 
 #endregion
 
@@ -38,6 +38,7 @@ public sealed class SystemSchedules
 
     internal SystemSchedules(App app)
     {
+        this.app = app;
         First = new(app, nameof(First));
         Last = new(app, nameof(Last));
 
@@ -104,19 +105,6 @@ public sealed class SystemSchedules
     }
 
     /// <summary>
-    /// Requests that all user-added schedules be cleared after the current execution cycle completes.
-    /// The built-in <see cref="First"/> and <see cref="Last"/> schedules are preserved.
-    /// </summary>
-    /// <remarks>
-    /// The clearing is deferred until the end of the current execution cycle to avoid
-    /// modifying the collection during iteration.
-    /// </remarks>
-    public void ClearSchedules()
-    {
-        needClear = true;
-    }
-
-    /// <summary>
     /// Executes schedules starting from the last executed index, optionally stopping before a specified schedule.
     /// </summary>
     /// <param name="scheduleEnd">The schedule at which to stop execution (exclusive); null to execute all remaining schedules.</param>
@@ -136,6 +124,7 @@ public sealed class SystemSchedules
             }
 
             schedules[i].Execute();
+            app.World.SwapEvents(EventPublishTiming.ScheduleEnd);
         }
 
         lastScheduleIndex = i;
@@ -143,18 +132,6 @@ public sealed class SystemSchedules
         if (lastScheduleIndex == schedules.Count)
         {
             lastScheduleIndex = 0;
-
-            if (needClear)
-            {
-                schedules.Clear();
-                scheduleDict.Clear();
-
-                schedules.Add(First);
-                schedules.Add(Last);
-
-                needClear = false;
-            }
-
             return true;
         }
 

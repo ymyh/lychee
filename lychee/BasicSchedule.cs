@@ -1006,6 +1006,8 @@ public abstract class BasicSchedule : ISchedule
             Configure();
             needConfigure = false;
         }
+
+        app.World.SwapEvents(EventPublishTiming.CommitPoint);
     }
 
 #endregion

@@ -25,7 +25,11 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
 #region Private Fields
 
-    private readonly List<IEvent> events = [];
+    private readonly List<IEvent> commitPointEvents = [];
+
+    private readonly List<IEvent> scheduleEndEvents = [];
+
+    private readonly List<IEvent> updateEndEvents = [];
 
     private bool disposed;
 
@@ -33,9 +37,23 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
 #region Internal Methods
 
-    internal void AddEvent(IEvent ev)
+    // An event belongs to exactly one bucket. It has to be that way because swapping twice with nothing
+    // read in between drops the batch the first swap published, which is what happens when an event is
+    // published both earlier and at the end of the update.
+    internal void AddEvent(IEvent ev, EventPublishTiming timing)
     {
-        events.Add(ev);
+        switch (timing)
+        {
+            case EventPublishTiming.CommitPoint:
+                commitPointEvents.Add(ev);
+                break;
+            case EventPublishTiming.ScheduleEnd:
+                scheduleEndEvents.Add(ev);
+                break;
+            case EventPublishTiming.UpdateEnd:
+                updateEndEvents.Add(ev);
+                break;
+        }
     }
 
     internal void RemoveAllEntities()
@@ -44,8 +62,25 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
         ArchetypeManager.ClearData();
     }
 
-    internal void SwapEvents()
+    internal void SwapEvents(EventPublishTiming timing)
     {
+        List<IEvent> events;
+
+        switch (timing)
+        {
+            case EventPublishTiming.CommitPoint:
+                events = commitPointEvents;
+                break;
+            case EventPublishTiming.ScheduleEnd:
+                events = scheduleEndEvents;
+                break;
+            case EventPublishTiming.UpdateEnd:
+                events = updateEndEvents;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(timing), timing, null);
+        }
+
         foreach (var ev in events)
         {
             ev.ExchangeFrontBack();

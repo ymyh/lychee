@@ -42,6 +42,8 @@ namespace lychee_sg
         StructResource,
         Entity,
         Commands,
+        EventWriter,
+        EventReader,
     }
 
     internal struct ParamInfo
@@ -92,6 +94,25 @@ namespace lychee_sg
                     .Where(p => p.ParamKind == ParamKind.Component || p.ParamKind == ParamKind.ComponentSpan).ToArray();
                 var resourceTypes = sysInfo.Params.Where(p =>
                     p.ParamKind == ParamKind.ClassResource || p.ParamKind == ParamKind.StructResource).ToArray();
+                var eventTypes = sysInfo.Params.Where(p =>
+                    p.ParamKind == ParamKind.EventWriter || p.ParamKind == ParamKind.EventReader).ToArray();
+
+                if (sysInfo.MultiThread && eventTypes.Any(p => p.ParamKind == ParamKind.EventReader))
+                {
+                    var readerParam = eventTypes.First(p => p.ParamKind == ParamKind.EventReader);
+                    var descriptor = new DiagnosticDescriptor(
+                        "LYCHEE_COMPILE_ERR_1006",
+                        "Multithreaded system cannot read events",
+                        "System '{0}' is multithreaded, so every worker would share the cursor of {1}. Read events from a single threaded system instead.",
+                        "System Auto Implementation",
+                        DiagnosticSeverity.Error,
+                        isEnabledByDefault: true
+                    );
+
+                    spc.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, sysInfo.Name, readerParam.Type.ToDisplayString()));
+                    return;
+                }
+
                 var sb = new StringBuilder($@"
 using System;
 using System.Runtime.InteropServices;
@@ -126,7 +147,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
     {{
         SystemDataAG.Archetypes = SystemDataAG.Archetypes.ConcatCollection(app.World.ArchetypeManager.MatchArchetypesByPredicate(filterInfo.AllFilter, filterInfo.AnyFilter, filterInfo.NoneFilter, SystemDataAG.TypeIdList, ref SystemDataAG.LastArchetypeIdx));
     }}
-{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
+{MakeExecuteAGCode(sysInfo.Params, componentTypes, resourceTypes, eventTypes, sysInfo, componentTypes.Any(t => t.ParamKind == ParamKind.ComponentSpan))}
 }}
 
 ");
@@ -186,6 +207,14 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                             else if (typeName.StartsWith("System.Span") || typeName.StartsWith("System.ReadOnlySpan"))
                             {
                                 paramKind = ParamKind.ComponentSpan;
+                            }
+                            else if (typeName.StartsWith("lychee.EventWriter"))
+                            {
+                                paramKind = ParamKind.EventWriter;
+                            }
+                            else if (typeName.StartsWith("lychee.EventReader"))
+                            {
+                                paramKind = ParamKind.EventReader;
                             }
 
                             var attr = x.GetAttributes().FirstOrDefault(a =>
@@ -353,7 +382,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
         }
 
         private static string MakeExecuteAGCode(ParamInfo[] allParams, ParamInfo[] componentParams,
-            ParamInfo[] resourceParams, SystemInfo systemInfo, bool hasComponentSpan)
+            ParamInfo[] resourceParams, ParamInfo[] eventParams, SystemInfo systemInfo, bool hasComponentSpan)
         {
             string body;
             string entityParamName = null;
@@ -368,10 +397,11 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
 
             var execParams = GenExecuteParams(allParams, systemInfo.MultiThread, hasComponentSpan);
             var declResourceCode = GenResourceCode(resourceParams);
+            var declEventCode = GenEventCode(eventParams);
 
             if (componentParams.Length > 0)
             {
-                body = $@"{declResourceCode}
+                body = $@"{declEventCode}{declResourceCode}
         foreach (var _archetype in SystemDataAG.Archetypes)
         {{
 {GenIterArchetypeCode(componentParams, execParams, entityParamName, hasComponentSpan, systemInfo.MultiThread)}
@@ -380,14 +410,14 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
             }
             else
             {
-                body = $@"{declResourceCode}        Execute({execParams});";
+                body = $@"{declEventCode}{declResourceCode}        Execute({execParams});";
             }
 
             // An opting-out system returns no commands at all, so the caller neither collects nor commits
             // anything for it, which is what skipping the call would have done.
             return $@"
     public unsafe Commands[] ExecuteAG()
-    {{{(systemInfo.HasPredicate ? "\n        if (!Predicate(SystemDataAG.Pool)) return [];" : "")}{(systemInfo.HasBeforeExecute ? "\n        BeforeExecute();" : "")}
+    {{{(systemInfo.HasPredicate ? "\n        if (!Predicate(SystemDataAG.Pool))\n        {\n            return [];\n        }\n" : "")}{(systemInfo.HasBeforeExecute ? "\n        BeforeExecute();" : "")}
 {body}{(systemInfo.HasAfterExecute ? "\n        AfterExecute();" : "")}
         return SystemDataAG.Commands;
     }}";
@@ -442,6 +472,27 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
             }
 
             return declResourceCode.ToString();
+        }
+
+        /// <summary>
+        /// Builds the writer/reader declarations for the event parameters. They are created once per call and
+        /// outside the archetype loop: the reader carries the cursor, so reusing one across executions would
+        /// leave it past the end of the new batch, and rebuilding one inside the loop would restart it per entity.
+        /// </summary>
+        private static string GenEventCode(ParamInfo[] eventParams)
+        {
+            var declEventCode = new StringBuilder();
+
+            foreach (var eventParam in eventParams)
+            {
+                var kindName = eventParam.ParamKind == ParamKind.EventWriter ? "EventWriter" : "EventReader";
+                var payload = ((INamedTypeSymbol)eventParam.Type).TypeArguments[0].ToDisplayString();
+
+                declEventCode.AppendLine(
+                    $"        var {eventParam.ParamName} = new {kindName}<{payload}>(SystemDataAG.Pool.GetResource<Event<{payload}>>());");
+            }
+
+            return declEventCode.ToString();
         }
 
         private static string GenIterArchetypeCode(ParamInfo[] componentParams, string execParams, string entityParamName,
@@ -628,6 +679,23 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
 
                     case ParamKind.Commands:
                         return multiThread ? "SystemDataAG.Commands[threadIdx]" : "SystemDataAG.Commands[0]";
+
+                    case ParamKind.EventWriter:
+                    case ParamKind.EventReader:
+                        switch (param.RefKind)
+                        {
+                            case RefKind.In:
+                            case RefKind.RefReadOnlyParameter:
+                                return $"in {paramName}";
+                            case RefKind.Out:
+                                return $"out {paramName}";
+                            case RefKind.Ref:
+                                return $"ref {paramName}";
+                            case RefKind.None:
+                                return paramName;
+                        }
+
+                        break;
 
                     case ParamKind.Entity:
                         if (hasComponentSpan)

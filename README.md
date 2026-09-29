@@ -306,11 +306,12 @@ partial class MySystem
 ```
 
 The event system provides a thread-safe way to communicate between Systems using double buffering.
-Events sent in the current frame will be readable in the next update.
+Events written while a batch is readable stay invisible until the queue is published, which happens according to the
+`EventPublishTiming` chosen when the event was registered.
 
 ### Adding Events
 
-Events are registered as resources in the App:
+Events are registered as resources in the App. The timing says when events become readable:
 
 ```csharp
 // Define event data type
@@ -320,23 +321,27 @@ public struct DamageEvent
     public int Amount;
 }
 
-// Register event
+// Register event. UpdateEnd, the default, publishes at the end of the update so readers always see a whole
+// update worth of events. ScheduleEnd publishes at the end of every schedule, and CommitPoint at every commit
+// point, so later systems of the same update can react to what earlier ones did.
 app.AddEvent<DamageEvent>();
+app.AddEvent<HitEvent>(EventPublishTiming.ScheduleEnd);
+app.AddEvent<MoveEvent>(EventPublishTiming.CommitPoint);
 ```
 
 ### Sending Events
 
-Use the `[Resource]` attribute to access the event in a System:
+Declare an `EventWriter<T>` parameter. The writer resolves `Event<T>` from the resource pool for you:
 
 ```csharp
 [AutoImplSystem]
 partial class CombatSystem
 {
-    private static void Execute([Resource] Event<DamageEvent> damageEvent, ref Health health)
+    private static void Execute(EventWriter<DamageEvent> damageWriter, ref Health health)
     {
         if (health.Value <= 0)
         {
-            damageEvent.SendEvent(new DamageEvent { Target = entity, Amount = 10 });
+            damageWriter.Send(new DamageEvent { Target = entity, Amount = 10 });
         }
     }
 }
@@ -344,15 +349,16 @@ partial class CombatSystem
 
 ### Reading Events
 
-Events sent in the previous frame can be read using `GetEnumerable()`:
+Declare an `EventReader<T>` parameter. Its cursor belongs to the reader, so every System reads every event of a batch
+once no matter how many Systems read it:
 
 ```csharp
 [AutoImplSystem]
 partial class DamageDisplaySystem
 {
-    private static void Execute([Resource] Event<DamageEvent> damageEvent)
+    private static void Execute(EventReader<DamageEvent> damageReader)
     {
-        foreach (var ev in damageEvent.GetEnumerable())
+        while (damageReader.Read(out var ev))
         {
             Console.WriteLine($"Entity {ev.Target} took {ev.Amount} damage");
         }
@@ -360,7 +366,8 @@ partial class DamageDisplaySystem
 }
 ```
 
-**Note**: Events are automatically exchanged at the beginning of each update called.
+**Note**: The reader is created per execution, so its cursor starts at the beginning of the batch every time.
+A multi-threaded System cannot declare one: every worker would share the cursor, which is a compile error.
 
 ## State System
 

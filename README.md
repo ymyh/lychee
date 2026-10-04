@@ -1,4 +1,4 @@
-<div align="center"><img width="512" height="512" src="https://github.com/ymyh/lychee/blob/main/logo.png"/></div>
+<div align="center"><img width="512" height="512" src="https://github.com/ymyh/lychee/blob/main/logo.svg"/></div>
 
 # LYCHEE
 

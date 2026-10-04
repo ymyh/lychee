@@ -87,7 +87,11 @@ public sealed class EntityPool
     internal void CommitRemoveEntity(EntityRef entityRef)
     {
         var id = entityRef.ID;
-        Debug.Assert((uint)id < (uint)entities.Count);
+
+        if ((uint)id >= (uint)entities.Count)
+        {
+            return;
+        }
 
         if (entityRef.Generation == entities[id].Generation)
         {

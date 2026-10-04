@@ -131,7 +131,12 @@ public sealed class Table : IDisposable
         {
             chunk.Clear();
         }
-        Chunks.RemoveRange(1, Chunks.Count - 1);
+
+        // Tables of component-less archetypes have no chunks at all.
+        if (Chunks.Count > 1)
+        {
+            Chunks.RemoveRange(1, Chunks.Count - 1);
+        }
 
         lastAvailableViewIndex = 0;
     }

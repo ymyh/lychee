@@ -21,6 +21,12 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
     /// </summary>
     public readonly ArchetypeManager ArchetypeManager = new(typeRegistrar, chunkSizeHint);
 
+    /// <summary>
+    /// Maintains the parent-child hierarchy index. Writes are applied at command commit time;
+    /// systems may read it freely during execution.
+    /// </summary>
+    public readonly Hierarchy Hierarchy = new();
+
 #endregion
 
 #region Private Fields
@@ -60,6 +66,7 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
     {
         EntityPool.Clear();
         ArchetypeManager.ClearData();
+        Hierarchy.Clear();
     }
 
     internal void SwapEvents(EventPublishTiming timing)

@@ -57,12 +57,44 @@ public struct Entity(Commands commands, Archetype archetype)
     }
 
     /// <summary>
-    /// Despawns this entity, marking it for removal.
-    /// The entity will be fully removed when the commands are committed.
+    /// Despawns this entity and its entire subtree, marking them for removal.
+    /// The entities will be fully removed when the commands are committed.
+    /// To keep the children alive, call <see cref="DetachAllChildren"/> first.
     /// </summary>
     public void Despawn()
     {
         commands.RemoveEntity(in this);
+    }
+
+    /// <summary>
+    /// Attaches the given entity as a child of this entity, or re-parents it if it already
+    /// has a parent. The hierarchy index is updated when the commands are committed.
+    /// </summary>
+    /// <param name="child">The child entity reference.</param>
+    /// <returns>True if the operation was buffered; false if the child entity is invalid or removed.</returns>
+    public bool AddChild(EntityRef child)
+    {
+        return commands.AddChild(Ref, child);
+    }
+
+    /// <summary>
+    /// Detaches the given entity from this entity, turning it into a root.
+    /// Only takes effect if the entity's current parent is this entity.
+    /// </summary>
+    /// <param name="child">The child entity reference.</param>
+    /// <returns>True if the child was detached; false otherwise.</returns>
+    public bool RemoveChild(EntityRef child)
+    {
+        return commands.RemoveChild(Ref, child);
+    }
+
+    /// <summary>
+    /// Detaches all direct children of this entity, turning them into roots.
+    /// Grandchildren keep their own parents.
+    /// </summary>
+    public void DetachAllChildren()
+    {
+        commands.DetachAllChildren(Ref);
     }
 
     /// <summary>

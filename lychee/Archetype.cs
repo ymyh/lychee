@@ -469,7 +469,12 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
         ShrinkTable();
         dirty = false;
 
-        Debug.Assert(IsCoherent);
+        // EntityCount can exceed entities.Count here: multiple command buffers commit
+        // sequentially per round, and this merge may include slots reserved by later buffers
+        // whose CommitAddEntity has not run yet. The transient gap is unobservable because
+        // buffers commit back-to-back. The reverse direction (entity without a slot) is
+        // never legitimate.
+        Debug.Assert(EntityCount >= entities.Count);
     }
 
     internal void CommitAddEntity(EntityRef entityRef)

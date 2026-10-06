@@ -2,7 +2,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using lychee.collections;
-using lychee.components;
 using lychee.interfaces;
 
 namespace lychee;
@@ -41,29 +40,7 @@ public sealed class Commands(App app)
 
     private readonly SparseMap<Entity> removedEntityMap = [];
 
-    private readonly Hierarchy hierarchy = app.World.Hierarchy;
-
-    // Lazily allocated: most systems never touch the hierarchy, and Commands instances
-    // are created per system execution, so they should not pay for lists they never use.
-    private List<HierarchyOp>? hierarchyOpList;
-
-    private List<EntityRef>? descendantList;
-
-    private HashSet<int>? despawnedIdSet;
-
-    private readonly int childOfTypeId = app.TypeRegistrar.RegisterComponent<ChildOf>();
-
     internal EntityTransferInfo? TransferDstInfo;
-
-#endregion
-
-#region Public Properties
-
-    /// <summary>
-    /// Gets the world's parent-child hierarchy index. The index only reflects committed state;
-    /// structural changes must go through Commands methods and are applied at commit time.
-    /// </summary>
-    public Hierarchy Hierarchy => hierarchy;
 
 #endregion
 
@@ -104,11 +81,6 @@ public sealed class Commands(App app)
         var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
         modifiedEntityInfoMap[entityRef.ID] = entity;
 
-        if (typeof(T) == typeof(ChildOf))
-        {
-            RecordHierarchyOp(HierarchyOpKind.AddChild, entityRef, AsChildOf(in component).Parent);
-        }
-
         return entity;
     }
 
@@ -145,11 +117,6 @@ public sealed class Commands(App app)
         var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
         modifiedEntityInfoMap[entityRef.ID] = entity;
 
-        if (TryExtractBundleChildOf(in bundle, out var childOf))
-        {
-            RecordHierarchyOp(HierarchyOpKind.AddChild, entityRef, childOf.Parent);
-        }
-
         return entity;
     }
 
@@ -160,40 +127,30 @@ public sealed class Commands(App app)
     /// <returns>The newly created copy entity.</returns>
     public Entity CopyEntity(in Entity entity)
     {
-        // Refresh through the pool/buffer: the passed-in struct may be stale if the entity was
-        // modified through another Entity handle (e.g. Commands.AddChild) after it was obtained.
-        // This also subsumes the removed/invalid check.
-        if (!GetEntityByRef(entity.Ref, out var fresh))
+        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
         {
             throw new ArgumentException("Cannot copy an invalid entity");
         }
 
         var newEntityRef = entityPool.ReserveEntity();
-        var (newChunkIdx, newIdx) = fresh.Archetype.Reserve();
+        var (newChunkIdx, newIdx) = entity.Archetype.Reserve();
 
-        var typeIdList = fresh.Archetype.TypeIdList;
+        var typeIdList = entity.Archetype.TypeIdList;
         for (var i = 0; i < typeIdList.Length; i++)
         {
             unsafe
             {
-                var srcPtr = fresh.Archetype.Table.GetPtr(i, fresh.Pos.ChunkIdx, fresh.Pos.Idx);
-                var dstPtr = fresh.Archetype.Table.GetPtr(i, newChunkIdx, newIdx);
+                var srcPtr = entity.Archetype.Table.GetPtr(i, entity.Pos.ChunkIdx, entity.Pos.Idx);
+                var dstPtr = entity.Archetype.Table.GetPtr(i, newChunkIdx, newIdx);
                 NativeMemory.Copy(
                     srcPtr,
                     dstPtr,
-                    (nuint)fresh.Archetype.Table.Layout.TypeInfoList[i].Size);
+                    (nuint)entity.Archetype.Table.Layout.TypeInfoList[i].Size);
             }
         }
 
-        var newEntity = new Entity(this, fresh.Archetype, newEntityRef, new((ushort)newChunkIdx, (ushort)newIdx));
+        var newEntity = new Entity(this, entity.Archetype, newEntityRef, new((ushort)newChunkIdx, (ushort)newIdx));
         modifiedEntityInfoMap[newEntityRef.ID] = newEntity;
-
-        // The relationship is cloned (but not the subtree), matching Bevy's entity cloning.
-        if (HasChildOf(fresh.Archetype))
-        {
-            var childOf = GetEntityComponent<ChildOf>(fresh.Archetype, fresh.Pos);
-            RecordHierarchyOp(HierarchyOpKind.AddChild, newEntityRef, childOf.Parent);
-        }
 
         return newEntity;
     }
@@ -216,8 +173,6 @@ public sealed class Commands(App app)
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity.Ref);
         removedEntityMap[entity.ID] = entity;
-
-        RecordHierarchyOp(HierarchyOpKind.Despawn, entity.Ref);
     }
 
     /// <summary>
@@ -242,8 +197,6 @@ public sealed class Commands(App app)
         modifiedEntityInfoMap.Remove(e.ID);
         entityPool.MarkRemoveEntity(e.Ref);
         removedEntityMap[e.ID] = e;
-
-        RecordHierarchyOp(HierarchyOpKind.Despawn, e.Ref);
     }
 
     /// <summary>
@@ -309,13 +262,6 @@ public sealed class Commands(App app)
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
 
-        // Adding ChildOf to an entity that already has it throws above (duplicate type id
-        // in the target archetype), so reaching here means a fresh attachment.
-        if (typeof(T) == typeof(ChildOf))
-        {
-            RecordHierarchyOp(HierarchyOpKind.AddChild, entity.Ref, AsChildOf(in component).Parent);
-        }
-
         return true;
     }
 
@@ -363,11 +309,6 @@ public sealed class Commands(App app)
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
 
-        if (TryExtractBundleChildOf(in bundle, out var childOf))
-        {
-            RecordHierarchyOp(HierarchyOpKind.AddChild, entity.Ref, childOf.Parent);
-        }
-
         return true;
     }
 
@@ -385,8 +326,6 @@ public sealed class Commands(App app)
         }
 
         var archetype = entity.Archetype;
-        var hadChildOf = typeof(T) == typeof(ChildOf) && HasChildOf(archetype);
-
         this.RemoveComponentTransferInfo<T>(archetype);
 
         Debug.Assert(TransferDstInfo != null);
@@ -405,11 +344,6 @@ public sealed class Commands(App app)
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
 
-        if (hadChildOf)
-        {
-            RecordHierarchyOp(HierarchyOpKind.RemoveChild, entity.Ref);
-        }
-
         return true;
     }
 
@@ -427,8 +361,6 @@ public sealed class Commands(App app)
         }
 
         var archetype = entity.Archetype;
-        var hadChildOf = HasChildOf(archetype);
-
         this.RemoveComponentsTransferInfo<T>(archetype);
 
         Debug.Assert(TransferDstInfo != null);
@@ -447,11 +379,6 @@ public sealed class Commands(App app)
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
 
-        if (hadChildOf && !HasChildOf(TransferDstInfo.Archetype))
-        {
-            RecordHierarchyOp(HierarchyOpKind.RemoveChild, entity.Ref);
-        }
-
         return true;
     }
 
@@ -469,8 +396,6 @@ public sealed class Commands(App app)
         }
 
         var archetype = entity.Archetype;
-        var hadChildOf = HasChildOf(archetype);
-
         this.RemoveComponentsTupleTransferInfo<T>(archetype);
 
         Debug.Assert(TransferDstInfo != null);
@@ -488,11 +413,6 @@ public sealed class Commands(App app)
         entity.Archetype = TransferDstInfo.Archetype;
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
-
-        if (hadChildOf && !HasChildOf(TransferDstInfo.Archetype))
-        {
-            RecordHierarchyOp(HierarchyOpKind.RemoveChild, entity.Ref);
-        }
 
         return true;
     }
@@ -528,68 +448,6 @@ public sealed class Commands(App app)
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Attaches the child entity to the parent, or re-parents it if it already has a parent.
-    /// The hierarchy index is updated when the commands are committed.
-    /// </summary>
-    /// <param name="parent">The parent entity reference.</param>
-    /// <param name="child">The child entity reference.</param>
-    /// <returns>True if the operation was buffered; false if the child entity is invalid or removed.</returns>
-    public bool AddChild(EntityRef parent, EntityRef child)
-    {
-        if (!GetEntityByRef(child, out var childEntity))
-        {
-            return false;
-        }
-
-        return AlterComponents(ref childEntity, (ref EntityAlterContext ctx) =>
-        {
-            ctx.Remove<ChildOf>();
-            ctx.Add(new ChildOf { Parent = parent });
-        });
-    }
-
-    /// <summary>
-    /// Detaches the child entity from the given parent, turning it into a root.
-    /// Only takes effect if the child's current parent is the given entity.
-    /// The hierarchy index is updated when the commands are committed.
-    /// </summary>
-    /// <param name="parent">The expected parent entity reference.</param>
-    /// <param name="child">The child entity reference.</param>
-    /// <returns>True if the child was detached; false otherwise.</returns>
-    public bool RemoveChild(EntityRef parent, EntityRef child)
-    {
-        if (!GetEntityByRef(child, out var childEntity))
-        {
-            return false;
-        }
-
-        if (!HasChildOf(childEntity.Archetype))
-        {
-            return false;
-        }
-
-        ref var childOf = ref GetEntityComponent<ChildOf>(childEntity.Archetype, childEntity.Pos);
-
-        if (childOf.Parent != parent)
-        {
-            return false;
-        }
-
-        return RemoveComponent<ChildOf>(ref childEntity);
-    }
-
-    /// <summary>
-    /// Detaches all direct children of the parent, turning them into roots. Grandchildren keep
-    /// their own parents. The detachment is applied to the hierarchy index when the commands
-    /// are committed, based on the index state at that time.
-    /// </summary>
-    /// <param name="parent">The parent entity reference.</param>
-    public void DetachAllChildren(EntityRef parent)
-    {
-        RecordHierarchyOp(HierarchyOpKind.DetachAllChildren, parent);
     }
 
     /// <summary>
@@ -666,8 +524,6 @@ public sealed class Commands(App app)
 
     internal void Commit()
     {
-        ApplyHierarchyOps();
-
         foreach (var (_, entity) in modifiedEntityInfoMap)
         {
             entityPool.CommitReservedEntity(in entity);
@@ -684,160 +540,6 @@ public sealed class Commands(App app)
 
         removedEntityMap.Clear();
         modifiedEntityInfoMap.Clear();
-        hierarchyOpList?.Clear();
-    }
-
-    internal bool HasChildOf(Archetype archetype)
-    {
-        var typeIdList = archetype.TypeIdList;
-
-        for (var i = 0; i < typeIdList.Length; i++)
-        {
-            if (typeIdList[i] == childOfTypeId)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    internal void RecordHierarchyOp(HierarchyOpKind kind, EntityRef subject, EntityRef parent = default)
-    {
-        hierarchyOpList ??= [];
-        hierarchyOpList.Add(new(kind, subject, parent));
-    }
-
-    internal bool TryExtractBundleChildOf<T>(in T bundle, out ChildOf value) where T : unmanaged, IComponentBundle
-    {
-        foreach (var (info, typeId) in TypeRegistrar.GetBundleInfo<T>())
-        {
-            if (typeId != childOfTypeId)
-            {
-                continue;
-            }
-
-            unsafe
-            {
-                fixed (T* bundlePtr = &bundle)
-                {
-                    value = *(ChildOf*)((byte*)bundlePtr + info.Offset);
-                }
-            }
-
-            return true;
-        }
-
-        value = default;
-        return false;
-    }
-
-    internal static ChildOf AsChildOf<T>(in T value) where T : unmanaged, IComponent
-    {
-        return Unsafe.As<T, ChildOf>(ref Unsafe.AsRef(in value));
-    }
-
-#endregion
-
-#region Private Methods
-
-    private void ApplyHierarchyOps()
-    {
-        if (hierarchyOpList == null)
-        {
-            return;
-        }
-
-        // Deaths are tracked in op application order, NOT via removedEntityMap: the map is
-        // populated at call time and would wrongly reject an AddChild that was recorded
-        // before the parent's Despawn within the same buffer.
-        despawnedIdSet ??= [];
-        despawnedIdSet.Clear();
-
-        foreach (var op in hierarchyOpList)
-        {
-            switch (op.Kind)
-            {
-                case HierarchyOpKind.AddChild:
-                    if (op.Parent.ID == op.Subject.ID)
-                    {
-                        // Self-cycle rejected.
-                        break;
-                    }
-
-                    // Deaths from earlier ops of this buffer.
-                    if (despawnedIdSet.Contains(op.Parent.ID) || despawnedIdSet.Contains(op.Subject.ID))
-                    {
-                        break;
-                    }
-
-                    // Deaths committed by earlier buffers of this commit round are only
-                    // visible to the pool (generations were bumped). Entities created in
-                    // this buffer pass the pool check.
-                    if (!entityPool.CheckEntityValid(op.Parent) || !entityPool.CheckEntityValid(op.Subject))
-                    {
-                        break;
-                    }
-
-                    hierarchy.AddChild(op.Parent, op.Subject);
-                    break;
-
-                case HierarchyOpKind.RemoveChild:
-                    hierarchy.RemoveChild(op.Subject);
-                    break;
-
-                case HierarchyOpKind.DetachAllChildren:
-                    hierarchy.DetachAllChildren(op.Subject);
-                    break;
-
-                case HierarchyOpKind.Despawn:
-                    ResolveDespawn(op.Subject, despawnedIdSet);
-                    break;
-            }
-        }
-    }
-
-    private void ResolveDespawn(EntityRef rootRef, HashSet<int> despawnedIdSet)
-    {
-        descendantList ??= [];
-        descendantList.Clear();
-        hierarchy.CollectDescendants(rootRef, descendantList);
-
-        foreach (var entity in descendantList)
-        {
-            despawnedIdSet.Add(entity.ID);
-
-            if (entity.ID == rootRef.ID)
-            {
-                hierarchy.RemoveFromIndex(entity);
-            }
-            else
-            {
-                // Skip entities already dead in this buffer or cross-buffer. The latter
-                // cannot actually be collected (their nodes are gone); this is defensive.
-                if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity))
-                {
-                    continue;
-                }
-
-                MarkRemoved(entity);
-                hierarchy.RemoveNodeOnly(entity);
-            }
-        }
-    }
-
-    // Same bookkeeping as RemoveEntity.
-    private void MarkRemoved(EntityRef entityRef)
-    {
-        if (!GetEntityByRef(entityRef, out var entity))
-        {
-            return;
-        }
-
-        entity.Archetype.MarkRemove(entity.ID, entity.Pos);
-        modifiedEntityInfoMap.Remove(entity.ID);
-        entityPool.MarkRemoveEntity(entity.Ref);
-        removedEntityMap[entity.ID] = entity;
     }
 
 #endregion
@@ -961,29 +663,13 @@ public struct EntityAlterContext
 
     private readonly Archetype originalArchetype;
 
-    private readonly bool originalHasChildOf;
-
     private bool hasAdded;
-
-    private bool childOfRemoved;
 
     internal EntityAlterContext(Entity entity)
     {
         Entity = entity;
         originalArchetype = entity.Archetype;
-        originalHasChildOf = entity.Commands.HasChildOf(entity.Archetype);
         hasAdded = false;
-        childOfRemoved = false;
-    }
-
-    // Records a RemoveChild op once the alterations actually strip ChildOf off the entity.
-    private void RecordRemoveChildOfIfNeeded()
-    {
-        if (!childOfRemoved && originalHasChildOf && !Entity.Commands.HasChildOf(Entity.Archetype))
-        {
-            Entity.Commands.RecordHierarchyOp(HierarchyOpKind.RemoveChild, Entity.Ref);
-            childOfRemoved = true;
-        }
     }
 
     /// <summary>
@@ -1005,8 +691,6 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
-
-        RecordRemoveChildOfIfNeeded();
     }
 
     /// <summary>
@@ -1028,8 +712,6 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
-
-        RecordRemoveChildOfIfNeeded();
     }
 
     /// <summary>
@@ -1051,8 +733,6 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
-
-        RecordRemoveChildOfIfNeeded();
     }
 
     /// <summary>
@@ -1097,18 +777,6 @@ public struct EntityAlterContext
         }
 
         hasAdded = true;
-
-        if (typeof(T) == typeof(ChildOf))
-        {
-            // Replacing an existing ChildOf without an explicit Remove means detaching from
-            // the old parent first.
-            if (!childOfRemoved && originalHasChildOf)
-            {
-                Entity.Commands.RecordHierarchyOp(HierarchyOpKind.RemoveChild, Entity.Ref);
-            }
-
-            Entity.Commands.RecordHierarchyOp(HierarchyOpKind.AddChild, Entity.Ref, Commands.AsChildOf(in component).Parent);
-        }
     }
 
     /// <summary>
@@ -1177,18 +845,6 @@ public struct EntityAlterContext
         }
 
         hasAdded = true;
-
-        if (Entity.Commands.TryExtractBundleChildOf(in bundle, out var childOf))
-        {
-            // Replacing an existing ChildOf without an explicit Remove means detaching from
-            // the old parent first.
-            if (!childOfRemoved && originalHasChildOf)
-            {
-                Entity.Commands.RecordHierarchyOp(HierarchyOpKind.RemoveChild, Entity.Ref);
-            }
-
-            Entity.Commands.RecordHierarchyOp(HierarchyOpKind.AddChild, Entity.Ref, childOf.Parent);
-        }
     }
 
     /// <summary>

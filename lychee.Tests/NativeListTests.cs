@@ -63,12 +63,19 @@ public class NativeListTests : IDisposable
     [Fact]
     public void Indexer_Set_UpdatesValue()
     {
-        using var list = new NativeList<int>();
-        list.Add(10);
+        NativeList<int> list = new();
 
-        list[0] = 20;
+        try
+        {
+            list.Add(10);
+            list[0] = 20;
 
-        Assert.Equal(20, list[0]);
+            Assert.Equal(20, list[0]);
+        }
+        finally
+        {
+            list.Dispose();
+        }
     }
 
     [Fact]

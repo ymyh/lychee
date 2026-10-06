@@ -10,7 +10,7 @@ namespace lychee.collections;
 /// Similar to <see cref="List&lt;T&gt;"/> but with explicit memory allocation and deallocation for improved performance.
 /// </summary>
 /// <typeparam name="T">The type of elements in the list. Must be unmanaged.</typeparam>
-public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> where T : unmanaged
+public struct NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> where T : unmanaged
 {
     private unsafe T* data;
 
@@ -119,8 +119,6 @@ public sealed class NativeList<T>() : IDisposable, IList<T>, IReadOnlyList<T> wh
             array.CopyTo(span);
         }
     }
-
-    ~NativeList() => Dispose();
 
 #endregion
 

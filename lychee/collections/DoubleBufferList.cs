@@ -3,11 +3,11 @@
 namespace lychee.collections;
 
 /// <summary>
-/// Write into the back queue and read from the front queue.
-/// Writing or reading from the queue is thread-safe, but exchanging two queue in single thread is not thread-safe.
+/// Write into the back list and read from the front list.
+/// Writing or reading from the list is thread-safe, but exchanging two list is not thread-safe.
 /// </summary>
-/// <typeparam name="T">The type of elements in the queue.</typeparam>
-public sealed class DoubleBufferQueue<T>
+/// <typeparam name="T">The type of elements in the list.</typeparam>
+public sealed class DoubleBufferList<T>
 {
     private List<T> front = [];
 

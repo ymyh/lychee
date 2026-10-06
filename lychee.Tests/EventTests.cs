@@ -145,6 +145,101 @@ public class EventTests
 
 #endregion
 
+#region Exchange Only Read
+
+    [Fact]
+    public void ExchangeOnlyRead_PublishesTheFirstBatch()
+    {
+        var ev = new Event<int>(exchangeOnlyRead: true);
+        var writer = new EventWriter<int>(ev);
+
+        writer.Send(42);
+        ev.ExchangeFrontBack();
+
+        Assert.Equal([42], Drained(ev));
+    }
+
+    [Fact]
+    public void ExchangeOnlyRead_KeepsUnreadBatchAcrossExchanges()
+    {
+        var ev = new Event<int>(exchangeOnlyRead: true);
+        var writer = new EventWriter<int>(ev);
+
+        writer.Send(1);
+        ev.ExchangeFrontBack();
+
+        writer.Send(2);
+        ev.ExchangeFrontBack();
+        ev.ExchangeFrontBack();
+
+        Assert.Equal([1], Drained(ev));
+    }
+
+    [Fact]
+    public void ExchangeOnlyRead_AfterRead_PublishesTheNextBatch()
+    {
+        var ev = new Event<int>(exchangeOnlyRead: true);
+        var writer = new EventWriter<int>(ev);
+
+        writer.Send(1);
+        ev.ExchangeFrontBack();
+        Assert.Equal([1], Drained(ev));
+
+        writer.Send(2);
+        ev.ExchangeFrontBack();
+
+        Assert.Equal([2], Drained(ev));
+    }
+
+    [Fact]
+    public void ExchangeOnlyRead_AccumulatesUntilRead()
+    {
+        var ev = new Event<int>(exchangeOnlyRead: true);
+        var writer = new EventWriter<int>(ev);
+
+        writer.Send(1);
+        ev.ExchangeFrontBack();
+
+        writer.Send(2);
+        ev.ExchangeFrontBack();
+
+        writer.Send(3);
+        ev.ExchangeFrontBack();
+
+        Assert.Equal([1], Drained(ev));
+
+        ev.ExchangeFrontBack();
+
+        Assert.Equal([2, 3], Drained(ev));
+    }
+
+    [Fact]
+    public void ExchangeOnlyRead_EmptyQueue_DoesNotThrow()
+    {
+        var ev = new Event<int>(exchangeOnlyRead: true);
+
+        ev.ExchangeFrontBack();
+
+        Assert.Empty(Drained(ev));
+    }
+
+    [Fact]
+    public void ExchangeOnlyRead_DefaultFalse_DropsUnreadBatchOnNextExchange()
+    {
+        var ev = new Event<int>();
+        var writer = new EventWriter<int>(ev);
+
+        writer.Send(1);
+        ev.ExchangeFrontBack();
+
+        writer.Send(2);
+        ev.ExchangeFrontBack();
+
+        Assert.Equal([2], Drained(ev));
+    }
+
+#endregion
+
 #region Reader Cursor
 
     [Fact]

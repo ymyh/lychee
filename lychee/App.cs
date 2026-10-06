@@ -115,13 +115,16 @@ public sealed class App : IDisposable
     /// Events enable type-safe, decoupled communication between systems.
     /// </summary>
     /// <typeparam name="T">The event type.</typeparam>
-    /// <param name="timing">When events written during an update become readable.</param>
-    public void AddEvent<T>(EventPublishTiming timing = EventPublishTiming.UpdateEnd)
+    /// <param name="descriptor">How the event publishes and keeps its batches, or null to use the defaults of
+    /// <see cref="EventDescriptor"/>.</param>
+    public void AddEvent<T>(EventDescriptor? descriptor = null)
     {
-        var ev = new Event<T>();
+        descriptor ??= new();
+
+        var ev = new Event<T>(descriptor.ExchangeOnlyRead);
 
         ResourcePool.AddResource(ev);
-        World.AddEvent(ev, timing);
+        World.AddEvent(ev, descriptor.Timing);
     }
 
     /// <summary>

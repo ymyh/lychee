@@ -311,7 +311,7 @@ Events written while a batch is readable stay invisible until the queue is publi
 
 ### Adding Events
 
-Events are registered as resources in the App. The timing says when events become readable:
+Events are registered as resources in the App. An `EventDescriptor` controls when events become readable and whether a batch is kept until it has been read:
 
 ```csharp
 // Define event data type
@@ -325,8 +325,12 @@ public struct DamageEvent
 // update worth of events. ScheduleEnd publishes at the end of every schedule, and CommitPoint at every commit
 // point, so later systems of the same update can react to what earlier ones did.
 app.AddEvent<DamageEvent>();
-app.AddEvent<HitEvent>(EventPublishTiming.ScheduleEnd);
-app.AddEvent<MoveEvent>(EventPublishTiming.CommitPoint);
+app.AddEvent<HitEvent>(new EventDescriptor { Timing = EventPublishTiming.ScheduleEnd });
+app.AddEvent<MoveEvent>(new EventDescriptor { Timing = EventPublishTiming.CommitPoint });
+
+// ExchangeOnlyRead keeps a published batch around until a reader actually reads it, so a reader that does not
+// run every update cannot miss it; the next batch waits in the back buffer until then.
+app.AddEvent<QuestEvent>(new EventDescriptor { ExchangeOnlyRead = true });
 ```
 
 ### Sending Events

@@ -2,14 +2,14 @@ using lychee.collections;
 
 namespace lychee.Tests;
 
-public class DoubleBufferQueueTests
+public class DoubleBufferListTests
 {
 #region Enqueue
 
     [Fact]
     public void Enqueue_SingleItem_CanBeReadAfterExchange()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(42);
         queue.Exchange();
@@ -21,7 +21,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Enqueue_MultipleItems_AllReadableAfterExchange()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(1);
         queue.Enqueue(2);
@@ -38,7 +38,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Exchange_SwapsFrontAndBack()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         // Frame 1: enqueue items
         queue.Enqueue(1);
@@ -61,7 +61,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Exchange_EmptyQueue_DoesNotThrow()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Exchange(); // should not throw
 
@@ -75,7 +75,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void ClearBack_RemovesBackBufferItems()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(1);
         queue.Enqueue(2);
@@ -90,7 +90,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void ClearBack_DoesNotAffectFrontBuffer()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(1);
         queue.Exchange();
@@ -107,7 +107,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void GetEnumerable_EmptyFront_ReturnsEmpty()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         Assert.Empty(queue.GetEnumerable());
     }
@@ -119,7 +119,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void GetFrontSpan_ReturnsCorrectData()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(10);
         queue.Enqueue(20);
@@ -139,7 +139,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void DoubleBuffering_WritesAndReadsAreSeparated()
     {
-        var queue = new DoubleBufferQueue<string>();
+        var queue = new DoubleBufferList<string>();
 
         // Frame 1: write
         queue.Enqueue("frame1_a");
@@ -166,7 +166,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void DoubleBuffering_MultipleExchanges_MaintainsSeparation()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         for (var frame = 0; frame < 10; frame++)
         {
@@ -186,7 +186,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Enqueue_ConcurrentAdds_AllItemsCaptured()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         Parallel.For(0, 1000, i => queue.Enqueue(i));
 
@@ -203,7 +203,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void GetFrontSpan_EmptyQueue_ReturnsEmptySpan()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         var span = queue.GetFrontSpan();
 
@@ -213,7 +213,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void ClearBack_AlreadyEmpty_DoesNotThrow()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.ClearBack(); // should not throw
     }
@@ -221,7 +221,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Exchange_MultipleTimesWithoutEnqueue_DoesNotThrow()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Exchange();
         queue.Exchange();
@@ -233,7 +233,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Enqueue_AfterExchangeWithoutClearBack_OnlyNewItem()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(1);
         queue.Exchange();
@@ -250,7 +250,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void GetFrontSpan_AfterExchange_ReturnsCorrectData()
     {
-        var queue = new DoubleBufferQueue<int>();
+        var queue = new DoubleBufferList<int>();
 
         queue.Enqueue(100);
         queue.Enqueue(200);
@@ -268,7 +268,7 @@ public class DoubleBufferQueueTests
     [Fact]
     public void Enqueue_StructItems_PreservedCorrectly()
     {
-        var queue = new DoubleBufferQueue<TestPoint>();
+        var queue = new DoubleBufferList<TestPoint>();
 
         queue.Enqueue(new TestPoint { X = 1, Y = 2 });
         queue.Enqueue(new TestPoint { X = 3, Y = 4 });

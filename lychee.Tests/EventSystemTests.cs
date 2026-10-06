@@ -16,6 +16,14 @@ internal sealed class EventLog
 }
 
 /// <summary>
+/// Lets a test simulate a receiver that does not run every update: the gated receiver only reads while this is open.
+/// </summary>
+internal sealed class ReadGate
+{
+    public bool Enabled;
+}
+
+/// <summary>
 /// Sends a ping every time it runs, numbered so a test can tell which run produced the event it is looking at.
 /// </summary>
 [AutoImplSystem]
@@ -45,6 +53,27 @@ internal sealed partial class PingReceiverSystem
     }
 }
 
+/// <summary>
+/// Like <see cref="PingReceiverSystem"/> but only reads while its gate is open, so a test can simulate a receiver
+/// that skips updates and check that no event is lost in the meantime.
+/// </summary>
+[AutoImplSystem]
+internal sealed partial class GatedPingReceiverSystem
+{
+    private void Execute(EventReader<TestPing> reader, [Resource] EventLog log, [Resource] ReadGate gate)
+    {
+        if (!gate.Enabled)
+        {
+            return;
+        }
+
+        while (reader.Read(out var ping))
+        {
+            log.Entries.Add(ping.Value);
+        }
+    }
+}
+
 public class EventSystemTests : IDisposable
 {
     private readonly App app = new();
@@ -54,7 +83,7 @@ public class EventSystemTests : IDisposable
     [Fact]
     public void Execute_TwoReceiversOfTheSameType_EachReadTheWholeBatch()
     {
-        app.AddEvent<TestPing>(EventPublishTiming.ScheduleEnd);
+        app.AddEvent<TestPing>(new EventDescriptor { Timing = EventPublishTiming.ScheduleEnd });
         var log = app.ResourcePool.AddResource(new EventLog());
 
         var sending = new DefaultSchedule(app, "Sending");
@@ -122,7 +151,7 @@ public class EventSystemTests : IDisposable
     [Fact]
     public void ScheduleEnd_ReadableInALaterScheduleOfTheSameUpdate()
     {
-        app.AddEvent<TestPing>(EventPublishTiming.ScheduleEnd);
+        app.AddEvent<TestPing>(new EventDescriptor { Timing = EventPublishTiming.ScheduleEnd });
         var log = app.ResourcePool.AddResource(new EventLog());
 
         var sending = new DefaultSchedule(app, "Sending");
@@ -142,7 +171,7 @@ public class EventSystemTests : IDisposable
     [Fact]
     public void ScheduleEnd_NotReadableInALaterSystemOfTheSameSchedule()
     {
-        app.AddEvent<TestPing>(EventPublishTiming.ScheduleEnd);
+        app.AddEvent<TestPing>(new EventDescriptor { Timing = EventPublishTiming.ScheduleEnd });
         var log = app.ResourcePool.AddResource(new EventLog());
 
         var schedule = new DefaultSchedule(app, "Test");
@@ -161,7 +190,7 @@ public class EventSystemTests : IDisposable
     [Fact]
     public void CommitPoint_ReadableInALaterSystemOfTheSameSchedule()
     {
-        app.AddEvent<TestPing>(EventPublishTiming.CommitPoint);
+        app.AddEvent<TestPing>(new EventDescriptor { Timing = EventPublishTiming.CommitPoint });
         var log = app.ResourcePool.AddResource(new EventLog());
 
         var schedule = new DefaultSchedule(app, "Test");
@@ -176,7 +205,7 @@ public class EventSystemTests : IDisposable
     [Fact]
     public void CommitPoint_NotDiscardedBeforeTheNextUpdateReadsIt()
     {
-        app.AddEvent<TestPing>(EventPublishTiming.CommitPoint);
+        app.AddEvent<TestPing>(new EventDescriptor { Timing = EventPublishTiming.CommitPoint });
         var log = app.ResourcePool.AddResource(new EventLog());
 
         var schedule = new DefaultSchedule(app, "Test");
@@ -187,6 +216,46 @@ public class EventSystemTests : IDisposable
         app.Update();
 
         Assert.Equal([1, 2], log.Entries);
+    }
+
+#endregion
+
+#region ExchangeOnlyRead
+
+    [Fact]
+    public void ExchangeOnlyRead_KeepsUnreadBatchForAReceiverThatSkipsAnUpdate()
+    {
+        app.AddEvent<TestPing>(new EventDescriptor { ExchangeOnlyRead = true });
+        var log = app.ResourcePool.AddResource(new EventLog());
+        var gate = app.ResourcePool.AddResource(new ReadGate { Enabled = false });
+
+        var sending = new DefaultSchedule(app, "Sending");
+        sending.AddSystem(new PingSenderSystem());
+
+        var receiving = new DefaultSchedule(app, "Receiving");
+        receiving.AddSystem(new GatedPingReceiverSystem());
+
+        app.AddSchedule(sending);
+        app.AddSchedule(receiving);
+
+        // The first ping is published at the end of the first update, but the gated receiver never reads it, so
+        // the queue must keep it instead of swapping in the second ping's batch.
+        app.Update();
+        app.Update();
+
+        Assert.Empty(log.Entries);
+
+        gate.Enabled = true;
+
+        // The receiver finally runs and still sees the very first ping rather than only the newest one.
+        app.Update();
+
+        Assert.Equal([1], log.Entries);
+
+        // The pings that accumulated while the receiver was gated arrive together as one batch.
+        app.Update();
+
+        Assert.Equal([1, 2, 3], log.Entries);
     }
 
 #endregion

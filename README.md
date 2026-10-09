@@ -13,6 +13,7 @@ A simple archetype-based ECS (Entity-Component-System) framework for .NET 10.0 /
 - **Source generation** - Use the `[AutoImplSystem]` Attribute to automatically generate System code
 - **Deferred commands** - Entity modifications are batch-committed at synchronization points for concurrent safety
 - **Flexible scheduling system** - Supports single-thread/multi-thread execution with configurable commit timing
+- **Component hooks** - Observe `OnAdd` / `OnReplace` / `OnRemove` per component type and react synchronously
 
 ## Project Structure
 
@@ -254,6 +255,85 @@ entity.AlterComponents(alter =>
 
 > **Note**: `AlterComponents` performs all additions and removals in a single archetype migration, which is more
 > efficient than calling `AddComponent` / `RemoveComponent` separately (each triggers its own migration).
+
+## Component Hooks
+
+Hooks let you observe per-component-type lifecycle events and react without polling. Register a hook on the `App`,
+then the framework invokes it synchronously inside the `Commands` call that changed the component.
+
+| Hook | Fires when | Triggered by |
+|---|---|---|
+| `OnAdd` | A component becomes present on an entity | `AddComponent` / `AddComponents` / `CreateEntityWithComponent` / `CreateEntityWithComponents` / `CopyEntity`, and the added part of `AlterComponents` |
+| `OnReplace` | An existing component value is overwritten in place | `ReplaceComponent`; a System `out` component parameter after `Execute` |
+| `OnRemove` | A component leaves an entity | `RemoveComponent` / `RemoveComponents` / `RemoveComponentsTuple` / `RemoveEntity` (`Despawn`), and the removed part of `AlterComponents` |
+
+### Registering a Hook
+
+```csharp
+app.SetComponentHook(ComponentHookKind.OnAdd, (ref HookContext context, in Health health) =>
+{
+    Console.WriteLine($"Entity {context.Entity} gained Health = {health.Value}");
+});
+```
+
+The hook receives the value the event observes — the new value for `OnAdd`, the current value for `OnReplace`, and the
+old value for `OnRemove`:
+
+```csharp
+public delegate void ComponentHook<T>(ref HookContext context, in T component)
+    where T : unmanaged, IComponent;
+```
+
+Registering again for the same type and kind overwrites the previous hook. Components with no registered hook stay on
+the fast path: the framework does not even read the previous value for them.
+
+### Reading the Entity Inside a Hook
+
+`HookContext` exposes the entity, the `Commands` that triggered the hook, and the `App`:
+
+- `context.Entity` — the entity the event belongs to.
+- `context.Commands` — the triggering `Commands`. Structural changes made through it take effect immediately and fire
+  their own hooks synchronously.
+- `context.App` — for reading resources.
+- `context.Has<T>()`, `context.TryGet<T>(out var component)`, `context.GetComponent<T>()` — read the entity's current
+  components. `GetComponent` returns a bare `ref`; writing through it does **not** trigger a hook.
+- `context.TryGetPrevious<T>(out var previous)` — the value a component had before it was overwritten. Only meaningful
+  for `OnReplace`; it returns `false` for every other kind.
+
+```csharp
+app.SetComponentHook(ComponentHookKind.OnReplace, (ref HookContext context, in Health health) =>
+{
+    if (context.TryGetPrevious<Health>(out var previous) && health.Value < previous.Value)
+    {
+        Console.WriteLine($"Entity {context.Entity} lost {previous.Value - health.Value} health");
+    }
+});
+```
+
+### Replacing a Value
+
+`AddComponent` refuses a component the entity already has, because the archetype rejects a duplicate type id. To
+overwrite an existing value and notify `OnReplace`, use `ReplaceComponent`. It never upserts: an invalid, removed, or
+component-less entity returns `false` and fires nothing.
+
+```csharp
+commands.ReplaceComponent(ref entity, new Health { Value = 10.0f });
+
+// Or through the entity
+entity.ReplaceComponent(new Health { Value = 10.0f });
+```
+
+A System that writes a component through an `out` parameter gets the same treatment: the generated loop snapshots the
+value before `Execute` and calls the `OnReplace` hook after it returns. Ordinary `ref` and `Span<T>` parameters mutate
+in place and do **not** fire a hook.
+
+> **Threading**: a hook runs on the thread that issued the command, which in a multi-threaded System is a worker
+> thread. The framework does not serialize hooks, and the scheduler's conflict analysis does not see hook side
+> effects, so a hook must only touch data the System already declares or the System should be single-threaded.
+
+> **Recursion**: hooks fire synchronously, so a hook that changes structure through `context.Commands` nests inside the
+> original call and fires its own hooks immediately. There is no artificial depth cap; an endlessly self-triggering
+> hook ends in a `StackOverflowException`, so hooks must terminate.
 
 ## Resource System
 

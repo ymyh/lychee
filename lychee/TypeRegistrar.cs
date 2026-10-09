@@ -41,6 +41,12 @@ public sealed class TypeRegistrar
 
     private readonly ConcurrentDictionary<Type, (TypeInfo info, int typeId)[]> bundleToInfoDict = new();
 
+    // One row per type id, each row holding the three erased hook invokers. Rows and the outer array are
+    // replaced rather than mutated, so a reader on a worker thread always sees a coherent snapshot.
+    private volatile ComponentHookInvoker?[][] componentHooks = [];
+
+    private const int ComponentHookKindCount = 3;
+
 #endregion
 
 #region Public Methods
@@ -243,6 +249,25 @@ public sealed class TypeRegistrar
         return idToTypeDict[typeId];
     }
 
+    /// <summary>
+    /// Registers a component type and stores the hook for the given kind. The type is registered on demand,
+    /// and calling this again for the same kind overwrites the previous hook.
+    /// </summary>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="kind">The hook kind to register.</param>
+    /// <param name="hook">The hook to invoke for this kind.</param>
+    public unsafe void SetComponentHook<T>(ComponentHookKind kind, ComponentHook<T> hook) where T : unmanaged, IComponent
+    {
+        using var wg = typeListLock.EnterWriteLock();
+        var typeId = RegisterCore(wg.Data, typeof(T));
+
+        var row = componentHooks[typeId];
+        var newRow = new ComponentHookInvoker?[ComponentHookKindCount];
+        Array.Copy(row, newRow, ComponentHookKindCount);
+        newRow[(int)kind] = new ComponentHookHolder<T>(hook).Invoke;
+        componentHooks[typeId] = newRow;
+    }
+
 #endregion
 
 #region Internal Methods
@@ -257,6 +282,17 @@ public sealed class TypeRegistrar
     internal int Register(Type type, int size = 0, uint alignment = 0)
     {
         using var wg = typeListLock.EnterWriteLock();
+        return RegisterCore(wg.Data, type, size, alignment);
+    }
+
+    internal int RegisterEnum(Type type)
+    {
+        if (!type.IsEnum)
+        {
+            throw new ArgumentException("Type must be an enum", nameof(type));
+        }
+
+        using var wg = typeListLock.EnterWriteLock();
         var typeList = wg.Data;
 
         if (typeToIdDict.TryGetValue(type, out var value))
@@ -264,8 +300,74 @@ public sealed class TypeRegistrar
             return value;
         }
 
-        typeToIdDict.TryAdd(type, typeList.Count);
-        idToTypeDict.TryAdd(typeList.Count, type);
+        var typeId = typeList.Count;
+        typeToIdDict.TryAdd(type, typeId);
+        idToTypeDict.TryAdd(typeId, type);
+        EnsureComponentHookRow(typeId);
+
+        typeList.Add(new(Marshal.SizeOf(type.GetEnumUnderlyingType()), Marshal.SizeOf(type.GetEnumUnderlyingType())));
+
+        return typeId;
+    }
+
+    /// <summary>
+    /// Checks whether any hook kind is registered for the given type id. The hot path uses this to skip
+    /// reading a previous value when nothing would consume it.
+    /// </summary>
+    /// <param name="typeId">The component type id to check.</param>
+    /// <returns>True if at least one hook kind is registered; otherwise, false.</returns>
+    internal bool HasAnyComponentHook(int typeId)
+    {
+        var hooks = componentHooks;
+
+        if ((uint)typeId >= (uint)hooks.Length)
+        {
+            return false;
+        }
+
+        var row = hooks[typeId];
+
+        return row != null && (row[0] != null || row[1] != null || row[2] != null);
+    }
+
+    /// <summary>
+    /// Gets the erased hook invoker for a type id and kind, or null when that kind is not registered.
+    /// </summary>
+    /// <param name="typeId">The component type id.</param>
+    /// <param name="kind">The hook kind to look up.</param>
+    /// <returns>The invoker, or null when nothing is registered.</returns>
+    internal ComponentHookInvoker? GetComponentHook(int typeId, ComponentHookKind kind)
+    {
+        var hooks = componentHooks;
+
+        if ((uint)typeId >= (uint)hooks.Length)
+        {
+            return null;
+        }
+
+        return hooks[typeId]?[(int)kind];
+    }
+
+    internal int Register<T>(int size = 0, uint alignment = 0)
+    {
+        return Register(typeof(T), size, alignment);
+    }
+
+#endregion
+
+#region Private Methods
+
+    private int RegisterCore(List<TypeInfo> typeList, Type type, int size = 0, uint alignment = 0)
+    {
+        if (typeToIdDict.TryGetValue(type, out var value))
+        {
+            return value;
+        }
+
+        var typeId = typeList.Count;
+        typeToIdDict.TryAdd(type, typeId);
+        idToTypeDict.TryAdd(typeId, type);
+        EnsureComponentHookRow(typeId);
 
         unsafe
         {
@@ -293,44 +395,44 @@ public sealed class TypeRegistrar
             typeList.Add(new(size, (int)alignment));
         }
 
-        return typeList.Count - 1;
+        return typeId;
     }
 
-    internal int RegisterEnum(Type type)
+    private void EnsureComponentHookRow(int typeId)
     {
-        if (!type.IsEnum)
+        var hooks = componentHooks;
+
+        if ((uint)typeId < (uint)hooks.Length)
         {
-            throw new ArgumentException("Type must be an enum", nameof(type));
+            return;
         }
 
-        using var wg = typeListLock.EnterWriteLock();
-        var typeList = wg.Data;
+        var newHooks = new ComponentHookInvoker?[typeId + 1][];
 
-        if (typeToIdDict.TryGetValue(type, out var value))
+        Array.Copy(hooks, newHooks, hooks.Length);
+
+        for (var i = hooks.Length; i < newHooks.Length; i++)
         {
-            return value;
+            newHooks[i] = new ComponentHookInvoker?[ComponentHookKindCount];
         }
 
-        typeToIdDict.TryAdd(type, typeList.Count);
-        idToTypeDict.TryAdd(typeList.Count, type);
-
-        typeList.Add(new(Marshal.SizeOf(type.GetEnumUnderlyingType()), Marshal.SizeOf(type.GetEnumUnderlyingType())));
-
-        return typeList.Count - 1;
+        componentHooks = newHooks;
     }
-
-    internal int Register<T>(int size = 0, uint alignment = 0)
-    {
-        return Register(typeof(T), size, alignment);
-    }
-
-#endregion
-
-#region Private Methods
 
     private int GetComponentSize(Type type)
     {
         return (Activator.CreateInstance(type) as IComponent)!.GetComponentMeta().Size;
+    }
+
+    /// <summary>
+    /// Retains the typed hook and provides a non-generic entry point that unwraps the raw component pointer.
+    /// </summary>
+    private sealed class ComponentHookHolder<T>(ComponentHook<T> hook) where T : unmanaged, IComponent
+    {
+        public unsafe void Invoke(ref HookContext context, void* component)
+        {
+            hook(ref context, in *(T*)component);
+        }
     }
 
 #endregion

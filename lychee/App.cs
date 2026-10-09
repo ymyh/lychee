@@ -239,6 +239,19 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
+    /// Registers a component hook for a given kind, or overwrites the previous one.
+    /// Hooks fire synchronously inside the operation that causes the change, for every operation issued after
+    /// registration. Components with no hook are unaffected on the hot path.
+    /// </summary>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="kind">The hook kind to register.</param>
+    /// <param name="hook">The hook to invoke for this kind.</param>
+    public void SetComponentHook<T>(ComponentHookKind kind, ComponentHook<T> hook) where T : unmanaged, IComponent
+    {
+        TypeRegistrar.SetComponentHook(kind, hook);
+    }
+
+    /// <summary>
     /// Adds a system schedule with a unique name for execution ordering.
     /// </summary>
     /// <param name="schedule">The schedule instance to add.</param>

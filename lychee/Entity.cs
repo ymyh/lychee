@@ -68,6 +68,8 @@ public struct Entity(Commands commands, Archetype archetype)
     /// <summary>
     /// Adds a component to this entity.
     /// The entity will be moved to a new archetype matching its updated component composition.
+    /// Adding a component type the entity already has is rejected by the archetype; use
+    /// <see cref="ReplaceComponent{T}(in T)"/> to overwrite an existing component value instead.
     /// </summary>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
     /// <param name="component">The component value to add.</param>
@@ -79,12 +81,25 @@ public struct Entity(Commands commands, Archetype archetype)
     /// <summary>
     /// Adds multiple components as a bundle to this entity.
     /// All components in the bundle will be added in a single operation.
+    /// Adding a component type the entity already has is rejected by the archetype; this does not overwrite it.
     /// </summary>
     /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
     /// <param name="components">The component bundle containing the components to add.</param>
     public void AddComponents<T>(in T components) where T : unmanaged, IComponentBundle
     {
         commands.AddComponents(ref this, in components);
+    }
+
+    /// <summary>
+    /// Replaces the value of a component this entity already has, without moving archetypes.
+    /// Does nothing when the entity is invalid, removed, or does not have the component.
+    /// OnReplace hooks observe the previous and the new value.
+    /// </summary>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="component">The new component value.</param>
+    public void ReplaceComponent<T>(in T component) where T : unmanaged, IComponent
+    {
+        commands.ReplaceComponent(ref this, in component);
     }
 
     /// <summary>

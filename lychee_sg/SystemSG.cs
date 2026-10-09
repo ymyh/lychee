@@ -503,6 +503,46 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                 : GenIterArchetypeSingleThreadCode(componentParams, execParams, entityParamName, hasComponentSpan);
         }
 
+        /// <summary>
+        /// Snapshots every <c>out</c> component parameter before <c>Execute</c>, so the replacement hook can
+        /// still see the value the component had. Only scalar component parameters can be <c>out</c>; span
+        /// parameters never are.
+        /// </summary>
+        private static string GenOutSnapshotCode(ParamInfo[] componentParams, string indent)
+        {
+            var code = new StringBuilder();
+
+            for (var i = 0; i < componentParams.Length; i++)
+            {
+                if (componentParams[i].RefKind == RefKind.Out)
+                {
+                    code.AppendLine($"{indent}var _prev{i} = {componentParams[i].ParamName}[_i];");
+                }
+            }
+
+            return code.ToString();
+        }
+
+        /// <summary>
+        /// Reports every <c>out</c> component parameter as a replacement after <c>Execute</c>.
+        /// The component's type id is taken from <c>SystemDataAG.TypeIdList</c>, which already holds it, so the
+        /// per-entity call needs no type lookup of its own.
+        /// </summary>
+        private static string GenOutReplaceCode(ParamInfo[] componentParams, string indent, string commandsExpr)
+        {
+            var code = new StringBuilder();
+
+            for (var i = 0; i < componentParams.Length; i++)
+            {
+                if (componentParams[i].RefKind == RefKind.Out)
+                {
+                    code.AppendLine($"{indent}{commandsExpr}.InvokeReplaceHooks<{componentParams[i].Type}>(SystemDataAG.TypeIdList[{i}], _entitySpan[_i].Item2, in _prev{i}, in {componentParams[i].ParamName}[_i]);");
+                }
+            }
+
+            return code.ToString();
+        }
+
         private static string GenIterArchetypeMultiThreadCode(ParamInfo[] componentParams, string execParams, string entityParamName,
             bool hasComponentSpan)
         {
@@ -535,6 +575,9 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
             }}";
             }
 
+            var outSnapshot = GenOutSnapshotCode(componentParams, "                            ");
+            var outReplace = GenOutReplaceCode(componentParams, "                            ", "SystemDataAG.Commands[_threadIdx]");
+
             return $@"
             foreach (var (_chunkIdx, _chunkCount) in _archetype.IterateChunksAmongType(SystemDataAG.descriptor.GroupSize))
             {{
@@ -550,8 +593,8 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                         for (var _i = 0; _i < _size; _i++)
                         {{
 {(entityParamName != null ? $"                            var {entityParamName} = new Entity(SystemDataAG.Commands[_threadIdx], _archetype, _entitySpan[_i].Item2, new(_j, _i));" : "")}
-                            Execute({execParams});
-                        }}
+{outSnapshot}                            Execute({execParams});
+{outReplace}                        }}
                         _beginIndex += _size;
                     }}
                 }});
@@ -590,6 +633,9 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
             }}";
             }
 
+            var outSnapshot = GenOutSnapshotCode(componentParams, "                    ");
+            var outReplace = GenOutReplaceCode(componentParams, "                    ", "SystemDataAG.Commands[0]");
+
             return $@"{declIterCode}
             var _beginIndex = 0;
             var _chunkIdx = 0;
@@ -603,8 +649,8 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                 for (var _i = 0; _i < _size; _i++)
                 {{
 {(entityParamName != null ? $"                    var {entityParamName} = new Entity(SystemDataAG.Commands[0], _archetype, _entitySpan[_i].Item2, new(_chunkIdx, _i));" : "")}
-                    Execute({execParams});
-                }}
+{outSnapshot}                    Execute({execParams});
+{outReplace}                }}
                 _beginIndex += _size;
                 _chunkIdx++;
             }}";

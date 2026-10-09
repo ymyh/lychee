@@ -81,6 +81,20 @@ public sealed class Commands(App app)
         var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
         modifiedEntityInfoMap[entityRef.ID] = entity;
 
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        if (TypeRegistrar.HasAnyComponentHook(typeId))
+        {
+            var newValue = component;
+
+            unsafe
+            {
+                T* componentPtr = &newValue;
+
+                InvokeAdded(entityRef, typeId, componentPtr);
+            }
+        }
+
         return entity;
     }
 
@@ -117,6 +131,27 @@ public sealed class Commands(App app)
         var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
         modifiedEntityInfoMap[entityRef.ID] = entity;
 
+        var hookBundleInfo = TransferDstInfo.BundleInfo;
+
+        unsafe
+        {
+            var bundleCopy = bundle;
+
+            T* bundlePtr = &bundleCopy;
+
+            for (var i = 0; i < hookBundleInfo.Length; i++)
+            {
+                var typeId = hookBundleInfo[i].typeId;
+
+                if (!TypeRegistrar.HasAnyComponentHook(typeId))
+                {
+                    continue;
+                }
+
+                InvokeAdded(entityRef, typeId, (byte*)bundlePtr + hookBundleInfo[i].info.Offset);
+            }
+        }
+
         return entity;
     }
 
@@ -152,6 +187,24 @@ public sealed class Commands(App app)
         var newEntity = new Entity(this, entity.Archetype, newEntityRef, new((ushort)newChunkIdx, (ushort)newIdx));
         modifiedEntityInfoMap[newEntityRef.ID] = newEntity;
 
+        var newPos = new EntityPos((ushort)newChunkIdx, (ushort)newIdx);
+        var copyTypeIdList = entity.Archetype.TypeIdList;
+
+        for (var i = 0; i < copyTypeIdList.Length; i++)
+        {
+            var typeId = copyTypeIdList[i];
+
+            if (!TypeRegistrar.HasAnyComponentHook(typeId))
+            {
+                continue;
+            }
+
+            unsafe
+            {
+                InvokeAdded(newEntityRef, typeId, GetComponentPtr(entity.Archetype, typeId, newPos));
+            }
+        }
+
         return newEntity;
     }
 
@@ -173,6 +226,8 @@ public sealed class Commands(App app)
         modifiedEntityInfoMap.Remove(entity.ID);
         entityPool.MarkRemoveEntity(entity.Ref);
         removedEntityMap[entity.ID] = entity;
+
+        InvokeRemovedForArchetype(entity);
     }
 
     /// <summary>
@@ -197,6 +252,8 @@ public sealed class Commands(App app)
         modifiedEntityInfoMap.Remove(e.ID);
         entityPool.MarkRemoveEntity(e.Ref);
         removedEntityMap[e.ID] = e;
+
+        InvokeRemovedForArchetype(e);
     }
 
     /// <summary>
@@ -262,6 +319,20 @@ public sealed class Commands(App app)
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
 
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        if (TypeRegistrar.HasAnyComponentHook(typeId))
+        {
+            var newValue = component;
+
+            unsafe
+            {
+                T* componentPtr = &newValue;
+
+                InvokeAdded(entity.Ref, typeId, componentPtr);
+            }
+        }
+
         return true;
     }
 
@@ -309,6 +380,27 @@ public sealed class Commands(App app)
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
 
+        var hookBundleInfo = TransferDstInfo.BundleInfo;
+
+        unsafe
+        {
+            var bundleCopy = bundle;
+
+            T* bundlePtr = &bundleCopy;
+
+            for (var i = 0; i < hookBundleInfo.Length; i++)
+            {
+                var typeId = hookBundleInfo[i].typeId;
+
+                if (!TypeRegistrar.HasAnyComponentHook(typeId))
+                {
+                    continue;
+                }
+
+                InvokeAdded(entity.Ref, typeId, (byte*)bundlePtr + hookBundleInfo[i].info.Offset);
+            }
+        }
+
         return true;
     }
 
@@ -335,14 +427,21 @@ public sealed class Commands(App app)
             return false;
         }
 
+        var oldPos = entity.Pos;
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
         archetype.MarkRemove(entity.ID, entity.Pos);
 
-        entity.Archetype = TransferDstInfo.Archetype;
+        var dstArchetype = TransferDstInfo.Archetype;
+        entity.Archetype = dstArchetype;
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
+
+        unsafe
+        {
+            InvokeRemovedForMigration(entity.Ref, archetype, oldPos, dstArchetype);
+        }
 
         return true;
     }
@@ -370,14 +469,21 @@ public sealed class Commands(App app)
             return false;
         }
 
+        var oldPos = entity.Pos;
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
         archetype.MarkRemove(entity.ID, entity.Pos);
 
-        entity.Archetype = TransferDstInfo.Archetype;
+        var dstArchetype = TransferDstInfo.Archetype;
+        entity.Archetype = dstArchetype;
         entity.Pos = new(chunkIdx, idx);
         modifiedEntityInfoMap[entity.ID] = entity;
+
+        unsafe
+        {
+            InvokeRemovedForMigration(entity.Ref, archetype, oldPos, dstArchetype);
+        }
 
         return true;
     }
@@ -405,13 +511,69 @@ public sealed class Commands(App app)
             return false;
         }
 
+        var oldPos = entity.Pos;
         var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
 
         archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
         archetype.MarkRemove(entity.ID, entity.Pos);
 
-        entity.Archetype = TransferDstInfo.Archetype;
+        var dstArchetype = TransferDstInfo.Archetype;
+        entity.Archetype = dstArchetype;
         entity.Pos = new(chunkIdx, idx);
+        modifiedEntityInfoMap[entity.ID] = entity;
+
+        unsafe
+        {
+            InvokeRemovedForMigration(entity.Ref, archetype, oldPos, dstArchetype);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Overwrites the value of a component the entity already has, without moving archetypes.
+    /// Reads the previous value first so OnReplace hooks observe both the old and the new value.
+    /// Does nothing when the entity is invalid, removed, or does not have the component; this never upserts.
+    /// </summary>
+    /// <param name="entity">The target entity.</param>
+    /// <param name="component">The new component value.</param>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <returns>True if the component was replaced; false otherwise.</returns>
+    public bool ReplaceComponent<T>(ref Entity entity, in T component) where T : unmanaged, IComponent
+    {
+        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
+        {
+            return false;
+        }
+
+        var archetype = entity.Archetype;
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        if (typeId < 0 || !archetype.TypeIdList.Contains(typeId))
+        {
+            return false;
+        }
+
+        var typeIdx = archetype.GetTypeIndex(typeId);
+        var hasHook = TypeRegistrar.HasAnyComponentHook(typeId);
+
+        if (hasHook)
+        {
+            var previous = GetEntityComponent<T>(archetype, entity.Pos);
+            archetype.PutComponentData(typeIdx, entity.Pos.ChunkIdx, entity.Pos.Idx, in component);
+
+            unsafe
+            {
+                T* previousPtr = &previous;
+
+                InvokeReplaced(entity.Ref, typeId, previousPtr, GetComponentPtr(archetype, typeId, entity.Pos));
+            }
+        }
+        else
+        {
+            archetype.PutComponentData(typeIdx, entity.Pos.ChunkIdx, entity.Pos.Idx, in component);
+        }
+
         modifiedEntityInfoMap[entity.ID] = entity;
 
         return true;
@@ -504,6 +666,183 @@ public sealed class Commands(App app)
 
 #endregion
 
+#region Component Hooks
+
+    /// <summary>
+    /// Notifies OnReplace hooks for a component a system overwrote through an <c>out</c> parameter.
+    /// Called by generated code after <c>Execute</c> returns; do not call it manually.
+    /// The type id is passed in because the generated loop already knows it, which keeps the per-entity
+    /// path free of a type lookup.
+    /// </summary>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="typeId">The registered type id of <typeparamref name="T"/>.</param>
+    /// <param name="entity">The entity whose component was overwritten.</param>
+    /// <param name="previous">The value the component had before <c>Execute</c>.</param>
+    /// <param name="current">The value the component has after <c>Execute</c>.</param>
+    public void InvokeReplaceHooks<T>(int typeId, EntityRef entity, in T previous, in T current) where T : unmanaged, IComponent
+    {
+        if (!TypeRegistrar.HasAnyComponentHook(typeId))
+        {
+            return;
+        }
+
+        var previousValue = previous;
+        var currentValue = current;
+
+        unsafe
+        {
+            T* previousPtr = &previousValue;
+            T* currentPtr = &currentValue;
+
+            InvokeReplaced(entity, typeId, previousPtr, currentPtr);
+        }
+    }
+
+    // OnAdd: component points at the new value.
+    internal unsafe void InvokeAdded(EntityRef entity, int typeId, void* component)
+    {
+        InvokeHook(entity, typeId, ComponentHookKind.OnAdd, component, null);
+    }
+
+    // OnReplace: previous and current both go to the hook, and Previous is set on the context.
+    internal unsafe void InvokeReplaced(EntityRef entity, int typeId, void* previous, void* current)
+    {
+        InvokeHook(entity, typeId, ComponentHookKind.OnReplace, current, previous);
+    }
+
+    // OnRemove: component points at the old value.
+    internal unsafe void InvokeRemoved(EntityRef entity, int typeId, void* previous)
+    {
+        InvokeHook(entity, typeId, ComponentHookKind.OnRemove, previous, null);
+    }
+
+    private unsafe void InvokeHook(EntityRef entity, int typeId, ComponentHookKind kind, void* component, void* previous)
+    {
+        var invoker = TypeRegistrar.GetComponentHook(typeId, kind);
+
+        if (invoker == null)
+        {
+            return;
+        }
+
+        var context = new HookContext(entity, this, app) { Previous = previous };
+        invoker(ref context, component);
+    }
+
+    // Reads a component from an entity's staged current position, including an entity removed by this Commands.
+    internal bool TryGetLiveComponent<T>(EntityRef entity, out T component) where T : unmanaged, IComponent
+    {
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        if (typeId < 0 || !TryResolveLiveEntity(entity, out var archetype, out var pos) || !archetype.TypeIdList.Contains(typeId))
+        {
+            component = default;
+            return false;
+        }
+
+        component = GetEntityComponent<T>(archetype, pos);
+
+        return true;
+    }
+
+    internal bool HasLiveComponent<T>(EntityRef entity) where T : unmanaged, IComponent
+    {
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        return typeId >= 0 && TryResolveLiveEntity(entity, out var archetype, out _) && archetype.TypeIdList.Contains(typeId);
+    }
+
+    internal ref T GetLiveComponent<T>(EntityRef entity) where T : unmanaged, IComponent
+    {
+        if (!TryResolveLiveEntity(entity, out var archetype, out var pos))
+        {
+            throw new InvalidOperationException($"Entity {entity.ID} is not available in this command buffer.");
+        }
+
+        return ref GetEntityComponent<T>(archetype, pos);
+    }
+
+    private bool TryResolveLiveEntity(EntityRef entity, out Archetype archetype, out EntityPos pos)
+    {
+        if (removedEntityMap.TryGetValue(entity.ID, out var removed))
+        {
+            archetype = removed.Archetype;
+            pos = removed.Pos;
+            return true;
+        }
+
+        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var modified))
+        {
+            archetype = modified.Archetype;
+            pos = modified.Pos;
+            return true;
+        }
+
+        if (entityPool.CheckEntityValid(entity))
+        {
+            var info = entityPool.GetEntityInfo(entity);
+            archetype = info.Archetype;
+            pos = info.Pos;
+            return true;
+        }
+
+        archetype = ArchetypeManager.EmptyArchetype;
+        pos = default;
+        return false;
+    }
+
+    // Pointer to the raw stored value of a type at a position. Null when the archetype stores no data at all.
+    private unsafe void* GetComponentPtr(Archetype archetype, int typeId, EntityPos pos)
+    {
+        if (archetype.Table.Layout.MaxAlignment == 0)
+        {
+            return null;
+        }
+
+        var size = TypeRegistrar.GetTypeInfo(typeId).Size;
+        var (basePtr, _) = archetype.GetChunkDataWithReservation(typeId, pos.ChunkIdx);
+
+        return (void*)(basePtr + size * pos.Idx);
+    }
+
+    // Triggers OnRemove for every component on an entity being despawned, reading the old value from its slot.
+    private unsafe void InvokeRemovedForArchetype(Entity entity)
+    {
+        var typeIdList = entity.Archetype.TypeIdList;
+
+        for (var i = 0; i < typeIdList.Length; i++)
+        {
+            var typeId = typeIdList[i];
+
+            if (!TypeRegistrar.HasAnyComponentHook(typeId))
+            {
+                continue;
+            }
+
+            InvokeRemoved(entity.Ref, typeId, GetComponentPtr(entity.Archetype, typeId, entity.Pos));
+        }
+    }
+
+    // Triggers OnRemove for every type present in src but not in dst, reading the old value from the source slot.
+    internal unsafe void InvokeRemovedForMigration(EntityRef entity, Archetype src, EntityPos srcPos, Archetype dst)
+    {
+        var typeIdList = src.TypeIdList;
+
+        for (var i = 0; i < typeIdList.Length; i++)
+        {
+            var typeId = typeIdList[i];
+
+            if (dst.TypeIdList.Contains(typeId) || !TypeRegistrar.HasAnyComponentHook(typeId))
+            {
+                continue;
+            }
+
+            InvokeRemoved(entity, typeId, GetComponentPtr(src, typeId, srcPos));
+        }
+    }
+
+#endregion
+
 #region Internal Methods
 
     internal Dictionary<nint, EntityTransferInfo> TrySetTransferDstInfo(TransferInfoMap map, Archetype archetype, nint ptr)
@@ -520,6 +859,12 @@ public sealed class Commands(App app)
         }
 
         return dict;
+    }
+
+    // Publishes the entity's in-buffer state so hooks fired during the same operation resolve the new position.
+    internal void StageModifiedEntity(Entity entity)
+    {
+        modifiedEntityInfoMap[entity.ID] = entity;
     }
 
     internal void Commit()
@@ -755,25 +1100,68 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
+        var typeIdx = Entity.Commands.TransferDstInfo.TypeIndices[0];
+        var typeId = Entity.Commands.TypeRegistrar.GetTypeId<T>();
+        var hasHook = Entity.Commands.TypeRegistrar.HasAnyComponentHook(typeId);
 
         if (dstArchetype == originalArchetype)
         {
             // Remove and Add of the same component type — archetype doesn't change.
             // Just update the component data in place, no migration needed.
-            dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], Entity.Pos.ChunkIdx, Entity.Pos.Idx, in component);
+            var previous = default(T);
+
+            if (hasHook)
+            {
+                previous = Entity.Commands.GetEntityComponent<T>(originalArchetype, Entity.Pos);
+            }
+
+            dstArchetype.PutComponentData(typeIdx, Entity.Pos.ChunkIdx, Entity.Pos.Idx, in component);
             Entity.Archetype = dstArchetype;
+
+            Entity.Commands.StageModifiedEntity(Entity);
+
+            if (hasHook)
+            {
+                unsafe
+                {
+                    T* previousPtr = &previous;
+
+                    Entity.Commands.InvokeReplaced(Entity.Ref, typeId, previousPtr,
+                        dstArchetype.Table.GetPtr(typeIdx, Entity.Pos.ChunkIdx, Entity.Pos.Idx));
+                }
+            }
         }
         else
         {
+            var oldPos = Entity.Pos;
             var (chunkIdx, idx) = dstArchetype.Reserve();
 
-            dstArchetype.PutComponentData(Entity.Commands.TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
+            dstArchetype.PutComponentData(typeIdx, chunkIdx, idx, in component);
 
-            originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-            originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+            originalArchetype.MoveDataTo(dstArchetype, oldPos.ChunkIdx, oldPos.Idx, chunkIdx, idx);
+            originalArchetype.MarkRemove(Entity.ID, oldPos);
 
             Entity.Archetype = dstArchetype;
             Entity.Pos = new(chunkIdx, idx);
+
+            Entity.Commands.StageModifiedEntity(Entity);
+
+            unsafe
+            {
+                Entity.Commands.InvokeRemovedForMigration(Entity.Ref, originalArchetype, oldPos, dstArchetype);
+            }
+
+            if (hasHook)
+            {
+                var newValue = component;
+
+                unsafe
+                {
+                    T* componentPtr = &newValue;
+
+                    Entity.Commands.InvokeAdded(Entity.Ref, typeId, componentPtr);
+                }
+            }
         }
 
         hasAdded = true;
@@ -799,49 +1187,96 @@ public struct EntityAlterContext
         Debug.Assert(Entity.Commands.TransferDstInfo != null);
 
         var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
+        var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo;
+        var typeIndices = Entity.Commands.TransferDstInfo.TypeIndices;
+        var bundleCopy = bundle;
 
         if (dstArchetype == originalArchetype)
         {
             // Remove and Add of the same bundle type — archetype doesn't change.
-            // Just update the component data in place, no migration needed.
-            for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
+            // Overwrite each field in place and report it as a replacement.
+            unsafe
             {
-                unsafe
+                var maxSize = 0;
+
+                for (var i = 0; i < bundleInfo.Length; i++)
                 {
-                    var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo[i];
-                    var ptr = dstArchetype.Table.GetPtr(Entity.Commands.TransferDstInfo.TypeIndices[i], Entity.Pos.ChunkIdx, Entity.Pos.Idx);
-                    fixed (T* bundlePtr = &bundle)
+                    maxSize = Math.Max(maxSize, bundleInfo[i].info.Size);
+                }
+
+                var previousBuffer = stackalloc byte[maxSize];
+
+                T* bundlePtr = &bundleCopy;
+
+                for (var i = 0; i < typeIndices.Length; i++)
+                {
+                    var info = bundleInfo[i];
+                    var typeId = info.typeId;
+                    var hasHook = Entity.Commands.TypeRegistrar.HasAnyComponentHook(typeId);
+                    var ptr = dstArchetype.Table.GetPtr(typeIndices[i], Entity.Pos.ChunkIdx, Entity.Pos.Idx);
+                    var componentPtr = (byte*)bundlePtr + info.info.Offset;
+
+                    if (hasHook)
                     {
-                        var componentPtr = (byte*)bundlePtr + bundleInfo.info.Offset;
-                        NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.info.Size);
+                        NativeMemory.Copy(ptr, previousBuffer, (nuint)info.info.Size);
+                    }
+
+                    NativeMemory.Copy(componentPtr, ptr, (nuint)info.info.Size);
+
+                    if (hasHook)
+                    {
+                        Entity.Commands.InvokeReplaced(Entity.Ref, typeId, previousBuffer, ptr);
                     }
                 }
             }
+
             Entity.Archetype = dstArchetype;
+            Entity.Commands.StageModifiedEntity(Entity);
         }
         else
         {
+            var oldPos = Entity.Pos;
             var (chunkIdx, idx) = dstArchetype.Reserve();
 
-            for (var i = 0; i < Entity.Commands.TransferDstInfo.TypeIndices.Length; i++)
+            unsafe
             {
-                unsafe
+                T* bundlePtr = &bundleCopy;
+
+                for (var i = 0; i < typeIndices.Length; i++)
                 {
-                    var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo[i];
-                    var ptr = dstArchetype.Table.GetPtr(Entity.Commands.TransferDstInfo.TypeIndices[i], chunkIdx, idx);
-                    fixed (T* bundlePtr = &bundle)
-                    {
-                        var componentPtr = (byte*)bundlePtr + bundleInfo.info.Offset;
-                        NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.info.Size);
-                    }
+                    var info = bundleInfo[i].info;
+                    var ptr = dstArchetype.Table.GetPtr(typeIndices[i], chunkIdx, idx);
+                    var componentPtr = (byte*)bundlePtr + info.Offset;
+                    NativeMemory.Copy(componentPtr, ptr, (nuint)info.Size);
                 }
             }
 
-            originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-            originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+            originalArchetype.MoveDataTo(dstArchetype, oldPos.ChunkIdx, oldPos.Idx, chunkIdx, idx);
+            originalArchetype.MarkRemove(Entity.ID, oldPos);
 
             Entity.Archetype = dstArchetype;
             Entity.Pos = new(chunkIdx, idx);
+
+            Entity.Commands.StageModifiedEntity(Entity);
+
+            unsafe
+            {
+                Entity.Commands.InvokeRemovedForMigration(Entity.Ref, originalArchetype, oldPos, dstArchetype);
+
+                T* bundlePtr = &bundleCopy;
+
+                for (var i = 0; i < bundleInfo.Length; i++)
+                {
+                    var typeId = bundleInfo[i].typeId;
+
+                    if (!Entity.Commands.TypeRegistrar.HasAnyComponentHook(typeId))
+                    {
+                        continue;
+                    }
+
+                    Entity.Commands.InvokeAdded(Entity.Ref, typeId, (byte*)bundlePtr + bundleInfo[i].info.Offset);
+                }
+            }
         }
 
         hasAdded = true;
@@ -865,12 +1300,20 @@ public struct EntityAlterContext
             return false;
         }
 
+        var oldPos = Entity.Pos;
         var (chunkIdx, idx) = dstArchetype.Reserve();
-        originalArchetype.MoveDataTo(dstArchetype, Entity.Pos.ChunkIdx, Entity.Pos.Idx, chunkIdx, idx);
-        originalArchetype.MarkRemove(Entity.ID, Entity.Pos);
+        originalArchetype.MoveDataTo(dstArchetype, oldPos.ChunkIdx, oldPos.Idx, chunkIdx, idx);
+        originalArchetype.MarkRemove(Entity.ID, oldPos);
 
         Entity.Archetype = dstArchetype;
         Entity.Pos = new(chunkIdx, idx);
+
+        Entity.Commands.StageModifiedEntity(Entity);
+
+        unsafe
+        {
+            Entity.Commands.InvokeRemovedForMigration(Entity.Ref, originalArchetype, oldPos, dstArchetype);
+        }
 
         return true;
     }

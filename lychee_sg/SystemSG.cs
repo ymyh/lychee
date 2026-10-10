@@ -325,7 +325,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
             return $@"
     public unsafe void InitializeAG(App app, SystemDescriptor descriptor)
     {{
-        SystemDataAG.Pool = app.ResourcePool;{(multiThread ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool(SystemDataAG.descriptor.ThreadCount);" : "")}
+        SystemDataAG.Pool = app.ResourcePool;{(multiThread ? $"\n        SystemDataAG.ThreadPool = app.CreateThreadPool(descriptor.ThreadCount);" : "")}
         SystemDataAG.descriptor = descriptor;
         SystemDataAG.TypeIdList = [{registerTypes}];
         SystemDataAG.Commands = new Commands[Math.Max(1, SystemDataAG.descriptor.ThreadCount)];
@@ -550,7 +550,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
 
             for (var i = 0; i < componentParams.Length; i++)
             {
-                declIterCode.AppendLine($"                        var {componentParams[i].ParamName} = archetype.GetChunkData<{componentParams[i].Type}>(SystemDataAG.TypeIdList[{i}], j);");
+                declIterCode.AppendLine($"                        var {componentParams[i].ParamName} = _archetype.GetChunkData<{componentParams[i].Type}>(SystemDataAG.TypeIdList[{i}], _j);");
             }
 
             if (hasComponentSpan)
@@ -592,7 +592,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                         var _entitySpan = _archetype.GetEntitiesSpan().Slice(_beginIndex, _size);
                         for (var _i = 0; _i < _size; _i++)
                         {{
-{(entityParamName != null ? $"                            var {entityParamName} = new Entity(SystemDataAG.Commands[_threadIdx], _archetype, _entitySpan[_i].Item2, new(_j, _i));" : "")}
+{(entityParamName != null ? $"                            var {entityParamName} = new Entity(SystemDataAG.Commands[_threadIdx], _entitySpan[_i].Item2);" : "")}
 {outSnapshot}                            Execute({execParams});
 {outReplace}                        }}
                         _beginIndex += _size;
@@ -648,7 +648,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
 
                 for (var _i = 0; _i < _size; _i++)
                 {{
-{(entityParamName != null ? $"                    var {entityParamName} = new Entity(SystemDataAG.Commands[0], _archetype, _entitySpan[_i].Item2, new(_chunkIdx, _i));" : "")}
+{(entityParamName != null ? $"                    var {entityParamName} = new Entity(SystemDataAG.Commands[0], _entitySpan[_i].Item2);" : "")}
 {outSnapshot}                    Execute({execParams});
 {outReplace}                }}
                 _beginIndex += _size;
@@ -724,7 +724,7 @@ partial class {sysInfo.Name}{sysInfo.TypeParameters} : ISystem{sysInfo.TypeConst
                         break;
 
                     case ParamKind.Commands:
-                        return multiThread ? "SystemDataAG.Commands[threadIdx]" : "SystemDataAG.Commands[0]";
+                        return multiThread ? "SystemDataAG.Commands[_threadIdx]" : "SystemDataAG.Commands[0]";
 
                     case ParamKind.EventWriter:
                     case ParamKind.EventReader:

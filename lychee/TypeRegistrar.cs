@@ -251,17 +251,24 @@ public sealed class TypeRegistrar
 
     /// <summary>
     /// Registers a component type and stores the hook for the given kind. The type is registered on demand,
-    /// and calling this again for the same kind overwrites the previous hook.
+    /// and calling this again for the same kind throws.
     /// </summary>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
     /// <param name="kind">The hook kind to register.</param>
     /// <param name="hook">The hook to invoke for this kind.</param>
+    /// <exception cref="InvalidOperationException">Thrown when a hook is already registered for the type and kind.</exception>
     public unsafe void SetComponentHook<T>(ComponentHookKind kind, ComponentHook<T> hook) where T : unmanaged, IComponent
     {
         using var wg = typeListLock.EnterWriteLock();
         var typeId = RegisterCore(wg.Data, typeof(T));
 
         var row = componentHooks[typeId];
+
+        if (row[(int)kind] != null)
+        {
+            throw new InvalidOperationException($"A {kind} hook is already registered for component type {typeof(T).Name}.");
+        }
+
         var newRow = new ComponentHookInvoker?[ComponentHookKindCount];
         Array.Copy(row, newRow, ComponentHookKindCount);
         newRow[(int)kind] = new ComponentHookHolder<T>(hook).Invoke;

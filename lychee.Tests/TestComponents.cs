@@ -23,6 +23,12 @@ internal partial struct TestVelocity
     public float DY;
 }
 
+[Component]
+internal partial struct TestMarker
+{
+    public int Value;
+}
+
 internal struct TestMovement : IComponentBundle
 {
     public TestPosition Position;

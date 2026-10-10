@@ -1,582 +1,188 @@
-﻿using System.Diagnostics;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using lychee.collections;
 using lychee.interfaces;
 
 namespace lychee;
 
-using TransferInfoMap = SparseMap<Dictionary<nint, EntityTransferInfo>>;
-
-internal sealed class EntityTransferInfo(Archetype archetype, (TypeInfo info, int typeId)[] bundleInfo)
-{
-    public readonly Archetype Archetype = archetype;
-
-    public readonly int[] TypeIndices = bundleInfo.Select(x => archetype.GetTypeIndex(x.typeId)).ToArray();
-
-    public readonly (TypeInfo info, int typeId)[] BundleInfo = bundleInfo;
-}
-
 /// <summary>
 /// Provides deferred entity modification operations for ECS systems.
-/// Changes are buffered and applied atomically when Commit is called.
-/// This ensures safe concurrent access to entity data during system execution.
+/// Every structural change is only recorded here; the world is untouched until the queue is applied at a
+/// commit point. This keeps entity locations stable while systems run and lets several buffers act on the
+/// same entity in order instead of overwriting one another.
 /// </summary>
-public sealed class Commands(App app)
+public sealed unsafe class Commands(App app)
 {
 #region Fields
 
     private readonly EntityPool entityPool = app.World.EntityPool;
 
-    internal readonly ArchetypeManager ArchetypeManager = app.World.ArchetypeManager;
+    private readonly ArchetypeManager archetypeManager = app.World.ArchetypeManager;
 
     internal readonly TypeRegistrar TypeRegistrar = app.TypeRegistrar;
 
-    internal readonly TransferInfoMap ArchetypeAddingTypeMap = [];
+    internal readonly CommandQueue Queue = new();
 
-    internal readonly TransferInfoMap ArchetypeRemovingTypeMap = [];
+    // Reused scratch state for AlterComponents. A Commands is single-writer, so one set is enough.
+    internal readonly List<int> AlterRemoveTypeIdList = [];
 
-    private readonly SparseMap<Entity> modifiedEntityInfoMap = [];
+    internal readonly List<int> AlterAddTypeIdList = [];
 
-    private readonly SparseMap<Entity> removedEntityMap = [];
+    internal readonly List<int> AlterAddOffsetList = [];
 
-    internal EntityTransferInfo? TransferDstInfo;
+    internal byte[] AlterAddBlob = new byte[128];
+
+    internal int AlterAddBlobSize;
+
+    internal bool AlterHasAdded;
+
+    private byte[] alterPayloadBuffer = new byte[128];
 
 #endregion
 
 #region Public Methods
 
     /// <summary>
-    /// Creates a new entity in an uncommitted state.
-    /// The entity will be fully registered when Commit is called.
+    /// Records creating a new entity without components.
     /// </summary>
-    /// <returns>The newly created entity.</returns>
+    /// <returns>A handle to the reserved entity.</returns>
     public Entity CreateEntity()
     {
         var entityRef = entityPool.ReserveEntity();
-        var entity = new Entity(this, ArchetypeManager.EmptyArchetype, entityRef, new());
+        Queue.Enqueue(&CommandAppliers.Spawn, new SpawnCommand(entityRef));
 
-        modifiedEntityInfoMap[entityRef.ID] = entity;
-
-        return entity;
+        return new Entity(this, entityRef);
     }
 
     /// <summary>
-    /// Creates a new entity with a single component attached, skipping the EmptyArchetype migration.
+    /// Records creating a new entity with a single component attached, skipping the empty archetype migration.
     /// </summary>
     /// <param name="component">The component value to attach.</param>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>The newly created entity with the component.</returns>
+    /// <returns>A handle to the reserved entity.</returns>
     public Entity CreateEntityWithComponent<T>(in T component) where T : unmanaged, IComponent
     {
-        this.AddComponentTransferInfo<T>(ArchetypeManager.EmptyArchetype);
-
-        Debug.Assert(TransferDstInfo != null);
+        TypeRegistrar.RegisterComponent<T>();
 
         var entityRef = entityPool.ReserveEntity();
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+        Queue.Enqueue(&CommandAppliers.SpawnWith<T>, new SpawnWithCommand<T>(entityRef, component));
 
-        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
-
-        var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
-        modifiedEntityInfoMap[entityRef.ID] = entity;
-
-        var typeId = TypeRegistrar.GetTypeId<T>();
-
-        if (TypeRegistrar.HasAnyComponentHook(typeId))
-        {
-            var newValue = component;
-
-            unsafe
-            {
-                T* componentPtr = &newValue;
-
-                InvokeAdded(entityRef, typeId, componentPtr);
-            }
-        }
-
-        return entity;
+        return new Entity(this, entityRef);
     }
 
     /// <summary>
-    /// Creates a new entity with a component bundle attached, skipping the EmptyArchetype migration.
+    /// Records creating a new entity with a component bundle attached, skipping the empty archetype migration.
     /// </summary>
     /// <param name="bundle">The component bundle containing the components to attach.</param>
     /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
-    /// <returns>The newly created entity with the bundle components.</returns>
+    /// <returns>A handle to the reserved entity.</returns>
     public Entity CreateEntityWithComponents<T>(in T bundle) where T : unmanaged, IComponentBundle
     {
-        this.AddComponentsTransferInfo<T>(ArchetypeManager.EmptyArchetype);
-
-        Debug.Assert(TransferDstInfo != null);
+        TypeRegistrar.RegisterBundle<T>();
 
         var entityRef = entityPool.ReserveEntity();
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
+        Queue.Enqueue(&CommandAppliers.SpawnWithBundle<T>, new SpawnWithBundleCommand<T>(entityRef, bundle));
 
-        for (var i = 0; i < TransferDstInfo.TypeIndices.Length; i++)
-        {
-            unsafe
-            {
-                var bundleInfo = TransferDstInfo.BundleInfo[i].info;
-                var ptr = TransferDstInfo.Archetype.Table.GetPtr(TransferDstInfo.TypeIndices[i], chunkIdx, idx);
-
-                fixed (T* bundlePtr = &bundle)
-                {
-                    var componentPtr = (byte*)bundlePtr + bundleInfo.Offset;
-                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.Size);
-                }
-            }
-        }
-
-        var entity = new Entity(this, TransferDstInfo.Archetype, entityRef, new((ushort)chunkIdx, (ushort)idx));
-        modifiedEntityInfoMap[entityRef.ID] = entity;
-
-        var hookBundleInfo = TransferDstInfo.BundleInfo;
-
-        unsafe
-        {
-            var bundleCopy = bundle;
-
-            T* bundlePtr = &bundleCopy;
-
-            for (var i = 0; i < hookBundleInfo.Length; i++)
-            {
-                var typeId = hookBundleInfo[i].typeId;
-
-                if (!TypeRegistrar.HasAnyComponentHook(typeId))
-                {
-                    continue;
-                }
-
-                InvokeAdded(entityRef, typeId, (byte*)bundlePtr + hookBundleInfo[i].info.Offset);
-            }
-        }
-
-        return entity;
+        return new Entity(this, entityRef);
     }
 
     /// <summary>
-    /// Creates a copy of an existing entity with identical component data.
+    /// Records a copy of an existing entity, taken from the source's state when the command is applied.
     /// </summary>
     /// <param name="entity">The entity to copy.</param>
-    /// <returns>The newly created copy entity.</returns>
-    public Entity CopyEntity(in Entity entity)
+    /// <param name="mode">Whether to copy the entity alone or its whole linked subtree.</param>
+    /// <returns>A handle to the reserved copy entity.</returns>
+    public Entity CopyEntity(in Entity entity, CloneMode mode = CloneMode.Shallow)
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            throw new ArgumentException("Cannot copy an invalid entity");
-        }
-
         var newEntityRef = entityPool.ReserveEntity();
-        var (newChunkIdx, newIdx) = entity.Archetype.Reserve();
+        Queue.Enqueue(&CommandAppliers.Copy, new CopyCommand(entity.Ref, newEntityRef, mode));
 
-        var typeIdList = entity.Archetype.TypeIdList;
-        for (var i = 0; i < typeIdList.Length; i++)
-        {
-            unsafe
-            {
-                var srcPtr = entity.Archetype.Table.GetPtr(i, entity.Pos.ChunkIdx, entity.Pos.Idx);
-                var dstPtr = entity.Archetype.Table.GetPtr(i, newChunkIdx, newIdx);
-                NativeMemory.Copy(
-                    srcPtr,
-                    dstPtr,
-                    (nuint)entity.Archetype.Table.Layout.TypeInfoList[i].Size);
-            }
-        }
-
-        var newEntity = new Entity(this, entity.Archetype, newEntityRef, new((ushort)newChunkIdx, (ushort)newIdx));
-        modifiedEntityInfoMap[newEntityRef.ID] = newEntity;
-
-        var newPos = new EntityPos((ushort)newChunkIdx, (ushort)newIdx);
-        var copyTypeIdList = entity.Archetype.TypeIdList;
-
-        for (var i = 0; i < copyTypeIdList.Length; i++)
-        {
-            var typeId = copyTypeIdList[i];
-
-            if (!TypeRegistrar.HasAnyComponentHook(typeId))
-            {
-                continue;
-            }
-
-            unsafe
-            {
-                InvokeAdded(newEntityRef, typeId, GetComponentPtr(entity.Archetype, typeId, newPos));
-            }
-        }
-
-        return newEntity;
+        return new Entity(this, newEntityRef);
     }
 
     /// <summary>
-    /// Removes an existing entity. Does nothing if the entity is already removed or in uncommitted state.
+    /// Records removing an entity.
     /// </summary>
     /// <param name="entityRef">The entity to remove.</param>
     public void RemoveEntity(EntityRef entityRef)
     {
-        if (modifiedEntityInfoMap.TryGetValue(entityRef.ID, out var entity))
-        {
-        }
-        else if (!GetEntityByRef(entityRef, out entity))
-        {
-            return;
-        }
-
-        entity.Archetype.MarkRemove(entity.ID, entity.Pos);
-        modifiedEntityInfoMap.Remove(entity.ID);
-        entityPool.MarkRemoveEntity(entity.Ref);
-        removedEntityMap[entity.ID] = entity;
-
-        InvokeRemovedForArchetype(entity);
+        Queue.Enqueue(&CommandAppliers.Despawn, new DespawnCommand(entityRef));
     }
 
     /// <summary>
-    /// Removes an existing entity.
-    /// Does nothing if the entity is already removed or in uncommitted state.
+    /// Records removing an entity.
     /// </summary>
     /// <param name="entity">The entity to remove.</param>
     public void RemoveEntity(in Entity entity)
     {
-        var e = entity;
-        if (removedEntityMap.ContainsKey(entity.ID))
-        {
-            return;
-        }
-
-        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var modifiedEntity))
-        {
-            e = modifiedEntity;
-        }
-
-        e.Archetype.MarkRemove(e.ID, e.Pos);
-        modifiedEntityInfoMap.Remove(e.ID);
-        entityPool.MarkRemoveEntity(e.Ref);
-        removedEntityMap[e.ID] = e;
-
-        InvokeRemovedForArchetype(e);
+        RemoveEntity(entity.Ref);
     }
 
     /// <summary>
-    /// Gets an entity by its reference.
-    /// Returns uncommitted modifications if any exist.
-    /// </summary>
-    /// <param name="entityRef">The entity reference to look up.</param>
-    /// <param name="entity">When this method returns, contains the entity if found; otherwise, the default value.</param>
-    /// <returns>True if the entity was found; false if the entity is invalid or removed.</returns>
-    public bool GetEntityByRef(EntityRef entityRef, out Entity entity)
-    {
-        if (removedEntityMap.ContainsKey(entityRef.ID))
-        {
-            entity = default;
-            return false;
-        }
-
-        if (modifiedEntityInfoMap.ContainsKey(entityRef.ID))
-        {
-            entity = modifiedEntityInfoMap[entityRef.ID];
-            return true;
-        }
-
-        if (!entityPool.CheckEntityValid(entityRef))
-        {
-            entity = default;
-            return false;
-        }
-
-        var info = entityPool.GetEntityInfo(entityRef);
-        entity = new(this, info.Archetype, entityRef, info.Pos);
-
-        return true;
-    }
-
-    /// <summary>
-    /// Adds a component to an entity. The entity will be moved to a new archetype.
+    /// Records adding a component to an entity. The entity moves to a new archetype when applied.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <param name="component">The component value to add.</param>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>True if the component was added; false if the entity is invalid or removed.</returns>
-    public bool AddComponent<T>(ref Entity entity, in T component) where T : unmanaged, IComponent
+    public void AddComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            return false;
-        }
-
-        var archetype = entity.Archetype;
-        this.AddComponentTransferInfo<T>(archetype);
-
-        Debug.Assert(TransferDstInfo != null);
-
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-
-        TransferDstInfo.Archetype.PutComponentData(TransferDstInfo.TypeIndices[0], chunkIdx, idx, in component);
-
-        archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
-        archetype.MarkRemove(entity.ID, entity.Pos);
-
-        entity.Archetype = TransferDstInfo.Archetype;
-        entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap[entity.ID] = entity;
-
-        var typeId = TypeRegistrar.GetTypeId<T>();
-
-        if (TypeRegistrar.HasAnyComponentHook(typeId))
-        {
-            var newValue = component;
-
-            unsafe
-            {
-                T* componentPtr = &newValue;
-
-                InvokeAdded(entity.Ref, typeId, componentPtr);
-            }
-        }
-
-        return true;
+        AddComponent(entity.Ref, in component);
     }
 
     /// <summary>
-    /// Adds multiple components as a bundle to an entity.
-    /// All components in the bundle will be added in a single operation.
+    /// Records adding multiple components as a bundle to an entity in a single migration.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <param name="bundle">The component bundle containing the components to add.</param>
     /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
-    /// <returns>True if the components were added; false if the entity is invalid or removed.</returns>
-    public bool AddComponents<T>(ref Entity entity, in T bundle) where T : unmanaged, IComponentBundle
+    public void AddComponents<T>(Entity entity, in T bundle) where T : unmanaged, IComponentBundle
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            return false;
-        }
-
-        var archetype = entity.Archetype;
-        this.AddComponentsTransferInfo<T>(archetype);
-
-        Debug.Assert(TransferDstInfo != null);
-
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-
-        for (var i = 0; i < TransferDstInfo.TypeIndices.Length; i++)
-        {
-            unsafe
-            {
-                var bundleInfo = TransferDstInfo.BundleInfo[i].info;
-                var ptr = TransferDstInfo.Archetype.Table.GetPtr(TransferDstInfo.TypeIndices[i], chunkIdx, idx);
-
-                fixed (T* bundlePtr = &bundle)
-                {
-                    var componentPtr = (byte*)bundlePtr + bundleInfo.Offset;
-                    NativeMemory.Copy(componentPtr, ptr, (nuint)bundleInfo.Size);
-                }
-            }
-        }
-
-        archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
-        archetype.MarkRemove(entity.ID, entity.Pos);
-
-        entity.Archetype = TransferDstInfo.Archetype;
-        entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap[entity.ID] = entity;
-
-        var hookBundleInfo = TransferDstInfo.BundleInfo;
-
-        unsafe
-        {
-            var bundleCopy = bundle;
-
-            T* bundlePtr = &bundleCopy;
-
-            for (var i = 0; i < hookBundleInfo.Length; i++)
-            {
-                var typeId = hookBundleInfo[i].typeId;
-
-                if (!TypeRegistrar.HasAnyComponentHook(typeId))
-                {
-                    continue;
-                }
-
-                InvokeAdded(entity.Ref, typeId, (byte*)bundlePtr + hookBundleInfo[i].info.Offset);
-            }
-        }
-
-        return true;
+        TypeRegistrar.RegisterBundle<T>();
+        Queue.Enqueue(&CommandAppliers.InsertBundle<T>, new InsertBundleCommand<T>(entity.Ref, bundle));
     }
 
     /// <summary>
-    /// Removes a component from an entity. The entity will be moved to a new archetype.
+    /// Records removing a component from an entity.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <typeparam name="T">The component type to remove, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>True if the component was removed; false if the entity is invalid, removed, or doesn't have this component.</returns>
-    public bool RemoveComponent<T>(ref Entity entity) where T : unmanaged, IComponent
+    public void RemoveComponent<T>(Entity entity) where T : unmanaged, IComponent
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            return false;
-        }
-
-        var archetype = entity.Archetype;
-        this.RemoveComponentTransferInfo<T>(archetype);
-
-        Debug.Assert(TransferDstInfo != null);
-
-        if (TransferDstInfo.Archetype == entity.Archetype)
-        {
-            return false;
-        }
-
-        var oldPos = entity.Pos;
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-
-        archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
-        archetype.MarkRemove(entity.ID, entity.Pos);
-
-        var dstArchetype = TransferDstInfo.Archetype;
-        entity.Archetype = dstArchetype;
-        entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap[entity.ID] = entity;
-
-        unsafe
-        {
-            InvokeRemovedForMigration(entity.Ref, archetype, oldPos, dstArchetype);
-        }
-
-        return true;
+        RemoveComponent<T>(entity.Ref);
     }
 
     /// <summary>
-    /// Removes all components defined in a component bundle from an entity.
+    /// Records removing all components defined in a bundle from an entity.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
-    /// <returns>True if the components were removed; false if the entity is invalid, removed, or doesn't have these components.</returns>
-    public bool RemoveComponents<T>(ref Entity entity) where T : unmanaged, IComponentBundle
+    public void RemoveComponents<T>(Entity entity) where T : unmanaged, IComponentBundle
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            return false;
-        }
-
-        var archetype = entity.Archetype;
-        this.RemoveComponentsTransferInfo<T>(archetype);
-
-        Debug.Assert(TransferDstInfo != null);
-
-        if (TransferDstInfo.Archetype == entity.Archetype)
-        {
-            return false;
-        }
-
-        var oldPos = entity.Pos;
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-
-        archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
-        archetype.MarkRemove(entity.ID, entity.Pos);
-
-        var dstArchetype = TransferDstInfo.Archetype;
-        entity.Archetype = dstArchetype;
-        entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap[entity.ID] = entity;
-
-        unsafe
-        {
-            InvokeRemovedForMigration(entity.Ref, archetype, oldPos, dstArchetype);
-        }
-
-        return true;
+        TypeRegistrar.RegisterBundle<T>();
+        Queue.Enqueue(&CommandAppliers.RemoveBundle<T>, new RemoveCommand(entity.Ref));
     }
 
     /// <summary>
-    /// Removes all components defined in a tuple from an entity.
+    /// Records removing all components defined in a tuple from an entity.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <typeparam name="T">The tuple type containing the component types to remove, must be unmanaged.</typeparam>
-    /// <returns>True if the components were removed; false if the entity is invalid, removed, or doesn't have these components.</returns>
-    public bool RemoveComponentsTuple<T>(ref Entity entity) where T : unmanaged
+    public void RemoveComponentsTuple<T>(Entity entity) where T : unmanaged
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            return false;
-        }
-
-        var archetype = entity.Archetype;
-        this.RemoveComponentsTupleTransferInfo<T>(archetype);
-
-        Debug.Assert(TransferDstInfo != null);
-
-        if (TransferDstInfo.Archetype == entity.Archetype)
-        {
-            return false;
-        }
-
-        var oldPos = entity.Pos;
-        var (chunkIdx, idx) = TransferDstInfo.Archetype.Reserve();
-
-        archetype.MoveDataTo(TransferDstInfo.Archetype, entity.Pos.ChunkIdx, entity.Pos.Idx, chunkIdx, idx);
-        archetype.MarkRemove(entity.ID, entity.Pos);
-
-        var dstArchetype = TransferDstInfo.Archetype;
-        entity.Archetype = dstArchetype;
-        entity.Pos = new(chunkIdx, idx);
-        modifiedEntityInfoMap[entity.ID] = entity;
-
-        unsafe
-        {
-            InvokeRemovedForMigration(entity.Ref, archetype, oldPos, dstArchetype);
-        }
-
-        return true;
+        TypeRegistrar.RegisterTypesOfTuple<T>();
+        Queue.Enqueue(&CommandAppliers.RemoveTuple<T>, new RemoveCommand(entity.Ref));
     }
 
     /// <summary>
-    /// Overwrites the value of a component the entity already has, without moving archetypes.
-    /// Reads the previous value first so OnReplace hooks observe both the old and the new value.
-    /// Does nothing when the entity is invalid, removed, or does not have the component; this never upserts.
+    /// Records overwriting a component the entity already has, without moving archetypes.
+    /// Reads the previous value when applied so OnReplace hooks observe both the old and the new value.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <param name="component">The new component value.</param>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>True if the component was replaced; false otherwise.</returns>
-    public bool ReplaceComponent<T>(ref Entity entity, in T component) where T : unmanaged, IComponent
+    public void ReplaceComponent<T>(Entity entity, in T component) where T : unmanaged, IComponent
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
-        {
-            return false;
-        }
-
-        var archetype = entity.Archetype;
-        var typeId = TypeRegistrar.GetTypeId<T>();
-
-        if (typeId < 0 || !archetype.TypeIdList.Contains(typeId))
-        {
-            return false;
-        }
-
-        var typeIdx = archetype.GetTypeIndex(typeId);
-        var hasHook = TypeRegistrar.HasAnyComponentHook(typeId);
-
-        if (hasHook)
-        {
-            var previous = GetEntityComponent<T>(archetype, entity.Pos);
-            archetype.PutComponentData(typeIdx, entity.Pos.ChunkIdx, entity.Pos.Idx, in component);
-
-            unsafe
-            {
-                T* previousPtr = &previous;
-
-                InvokeReplaced(entity.Ref, typeId, previousPtr, GetComponentPtr(archetype, typeId, entity.Pos));
-            }
-        }
-        else
-        {
-            archetype.PutComponentData(typeIdx, entity.Pos.ChunkIdx, entity.Pos.Idx, in component);
-        }
-
-        modifiedEntityInfoMap[entity.ID] = entity;
-
-        return true;
+        TypeRegistrar.RegisterComponent<T>();
+        Queue.Enqueue(&CommandAppliers.Replace<T>, new ReplaceCommand<T>(entity.Ref, component));
     }
 
     /// <summary>
@@ -586,99 +192,107 @@ public sealed class Commands(App app)
     public delegate void EntityAlterContextDelegate(ref EntityAlterContext context);
 
     /// <summary>
-    /// Performs multiple component additions and removals on an entity in a single archetype migration.
+    /// Records multiple component additions and removals on an entity as a single archetype migration.
     /// Remove operations must be called before Add operations within the configuration callback.
     /// </summary>
     /// <param name="entity">The target entity.</param>
     /// <param name="configure">A callback that configures the alterations using the EntityAlter builder.</param>
-    /// <returns>True if any alterations were made; false if the entity is invalid or no changes were made.</returns>
-    public bool AlterComponents(ref Entity entity, EntityAlterContextDelegate configure)
+    public void AlterComponents(Entity entity, EntityAlterContextDelegate configure)
     {
-        if (removedEntityMap.ContainsKey(entity.ID) || !entityPool.CheckEntityValid(entity.Ref))
+        AlterRemoveTypeIdList.Clear();
+        AlterAddTypeIdList.Clear();
+        AlterAddOffsetList.Clear();
+        AlterAddBlobSize = 0;
+        AlterHasAdded = false;
+
+        var context = new EntityAlterContext(this, entity);
+        configure(ref context);
+
+        if (AlterRemoveTypeIdList.Count == 0 && AlterAddTypeIdList.Count == 0)
         {
+            return;
+        }
+
+        EnqueueAlter(entity);
+    }
+
+    /// <summary>
+    /// Gets an entity handle by its reference. Returns false for an unknown or removed reference, and for a
+    /// reserved entity that has not been spawned yet.
+    /// </summary>
+    /// <param name="entityRef">The entity reference to look up.</param>
+    /// <param name="entity">When this method returns, contains the entity if found; otherwise, the default value.</param>
+    /// <returns>True if the entity was found; otherwise, false.</returns>
+    public bool GetEntityByRef(EntityRef entityRef, out Entity entity)
+    {
+        if (!entityPool.CheckEntityValid(entityRef) || !entityPool.TryGetEntityInfo(entityRef, out _))
+        {
+            entity = default;
+
             return false;
         }
 
-        var alter = new EntityAlterContext(entity);
-        configure(ref alter);
+        entity = new(this, entityRef);
 
-        if (alter.Commit())
-        {
-            entity = alter.Entity;
-            modifiedEntityInfoMap[entity.ID] = entity;
-            return true;
-        }
-
-        return false;
+        return true;
     }
 
     /// <summary>
-    /// Gets a reference to a component of the given entity.
-    /// </summary>
-    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
-    /// <returns>A reference to the component.</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref T GetEntityComponent<T>(Archetype archetype, EntityPos entityPos) where T : unmanaged, IComponent
-    {
-        var (ptr, size) = archetype.GetChunkDataWithReservation(TypeRegistrar.GetTypeId<T>(), entityPos.ChunkIdx);
-
-        Debug.Assert((uint)entityPos.Idx < (uint)size);
-
-        unsafe
-        {
-            return ref ((T*)ptr)[entityPos.Idx];
-        }
-    }
-
-    /// <summary>
-    /// Checks whether an entity has a specific component.
-    /// </summary>
-    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
-    /// <param name="entity">The entity to check.</param>
-    /// <returns>True if the entity has the component; otherwise, false.</returns>
-    public bool WithComponent<T>(ref Entity entity) where T : unmanaged, IComponent
-    {
-        var typeId = TypeRegistrar.GetTypeId<T>();
-        return entity.Archetype.TypeIdList.Any(x => x == typeId);
-    }
-
-    /// <summary>
-    /// Checks whether an entity does not have a specific component.
-    /// </summary>
-    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
-    /// <param name="entity">The entity to check.</param>
-    /// <returns>True if the entity does not have the component; otherwise, false.</returns>
-    public bool WithoutComponent<T>(ref Entity entity) where T : unmanaged, IComponent
-    {
-        return !WithComponent<T>(ref entity);
-    }
-
-    /// <summary>
-    /// Checks whether an entity reference is valid.
-    /// An entity reference is valid if it points to an existing entity that has not been destroyed.
+    /// Checks whether an entity reference's generation is still current for its id. A reserved id that has
+    /// not been spawned is not necessarily reported as living, so use <see cref="GetEntityByRef"/> when the
+    /// question is whether the entity can be resolved.
     /// </summary>
     /// <param name="entityRef">The entity reference to validate.</param>
-    /// <returns>True if the entity reference is valid; otherwise, false.</returns>
+    /// <returns>True if the entity reference's generation is current; otherwise, false.</returns>
     public bool CheckEntityValid(EntityRef entityRef)
     {
         return entityPool.CheckEntityValid(entityRef);
     }
 
-#endregion
+    /// <summary>
+    /// Checks whether an entity has a specific component as it exists in the world.
+    /// </summary>
+    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns>True if the entity has the component; otherwise, false.</returns>
+    public bool WithComponent<T>(Entity entity) where T : unmanaged, IComponent
+    {
+        return HasLiveComponent<T>(entity.Ref);
+    }
 
-#region Component Hooks
+    /// <summary>
+    /// Checks whether an entity does not have a specific component as it exists in the world.
+    /// </summary>
+    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns>True if the entity does not have the component; otherwise, false.</returns>
+    public bool WithoutComponent<T>(Entity entity) where T : unmanaged, IComponent
+    {
+        return !HasLiveComponent<T>(entity.Ref);
+    }
+
+    /// <summary>
+    /// Gets a reference to a component of an entity as it exists in the world.
+    /// </summary>
+    /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to read from.</param>
+    /// <returns>A reference to the component.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the entity is not alive or lacks the component.</exception>
+    public ref T GetEntityComponent<T>(Entity entity) where T : unmanaged, IComponent
+    {
+        return ref GetLiveComponent<T>(entity.Ref);
+    }
 
     /// <summary>
     /// Notifies OnReplace hooks for a component a system overwrote through an <c>out</c> parameter.
     /// Called by generated code after <c>Execute</c> returns; do not call it manually.
-    /// The type id is passed in because the generated loop already knows it, which keeps the per-entity
-    /// path free of a type lookup.
+    /// The current value is read from the world when the command is applied; the passed one is ignored.
     /// </summary>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
     /// <param name="typeId">The registered type id of <typeparamref name="T"/>.</param>
     /// <param name="entity">The entity whose component was overwritten.</param>
     /// <param name="previous">The value the component had before <c>Execute</c>.</param>
-    /// <param name="current">The value the component has after <c>Execute</c>.</param>
+    /// <param name="current">The value the component has after <c>Execute</c>; ignored at apply time.</param>
     public void InvokeReplaceHooks<T>(int typeId, EntityRef entity, in T previous, in T current) where T : unmanaged, IComponent
     {
         if (!TypeRegistrar.HasAnyComponentHook(typeId))
@@ -686,635 +300,352 @@ public sealed class Commands(App app)
             return;
         }
 
-        var previousValue = previous;
-        var currentValue = current;
-
-        unsafe
-        {
-            T* previousPtr = &previousValue;
-            T* currentPtr = &currentValue;
-
-            InvokeReplaced(entity, typeId, previousPtr, currentPtr);
-        }
+        Queue.Enqueue(&CommandAppliers.NotifyReplaced<T>, new NotifyReplacedCommand<T>(entity, typeId, previous));
     }
 
-    // OnAdd: component points at the new value.
-    internal unsafe void InvokeAdded(EntityRef entity, int typeId, void* component)
+    /// <summary>
+    /// Applies this buffer's recorded commands to the world immediately.
+    /// </summary>
+    public void Commit()
     {
-        InvokeHook(entity, typeId, ComponentHookKind.OnAdd, component, null);
-    }
-
-    // OnReplace: previous and current both go to the hook, and Previous is set on the context.
-    internal unsafe void InvokeReplaced(EntityRef entity, int typeId, void* previous, void* current)
-    {
-        InvokeHook(entity, typeId, ComponentHookKind.OnReplace, current, previous);
-    }
-
-    // OnRemove: component points at the old value.
-    internal unsafe void InvokeRemoved(EntityRef entity, int typeId, void* previous)
-    {
-        InvokeHook(entity, typeId, ComponentHookKind.OnRemove, previous, null);
-    }
-
-    private unsafe void InvokeHook(EntityRef entity, int typeId, ComponentHookKind kind, void* component, void* previous)
-    {
-        var invoker = TypeRegistrar.GetComponentHook(typeId, kind);
-
-        if (invoker == null)
-        {
-            return;
-        }
-
-        var context = new HookContext(entity, this, app) { Previous = previous };
-        invoker(ref context, component);
-    }
-
-    // Reads a component from an entity's staged current position, including an entity removed by this Commands.
-    internal bool TryGetLiveComponent<T>(EntityRef entity, out T component) where T : unmanaged, IComponent
-    {
-        var typeId = TypeRegistrar.GetTypeId<T>();
-
-        if (typeId < 0 || !TryResolveLiveEntity(entity, out var archetype, out var pos) || !archetype.TypeIdList.Contains(typeId))
-        {
-            component = default;
-            return false;
-        }
-
-        component = GetEntityComponent<T>(archetype, pos);
-
-        return true;
-    }
-
-    internal bool HasLiveComponent<T>(EntityRef entity) where T : unmanaged, IComponent
-    {
-        var typeId = TypeRegistrar.GetTypeId<T>();
-
-        return typeId >= 0 && TryResolveLiveEntity(entity, out var archetype, out _) && archetype.TypeIdList.Contains(typeId);
-    }
-
-    internal ref T GetLiveComponent<T>(EntityRef entity) where T : unmanaged, IComponent
-    {
-        if (!TryResolveLiveEntity(entity, out var archetype, out var pos))
-        {
-            throw new InvalidOperationException($"Entity {entity.ID} is not available in this command buffer.");
-        }
-
-        return ref GetEntityComponent<T>(archetype, pos);
-    }
-
-    private bool TryResolveLiveEntity(EntityRef entity, out Archetype archetype, out EntityPos pos)
-    {
-        if (removedEntityMap.TryGetValue(entity.ID, out var removed))
-        {
-            archetype = removed.Archetype;
-            pos = removed.Pos;
-            return true;
-        }
-
-        if (modifiedEntityInfoMap.TryGetValue(entity.ID, out var modified))
-        {
-            archetype = modified.Archetype;
-            pos = modified.Pos;
-            return true;
-        }
-
-        if (entityPool.CheckEntityValid(entity))
-        {
-            var info = entityPool.GetEntityInfo(entity);
-            archetype = info.Archetype;
-            pos = info.Pos;
-            return true;
-        }
-
-        archetype = ArchetypeManager.EmptyArchetype;
-        pos = default;
-        return false;
-    }
-
-    // Pointer to the raw stored value of a type at a position. Null when the archetype stores no data at all.
-    private unsafe void* GetComponentPtr(Archetype archetype, int typeId, EntityPos pos)
-    {
-        if (archetype.Table.Layout.MaxAlignment == 0)
-        {
-            return null;
-        }
-
-        var size = TypeRegistrar.GetTypeInfo(typeId).Size;
-        var (basePtr, _) = archetype.GetChunkDataWithReservation(typeId, pos.ChunkIdx);
-
-        return (void*)(basePtr + size * pos.Idx);
-    }
-
-    // Triggers OnRemove for every component on an entity being despawned, reading the old value from its slot.
-    private unsafe void InvokeRemovedForArchetype(Entity entity)
-    {
-        var typeIdList = entity.Archetype.TypeIdList;
-
-        for (var i = 0; i < typeIdList.Length; i++)
-        {
-            var typeId = typeIdList[i];
-
-            if (!TypeRegistrar.HasAnyComponentHook(typeId))
-            {
-                continue;
-            }
-
-            InvokeRemoved(entity.Ref, typeId, GetComponentPtr(entity.Archetype, typeId, entity.Pos));
-        }
-    }
-
-    // Triggers OnRemove for every type present in src but not in dst, reading the old value from the source slot.
-    internal unsafe void InvokeRemovedForMigration(EntityRef entity, Archetype src, EntityPos srcPos, Archetype dst)
-    {
-        var typeIdList = src.TypeIdList;
-
-        for (var i = 0; i < typeIdList.Length; i++)
-        {
-            var typeId = typeIdList[i];
-
-            if (dst.TypeIdList.Contains(typeId) || !TypeRegistrar.HasAnyComponentHook(typeId))
-            {
-                continue;
-            }
-
-            InvokeRemoved(entity, typeId, GetComponentPtr(src, typeId, srcPos));
-        }
+        app.World.CommandApplier.Apply([this]);
     }
 
 #endregion
 
 #region Internal Methods
 
-    internal Dictionary<nint, EntityTransferInfo> TrySetTransferDstInfo(TransferInfoMap map, Archetype archetype, nint ptr)
+    internal void AddComponent<T>(EntityRef entityRef, in T component) where T : unmanaged, IComponent
     {
-        if (map.TryGetValue(archetype.ID, out var dict))
-        {
-            TransferDstInfo = dict.GetValueOrDefault(ptr);
-        }
-        else
-        {
-            dict = [];
-            TransferDstInfo = null;
-            map.AddOrUpdate(archetype.ID, dict);
-        }
-
-        return dict;
+        TypeRegistrar.RegisterComponent<T>();
+        Queue.Enqueue(&CommandAppliers.Insert<T>, new InsertCommand<T>(entityRef, component));
     }
 
-    // Publishes the entity's in-buffer state so hooks fired during the same operation resolve the new position.
-    internal void StageModifiedEntity(Entity entity)
+    internal void RemoveComponent<T>(EntityRef entityRef) where T : unmanaged, IComponent
     {
-        modifiedEntityInfoMap[entity.ID] = entity;
+        TypeRegistrar.RegisterComponent<T>();
+        Queue.Enqueue(&CommandAppliers.Remove<T>, new RemoveCommand(entityRef));
     }
 
-    internal void Commit()
+    internal bool IsAlive(EntityRef entity)
     {
-        foreach (var (_, entity) in modifiedEntityInfoMap)
+        return entityPool.CheckEntityValid(entity) && entityPool.TryGetEntityInfo(entity, out _);
+    }
+
+    internal bool HasLiveComponent<T>(EntityRef entity) where T : unmanaged, IComponent
+    {
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        return typeId >= 0
+            && entityPool.CheckEntityValid(entity)
+            && entityPool.TryGetEntityInfo(entity, out var info)
+            && info.Archetype.TypeIdList.Contains(typeId);
+    }
+
+    internal bool TryGetLiveComponent<T>(EntityRef entity, out T component) where T : unmanaged, IComponent
+    {
+        component = default;
+
+        if (!TryResolveComponent(entity, TypeRegistrar.GetTypeId<T>(), out var archetype, out var pos))
         {
-            entityPool.CommitReservedEntity(in entity);
-            entity.Archetype.CommitAddEntity(entity.Ref);
+            return false;
         }
 
-        foreach (var (_, entity) in removedEntityMap)
+        component = GetComponentRef<T>(archetype, pos, TypeRegistrar.GetTypeId<T>());
+
+        return true;
+    }
+
+    internal ref T GetLiveComponent<T>(EntityRef entity) where T : unmanaged, IComponent
+    {
+        var typeId = TypeRegistrar.GetTypeId<T>();
+
+        if (!TryResolveComponent(entity, typeId, out var archetype, out var pos))
         {
-            entityPool.CommitRemoveEntity(entity.Ref);
+            throw new InvalidOperationException($"Entity {entity.ID} does not resolve to a live component of type {typeof(T).Name}.");
         }
 
-        entityPool.ReclaimId();
-        ArchetypeManager.Commit(entityPool);
+        return ref GetComponentRef<T>(archetype, pos, typeId);
+    }
 
-        removedEntityMap.Clear();
-        modifiedEntityInfoMap.Clear();
+    internal unsafe void WriteAlterAddComponent(int typeId, void* source, int size)
+    {
+        var offset = (AlterAddBlobSize + 15) & ~15;
+
+        EnsureAlterBlob(offset + size);
+
+        fixed (byte* blobPtr = AlterAddBlob)
+        {
+            NativeMemory.Copy(source, blobPtr + offset, (nuint)size);
+        }
+
+        AlterAddTypeIdList.Add(typeId);
+        AlterAddOffsetList.Add(offset);
+        AlterAddBlobSize = offset + size;
+    }
+
+#endregion
+
+#region Private Methods
+
+    private void EnqueueAlter(Entity entity)
+    {
+        unsafe
+        {
+            fixed (byte* blobPtr = AlterAddBlob)
+            {
+                var removeCount = AlterRemoveTypeIdList.Count;
+                var addCount = AlterAddTypeIdList.Count;
+                var removeIdsOffset = 20;
+                var addIdsOffset = removeIdsOffset + removeCount * sizeof(int);
+                var addOffsetsOffset = addIdsOffset + addCount * sizeof(int);
+                var blobOffset = (addOffsetsOffset + addCount * sizeof(int) + 15) & ~15;
+                var payloadSize = blobOffset + AlterAddBlobSize;
+
+                EnsureAlterPayload(payloadSize);
+
+                fixed (byte* payloadPtr = alterPayloadBuffer)
+                {
+                    var refValue = entity.Ref;
+                    *(int*)payloadPtr = refValue.ID;
+                    *(int*)(payloadPtr + 4) = refValue.Generation;
+                    *(int*)(payloadPtr + 8) = removeCount;
+                    *(int*)(payloadPtr + 12) = addCount;
+                    *(int*)(payloadPtr + 16) = blobOffset;
+
+                    for (var i = 0; i < removeCount; i++)
+                    {
+                        *(int*)(payloadPtr + removeIdsOffset + i * sizeof(int)) = AlterRemoveTypeIdList[i];
+                    }
+
+                    for (var i = 0; i < addCount; i++)
+                    {
+                        *(int*)(payloadPtr + addIdsOffset + i * sizeof(int)) = AlterAddTypeIdList[i];
+                        *(int*)(payloadPtr + addOffsetsOffset + i * sizeof(int)) = AlterAddOffsetList[i];
+                    }
+
+                    if (AlterAddBlobSize > 0)
+                    {
+                        NativeMemory.Copy(blobPtr, payloadPtr + blobOffset, (nuint)AlterAddBlobSize);
+                    }
+
+                    Queue.EnqueueRaw(&CommandAppliers.Alter, payloadPtr, payloadSize);
+                }
+            }
+        }
+    }
+
+    private void EnsureAlterBlob(int required)
+    {
+        if (AlterAddBlob.Length >= required)
+        {
+            return;
+        }
+
+        var capacity = AlterAddBlob.Length;
+
+        while (capacity < required)
+        {
+            capacity *= 2;
+        }
+
+        var newBlob = new byte[capacity];
+        Array.Copy(AlterAddBlob, newBlob, AlterAddBlobSize);
+        AlterAddBlob = newBlob;
+    }
+
+    private void EnsureAlterPayload(int required)
+    {
+        if (alterPayloadBuffer.Length >= required)
+        {
+            return;
+        }
+
+        var capacity = alterPayloadBuffer.Length;
+
+        while (capacity < required)
+        {
+            capacity *= 2;
+        }
+
+        alterPayloadBuffer = new byte[capacity];
+    }
+
+    private bool TryResolveComponent(EntityRef entity, int typeId, out Archetype archetype, out EntityPos pos)
+    {
+        archetype = null!;
+        pos = default;
+
+        if (typeId < 0
+            || !entityPool.CheckEntityValid(entity)
+            || !entityPool.TryGetEntityInfo(entity, out var info)
+            || !info.Archetype.TypeIdList.Contains(typeId))
+        {
+            return false;
+        }
+
+        archetype = info.Archetype;
+        pos = info.Pos;
+
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ref T GetComponentRef<T>(Archetype archetype, EntityPos pos, int typeId) where T : unmanaged, IComponent
+    {
+        var (ptr, size) = archetype.GetChunkDataWithReservation(typeId, pos.ChunkIdx);
+
+        System.Diagnostics.Debug.Assert((uint)pos.Idx < (uint)size);
+
+        unsafe
+        {
+            return ref ((T*)ptr)[pos.Idx];
+        }
     }
 
 #endregion
 }
 
-internal static class CommandsExtensions
-{
-    extension(Commands self)
-    {
-        internal void AddComponentTransferInfo<T>(Archetype archetype) where T : unmanaged, IComponent
-        {
-            nint ptr;
-            unsafe
-            {
-                ptr = (nint)(delegate* <Commands, Archetype, void>)&AddComponentTransferInfo<T>;
-            }
-
-            var dict = self.TrySetTransferDstInfo(self.ArchetypeAddingTypeMap, archetype, ptr);
-
-            if (self.TransferDstInfo == null)
-            {
-                var typeId = self.TypeRegistrar.RegisterComponent<T>();
-                var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(archetype.TypeIdList.Append(typeId));
-
-                self.TransferDstInfo = new(dstArchetype, [new(new(), typeId)]);
-                dict.Add(ptr, self.TransferDstInfo);
-            }
-        }
-
-        internal void AddComponentsTransferInfo<T>(Archetype archetype) where T : unmanaged, IComponentBundle
-        {
-            nint ptr;
-            unsafe
-            {
-                ptr = (nint)(delegate* <Commands, Archetype, void>)&AddComponentsTransferInfo<T>;
-            }
-
-            var dict = self.TrySetTransferDstInfo(self.ArchetypeAddingTypeMap, archetype, ptr);
-
-            if (self.TransferDstInfo == null)
-            {
-                self.TypeRegistrar.RegisterBundle<T>();
-                var bundleInfo = self.TypeRegistrar.GetBundleInfo<T>();
-                var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(archetype.TypeIdList.Concat(bundleInfo.Select(x => x.typeId)));
-
-                self.TransferDstInfo = new(dstArchetype, bundleInfo);
-                dict.Add(ptr, self.TransferDstInfo);
-            }
-        }
-
-        internal void RemoveComponentTransferInfo<T>(Archetype archetype) where T : unmanaged, IComponent
-        {
-            nint ptr;
-            unsafe
-            {
-                ptr = (nint)(delegate* <Commands, Archetype, void>)&RemoveComponentTransferInfo<T>;
-            }
-
-            var dict = self.TrySetTransferDstInfo(self.ArchetypeRemovingTypeMap, archetype, ptr);
-
-            if (self.TransferDstInfo == null)
-            {
-                var typeId = self.TypeRegistrar.RegisterComponent<T>();
-                var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(archetype.TypeIdList.Where(x => x != typeId));
-
-                self.TransferDstInfo = new(dstArchetype, []);
-                dict.Add(ptr, self.TransferDstInfo);
-            }
-        }
-
-        internal void RemoveComponentsTransferInfo<T>(Archetype archetype) where T : unmanaged, IComponentBundle
-        {
-            nint ptr;
-            unsafe
-            {
-                ptr = (nint)(delegate* <Commands, Archetype, void>)&RemoveComponentsTransferInfo<T>;
-            }
-
-            var dict = self.TrySetTransferDstInfo(self.ArchetypeRemovingTypeMap, archetype, ptr);
-
-            if (self.TransferDstInfo == null)
-            {
-                self.TypeRegistrar.RegisterBundle<T>();
-                var bundleInfo = self.TypeRegistrar.GetBundleInfo<T>();
-                var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(archetype.TypeIdList.Except(bundleInfo.Select(x => x.typeId)));
-
-                self.TransferDstInfo = new(dstArchetype, []);
-                dict.Add(ptr, self.TransferDstInfo);
-            }
-        }
-
-        internal void RemoveComponentsTupleTransferInfo<T>(Archetype archetype) where T : unmanaged
-        {
-            nint ptr;
-            unsafe
-            {
-                ptr = (nint)(delegate* <Commands, Archetype, void>)&RemoveComponentsTupleTransferInfo<T>;
-            }
-
-            var dict = self.TrySetTransferDstInfo(self.ArchetypeRemovingTypeMap, archetype, ptr);
-
-            if (self.TransferDstInfo == null)
-            {
-                var typeIds = self.TypeRegistrar.RegisterTypesOfTuple<T>();
-                var dstArchetype = self.ArchetypeManager.GetOrCreateArchetype(archetype.TypeIdList.Except(typeIds));
-
-                self.TransferDstInfo = new(dstArchetype, []);
-                dict.Add(ptr, self.TransferDstInfo);
-            }
-        }
-    }
-}
-
 /// <summary>
 /// A builder struct for configuring entity alterations in a single archetype migration.
-/// Remove operations must be called before Add operations. Each can only be called once.
+/// Remove operations must be called before Add operations. Each Add can only be issued once.
 /// </summary>
 public struct EntityAlterContext
 {
+#region Fields
+
     internal Entity Entity;
 
-    private readonly Archetype originalArchetype;
+    private readonly Commands commands;
 
-    private bool hasAdded;
+#endregion
 
-    internal EntityAlterContext(Entity entity)
+#region Constructors
+
+    internal EntityAlterContext(Commands commands, Entity entity)
     {
+        this.commands = commands;
         Entity = entity;
-        originalArchetype = entity.Archetype;
-        hasAdded = false;
     }
 
+#endregion
+
+#region Public Methods
+
     /// <summary>
-    /// Removes a single component from the entity.
-    /// Must be called before any Add operations.
+    /// Records removing a single component from the entity.
+    /// Must be called before any Add operation.
     /// </summary>
     /// <typeparam name="T">The component type to remove.</typeparam>
-    /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
-    public void Remove<T>() where T : unmanaged, IComponent
+    /// <exception cref="InvalidOperationException">Thrown when an Add was already issued.</exception>
+    public readonly void Remove<T>() where T : unmanaged, IComponent
     {
-        if (hasAdded)
+        if (commands.AlterHasAdded)
         {
             throw new InvalidOperationException("Remove operation can only be called before Add operations.");
         }
 
-        var archetype = Entity.Archetype;
-        Entity.Commands.RemoveComponentTransferInfo<T>(archetype);
-
-        Debug.Assert(Entity.Commands.TransferDstInfo != null);
-
-        Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
+        commands.AlterRemoveTypeIdList.Add(commands.TypeRegistrar.RegisterComponent<T>());
     }
 
     /// <summary>
-    /// Removes a single component from the entity.
-    /// Must be called before any Add operations.
+    /// Records removing all components defined in a bundle from the entity.
+    /// Must be called before any Add operation.
     /// </summary>
-    /// <typeparam name="T">The component type to remove.</typeparam>
-    /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
-    public void RemoveBundle<T>() where T : unmanaged, IComponentBundle
+    /// <typeparam name="T">The component bundle type whose components to remove.</typeparam>
+    /// <exception cref="InvalidOperationException">Thrown when an Add was already issued.</exception>
+    public readonly void RemoveBundle<T>() where T : unmanaged, IComponentBundle
     {
-        if (hasAdded)
+        if (commands.AlterHasAdded)
         {
             throw new InvalidOperationException("Remove operation can only be called before Add operations.");
         }
 
-        var archetype = Entity.Archetype;
-        Entity.Commands.RemoveComponentsTransferInfo<T>(archetype);
+        commands.TypeRegistrar.RegisterBundle<T>();
 
-        Debug.Assert(Entity.Commands.TransferDstInfo != null);
-
-        Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
+        foreach (var (_, typeId) in commands.TypeRegistrar.GetBundleInfo<T>())
+        {
+            commands.AlterRemoveTypeIdList.Add(typeId);
+        }
     }
 
     /// <summary>
-    /// Removes all components defined in a tuple from the entity.
-    /// Must be called before any Add operations.
+    /// Records removing all components defined in a tuple from the entity.
+    /// Must be called before any Add operation.
     /// </summary>
     /// <typeparam name="T">The tuple type containing component types to remove.</typeparam>
-    /// <exception cref="InvalidOperationException">Thrown if called more than once.</exception>
-    public void RemoveTuple<T>() where T : unmanaged
+    /// <exception cref="InvalidOperationException">Thrown when an Add was already issued.</exception>
+    public readonly void RemoveTuple<T>() where T : unmanaged
     {
-        if (hasAdded)
+        if (commands.AlterHasAdded)
         {
             throw new InvalidOperationException("Remove operation can only be called before Add operations.");
         }
 
-        var archetype = Entity.Archetype;
-        Entity.Commands.RemoveComponentsTupleTransferInfo<T>(archetype);
-
-        Debug.Assert(Entity.Commands.TransferDstInfo != null);
-
-        Entity.Archetype = Entity.Commands.TransferDstInfo.Archetype;
+        foreach (var typeId in commands.TypeRegistrar.RegisterTypesOfTuple<T>())
+        {
+            commands.AlterRemoveTypeIdList.Add(typeId);
+        }
     }
 
     /// <summary>
-    /// Adds a single component to the entity.
-    /// Must be called after Remove operations. Can only be called once.
+    /// Records adding a single component to the entity.
+    /// Can only be called once, and after any Remove operation.
     /// </summary>
     /// <typeparam name="T">The component type to add.</typeparam>
     /// <param name="component">The component value.</param>
-    /// <exception cref="InvalidOperationException">Thrown if called before Remove or called more than once.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when an Add was already issued.</exception>
     public void Add<T>(in T component) where T : unmanaged, IComponent
     {
-        if (hasAdded)
+        if (commands.AlterHasAdded)
         {
             throw new InvalidOperationException("Add operation can only be called once.");
         }
 
-        var archetype = Entity.Archetype;
-        Entity.Commands.AddComponentTransferInfo<T>(archetype);
-
-        Debug.Assert(Entity.Commands.TransferDstInfo != null);
-
-        var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
-        var typeIdx = Entity.Commands.TransferDstInfo.TypeIndices[0];
-        var typeId = Entity.Commands.TypeRegistrar.GetTypeId<T>();
-        var hasHook = Entity.Commands.TypeRegistrar.HasAnyComponentHook(typeId);
-
-        if (dstArchetype == originalArchetype)
-        {
-            // Remove and Add of the same component type — archetype doesn't change.
-            // Just update the component data in place, no migration needed.
-            var previous = default(T);
-
-            if (hasHook)
-            {
-                previous = Entity.Commands.GetEntityComponent<T>(originalArchetype, Entity.Pos);
-            }
-
-            dstArchetype.PutComponentData(typeIdx, Entity.Pos.ChunkIdx, Entity.Pos.Idx, in component);
-            Entity.Archetype = dstArchetype;
-
-            Entity.Commands.StageModifiedEntity(Entity);
-
-            if (hasHook)
-            {
-                unsafe
-                {
-                    T* previousPtr = &previous;
-
-                    Entity.Commands.InvokeReplaced(Entity.Ref, typeId, previousPtr,
-                        dstArchetype.Table.GetPtr(typeIdx, Entity.Pos.ChunkIdx, Entity.Pos.Idx));
-                }
-            }
-        }
-        else
-        {
-            var oldPos = Entity.Pos;
-            var (chunkIdx, idx) = dstArchetype.Reserve();
-
-            dstArchetype.PutComponentData(typeIdx, chunkIdx, idx, in component);
-
-            originalArchetype.MoveDataTo(dstArchetype, oldPos.ChunkIdx, oldPos.Idx, chunkIdx, idx);
-            originalArchetype.MarkRemove(Entity.ID, oldPos);
-
-            Entity.Archetype = dstArchetype;
-            Entity.Pos = new(chunkIdx, idx);
-
-            Entity.Commands.StageModifiedEntity(Entity);
-
-            unsafe
-            {
-                Entity.Commands.InvokeRemovedForMigration(Entity.Ref, originalArchetype, oldPos, dstArchetype);
-            }
-
-            if (hasHook)
-            {
-                var newValue = component;
-
-                unsafe
-                {
-                    T* componentPtr = &newValue;
-
-                    Entity.Commands.InvokeAdded(Entity.Ref, typeId, componentPtr);
-                }
-            }
-        }
-
-        hasAdded = true;
-    }
-
-    /// <summary>
-    /// Adds multiple components as a bundle to the entity.
-    /// Must be called after Remove operations. Can only be called once.
-    /// </summary>
-    /// <typeparam name="T">The component bundle type.</typeparam>
-    /// <param name="bundle">The bundle containing component values.</param>
-    /// <exception cref="InvalidOperationException">Thrown if called before Remove or called more than once.</exception>
-    public void AddBundle<T>(in T bundle) where T : unmanaged, IComponentBundle
-    {
-        if (hasAdded)
-        {
-            throw new InvalidOperationException("Add operation can only be called once.");
-        }
-
-        var archetype = Entity.Archetype;
-        Entity.Commands.AddComponentsTransferInfo<T>(archetype);
-
-        Debug.Assert(Entity.Commands.TransferDstInfo != null);
-
-        var dstArchetype = Entity.Commands.TransferDstInfo.Archetype;
-        var bundleInfo = Entity.Commands.TransferDstInfo.BundleInfo;
-        var typeIndices = Entity.Commands.TransferDstInfo.TypeIndices;
-        var bundleCopy = bundle;
-
-        if (dstArchetype == originalArchetype)
-        {
-            // Remove and Add of the same bundle type — archetype doesn't change.
-            // Overwrite each field in place and report it as a replacement.
-            unsafe
-            {
-                var maxSize = 0;
-
-                for (var i = 0; i < bundleInfo.Length; i++)
-                {
-                    maxSize = Math.Max(maxSize, bundleInfo[i].info.Size);
-                }
-
-                var previousBuffer = stackalloc byte[maxSize];
-
-                T* bundlePtr = &bundleCopy;
-
-                for (var i = 0; i < typeIndices.Length; i++)
-                {
-                    var info = bundleInfo[i];
-                    var typeId = info.typeId;
-                    var hasHook = Entity.Commands.TypeRegistrar.HasAnyComponentHook(typeId);
-                    var ptr = dstArchetype.Table.GetPtr(typeIndices[i], Entity.Pos.ChunkIdx, Entity.Pos.Idx);
-                    var componentPtr = (byte*)bundlePtr + info.info.Offset;
-
-                    if (hasHook)
-                    {
-                        NativeMemory.Copy(ptr, previousBuffer, (nuint)info.info.Size);
-                    }
-
-                    NativeMemory.Copy(componentPtr, ptr, (nuint)info.info.Size);
-
-                    if (hasHook)
-                    {
-                        Entity.Commands.InvokeReplaced(Entity.Ref, typeId, previousBuffer, ptr);
-                    }
-                }
-            }
-
-            Entity.Archetype = dstArchetype;
-            Entity.Commands.StageModifiedEntity(Entity);
-        }
-        else
-        {
-            var oldPos = Entity.Pos;
-            var (chunkIdx, idx) = dstArchetype.Reserve();
-
-            unsafe
-            {
-                T* bundlePtr = &bundleCopy;
-
-                for (var i = 0; i < typeIndices.Length; i++)
-                {
-                    var info = bundleInfo[i].info;
-                    var ptr = dstArchetype.Table.GetPtr(typeIndices[i], chunkIdx, idx);
-                    var componentPtr = (byte*)bundlePtr + info.Offset;
-                    NativeMemory.Copy(componentPtr, ptr, (nuint)info.Size);
-                }
-            }
-
-            originalArchetype.MoveDataTo(dstArchetype, oldPos.ChunkIdx, oldPos.Idx, chunkIdx, idx);
-            originalArchetype.MarkRemove(Entity.ID, oldPos);
-
-            Entity.Archetype = dstArchetype;
-            Entity.Pos = new(chunkIdx, idx);
-
-            Entity.Commands.StageModifiedEntity(Entity);
-
-            unsafe
-            {
-                Entity.Commands.InvokeRemovedForMigration(Entity.Ref, originalArchetype, oldPos, dstArchetype);
-
-                T* bundlePtr = &bundleCopy;
-
-                for (var i = 0; i < bundleInfo.Length; i++)
-                {
-                    var typeId = bundleInfo[i].typeId;
-
-                    if (!Entity.Commands.TypeRegistrar.HasAnyComponentHook(typeId))
-                    {
-                        continue;
-                    }
-
-                    Entity.Commands.InvokeAdded(Entity.Ref, typeId, (byte*)bundlePtr + bundleInfo[i].info.Offset);
-                }
-            }
-        }
-
-        hasAdded = true;
-    }
-
-    /// <summary>
-    /// Commits the alterations by performing the actual archetype migration.
-    /// Called automatically when the Alter lambda completes.
-    /// </summary>
-    internal bool Commit()
-    {
-        if (hasAdded)
-        {
-            return true;
-        }
-
-        var dstArchetype = Entity.Commands.TransferDstInfo?.Archetype ?? originalArchetype;
-
-        if (dstArchetype == originalArchetype)
-        {
-            return false;
-        }
-
-        var oldPos = Entity.Pos;
-        var (chunkIdx, idx) = dstArchetype.Reserve();
-        originalArchetype.MoveDataTo(dstArchetype, oldPos.ChunkIdx, oldPos.Idx, chunkIdx, idx);
-        originalArchetype.MarkRemove(Entity.ID, oldPos);
-
-        Entity.Archetype = dstArchetype;
-        Entity.Pos = new(chunkIdx, idx);
-
-        Entity.Commands.StageModifiedEntity(Entity);
+        var typeId = commands.TypeRegistrar.RegisterComponent<T>();
 
         unsafe
         {
-            Entity.Commands.InvokeRemovedForMigration(Entity.Ref, originalArchetype, oldPos, dstArchetype);
+            fixed (T* componentPtr = &component)
+            {
+                commands.WriteAlterAddComponent(typeId, componentPtr, sizeof(T));
+            }
         }
 
-        return true;
+        commands.AlterHasAdded = true;
     }
+
+    /// <summary>
+    /// Records adding multiple components as a bundle to the entity in a single migration.
+    /// Can only be called once, and after any Remove operation.
+    /// </summary>
+    /// <typeparam name="T">The component bundle type.</typeparam>
+    /// <param name="bundle">The bundle containing component values.</param>
+    /// <exception cref="InvalidOperationException">Thrown when an Add was already issued.</exception>
+    public void AddBundle<T>(in T bundle) where T : unmanaged, IComponentBundle
+    {
+        if (commands.AlterHasAdded)
+        {
+            throw new InvalidOperationException("Add operation can only be called once.");
+        }
+
+        commands.TypeRegistrar.RegisterBundle<T>();
+        var bundleInfo = commands.TypeRegistrar.GetBundleInfo<T>();
+
+        unsafe
+        {
+            fixed (T* bundlePtr = &bundle)
+            {
+                for (var i = 0; i < bundleInfo.Length; i++)
+                {
+                    var info = bundleInfo[i].info;
+                    commands.WriteAlterAddComponent(bundleInfo[i].typeId, (byte*)bundlePtr + info.Offset, info.Size);
+                }
+            }
+        }
+
+        commands.AlterHasAdded = true;
+    }
+
+#endregion
 }

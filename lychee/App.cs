@@ -1,4 +1,5 @@
-﻿using lychee.interfaces;
+﻿using lychee.components;
+using lychee.interfaces;
 using lychee.systems;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -82,17 +83,23 @@ public sealed class App : IDisposable
     /// Creates an App with specified thread pool setting.
     /// </summary>
     /// <param name="descriptor">The app descriptor.</param>
-    public App(AppDescriptor descriptor)
+    public unsafe App(AppDescriptor descriptor)
     {
         // Assigned first: the default schedule built below creates its logger from this factory.
         LoggerFactory = descriptor.LoggerFactory;
         Logger = LoggerFactory.CreateLogger($"lychee.app");
 
         World = new(TypeRegistrar, descriptor.ChunkSizeHint);
+        World.CommandApplier = new(this);
         SystemSchedules = new(this);
         ResourcePool = new(TypeRegistrar);
         ThreadPool = new(descriptor.ThreadCount, descriptor.ThreadPoolQueueCapacity);
         SystemSets = new(TypeRegistrar, ResourcePool);
+
+        // The built-in parent-child relationship. Registering it here occupies the ChildOf and
+        // RelationshipTarget<ChildOf> hooks, which user code may not re-register.
+        RelationshipRegistrar.Register<ChildOf, RelationshipTarget<ChildOf>>(
+            this, linkedSpawn: true, &ChildOfCloneSupport.RemapTarget);
 
         disposables.Add(World);
         disposables.Add(ResourcePool);
@@ -239,13 +246,14 @@ public sealed class App : IDisposable
     }
 
     /// <summary>
-    /// Registers a component hook for a given kind, or overwrites the previous one.
-    /// Hooks fire synchronously inside the operation that causes the change, for every operation issued after
-    /// registration. Components with no hook are unaffected on the hot path.
+    /// Registers a component hook for a given kind. Registering the same component type and kind twice throws.
+    /// Hooks fire synchronously while recorded commands are applied at a commit point, for every operation
+    /// issued after registration. Components with no hook are unaffected on the hot path.
     /// </summary>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
     /// <param name="kind">The hook kind to register.</param>
     /// <param name="hook">The hook to invoke for this kind.</param>
+    /// <exception cref="InvalidOperationException">Thrown when a hook is already registered for the type and kind.</exception>
     public void SetComponentHook<T>(ComponentHookKind kind, ComponentHook<T> hook) where T : unmanaged, IComponent
     {
         TypeRegistrar.SetComponentHook(kind, hook);

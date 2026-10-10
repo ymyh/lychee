@@ -150,6 +150,28 @@ public class CommandsTests : IDisposable
         Assert.True(entity.WithoutComponent<TestVelocity>());
     }
 
+    [Fact]
+    public void RecycledReservedEntity_BeforeCommit_IsNotAlive()
+    {
+        var first = commands.CreateEntityWithComponent(new TestPosition { X = 1.0f, Y = 2.0f });
+        commands.Commit();
+
+        first.Despawn();
+        commands.Commit();
+
+        // The despawned id is recycled into the reserve pool, so the next create reuses it. The stale
+        // location of the dead entity must not leak into the new one before it is spawned.
+        var second = commands.CreateEntity();
+
+        Assert.Equal(first.ID, second.ID);
+        Assert.True(commands.CheckEntityValid(second.Ref));
+        Assert.False(second.WithComponent<TestPosition>());
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            second.GetComponent<TestPosition>();
+        });
+    }
+
 #endregion
 
 #region AlterComponents

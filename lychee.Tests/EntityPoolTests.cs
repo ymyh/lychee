@@ -34,21 +34,22 @@ public class EntityPoolTests
 #region CheckEntityValid
 
     [Fact]
-    public void CheckEntityValid_NewEntity_ReturnsTrue()
+    public void CheckEntityValid_ReservedButNotSpawned_ReturnsFalse()
     {
         var pool = new EntityPool();
         var entityRef = pool.ReserveEntity();
 
-        Assert.True(pool.CheckEntityValid(entityRef));
+        // A fresh id is not registered in `entities` yet, so its generation cannot match.
+        Assert.False(pool.CheckEntityValid(entityRef));
     }
 
     [Fact]
-    public void CheckEntityValid_GenerationZero_AlwaysValid()
+    public void CheckEntityValid_UnregisteredGenerationZero_ReturnsFalse()
     {
         var pool = new EntityPool();
         var entityRef = new EntityRef(0, 0);
 
-        Assert.True(pool.CheckEntityValid(entityRef));
+        Assert.False(pool.CheckEntityValid(entityRef));
     }
 
     [Fact]
@@ -62,12 +63,11 @@ public class EntityPoolTests
     }
 
     [Fact]
-    public void CheckEntityValid_GenerationZero_AlwaysReturnsTrue()
+    public void CheckEntityValid_OutOfBoundsGenerationZero_ReturnsFalse()
     {
-        // By design, generation 0 is always considered valid
         var pool = new EntityPool();
         var entityRef = new EntityRef(999, 0);
-        Assert.True(pool.CheckEntityValid(entityRef));
+        Assert.False(pool.CheckEntityValid(entityRef));
     }
 
     [Fact]
@@ -77,11 +77,9 @@ public class EntityPoolTests
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
 
-        // Commit the entity so it's in the entities list
-        var entity = new Entity(null!, archetype, entityRef, new EntityPos(0, 0));
-        pool.CommitReservedEntity(in entity);
+        // Register the entity so it is in the entities list
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
-        pool.MarkRemoveEntity(entityRef);
         pool.CommitRemoveEntity(entityRef);
         pool.ReclaimId();
 
@@ -89,7 +87,7 @@ public class EntityPoolTests
         // (generation 0 is always valid). But after recycling, the new entity
         // should be valid and the old one should not.
         var newEntityRef = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, newEntityRef, new EntityPos(0, 0)));
+        pool.SetEntityInfo(newEntityRef, archetype, new EntityPos(0, 0));
 
         // The new entity should be valid
         Assert.True(pool.CheckEntityValid(newEntityRef));
@@ -105,18 +103,17 @@ public class EntityPoolTests
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
 
-        // Create and commit first entity
+        // Create and register first entity
         var entityRef1 = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, entityRef1, new EntityPos(0, 0)));
+        pool.SetEntityInfo(entityRef1, archetype, new EntityPos(0, 0));
 
         // Remove first entity (this increments its generation to 1)
-        pool.MarkRemoveEntity(entityRef1);
         pool.CommitRemoveEntity(entityRef1);
         pool.ReclaimId();
 
         // Recycle the ID
         var entityRef2 = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, entityRef2, new EntityPos(0, 0)));
+        pool.SetEntityInfo(entityRef2, archetype, new EntityPos(0, 0));
 
         // The new entity (generation 0) should be valid
         Assert.True(pool.CheckEntityValid(entityRef2));
@@ -128,37 +125,117 @@ public class EntityPoolTests
 
 #endregion
 
-#region CommitReservedEntity
+#region SetEntityInfo
 
     [Fact]
-    public void CommitReservedEntity_NewEntity_MakesItValid()
+    public void SetEntityInfo_NewEntity_MakesItValid()
     {
         var pool = new EntityPool();
         var entityRef = pool.ReserveEntity();
 
         var archetype = ArchetypeManager.EmptyArchetype;
 
-        var entity = new Entity(null!, archetype, entityRef, new EntityPos(0, 0));
-        pool.CommitReservedEntity(in entity);
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
         Assert.True(pool.CheckEntityValid(entityRef));
     }
 
-#endregion
+    [Fact]
+    public void TryGetEntityInfo_ReservedButNotSpawned_ReturnsFalse()
+    {
+        var pool = new EntityPool();
+        var entityRef = pool.ReserveEntity();
 
-#region MarkRemoveEntity / CommitRemoveEntity / ReclaimId
+        // A fresh id has no registered location (and is not even in `entities` yet).
+        Assert.False(pool.CheckEntityValid(entityRef));
+        Assert.False(pool.TryGetEntityInfo(entityRef, out _));
+    }
 
     [Fact]
-    public void MarkRemove_ThenCommit_IncrementsGeneration()
+    public void TryGetEntityInfo_RecycledReservedButNotSpawned_ReturnsFalse()
+    {
+        var pool = new EntityPool();
+        var archetype = ArchetypeManager.EmptyArchetype;
+
+        // Register then remove an entity so its id is recycled with a bumped generation.
+        var firstRef = pool.ReserveEntity();
+        pool.SetEntityInfo(firstRef, archetype, new EntityPos(0, 0));
+        pool.CommitRemoveEntity(firstRef);
+        pool.ReclaimId();
+
+        // Reserve the recycled id without spawning it: valid by generation, but the stale location from the
+        // dead entity must no longer resolve.
+        var recycledRef = pool.ReserveEntity();
+
+        Assert.Equal(firstRef.ID, recycledRef.ID);
+        Assert.True(pool.CheckEntityValid(recycledRef));
+        Assert.False(pool.TryGetEntityInfo(recycledRef, out _));
+    }
+
+#endregion
+
+#region ReclaimEntity
+
+    [Fact]
+    public void ReclaimEntity_InvalidatesHandedOutRef()
+    {
+        var pool = new EntityPool();
+
+        // A fresh reserved id is not registered in `entities`, so it is not valid.
+        var reserved = pool.ReserveEntity();
+        Assert.False(pool.CheckEntityValid(reserved));
+        Assert.False(pool.TryGetEntityInfo(reserved, out _));
+
+        pool.ReclaimEntity(reserved);
+
+        // The id is reissued with a different generation, still unspawned, so the caller's handle cannot
+        // alias a later entity.
+        var reused = pool.ReserveEntity();
+
+        Assert.Equal(reserved.ID, reused.ID);
+        Assert.NotEqual(reserved.Generation, reused.Generation);
+        Assert.False(pool.CheckEntityValid(reserved));
+        Assert.False(pool.TryGetEntityInfo(reused, out _));
+    }
+
+    [Fact]
+    public void ReclaimEntity_RecycledId_InvalidatesHandedOutRef()
+    {
+        var pool = new EntityPool();
+        var archetype = ArchetypeManager.EmptyArchetype;
+
+        // Produce a recycled id with a non-zero generation.
+        var firstRef = pool.ReserveEntity();
+        pool.SetEntityInfo(firstRef, archetype, new EntityPos(0, 0));
+        pool.CommitRemoveEntity(firstRef);
+        pool.ReclaimId();
+
+        // Re-reserve it, then give it back without spawning.
+        var reserved = pool.ReserveEntity();
+        pool.ReclaimEntity(reserved);
+
+        Assert.False(pool.CheckEntityValid(reserved));
+
+        var reused = pool.ReserveEntity();
+
+        Assert.Equal(reserved.ID, reused.ID);
+        Assert.NotEqual(reserved.Generation, reused.Generation);
+        Assert.False(pool.TryGetEntityInfo(reused, out _));
+    }
+
+#endregion
+
+#region CommitRemoveEntity / ReclaimId
+
+    [Fact]
+    public void CommitRemove_IncrementsGeneration()
     {
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
 
-        var entity = new Entity(null!, archetype, entityRef, new EntityPos(0, 0));
-        pool.CommitReservedEntity(in entity);
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
-        pool.MarkRemoveEntity(entityRef);
         pool.CommitRemoveEntity(entityRef);
 
         // After CommitRemoveEntity, the entity's generation in the list is incremented to 1.
@@ -187,10 +264,8 @@ public class EntityPoolTests
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
 
-        var entity = new Entity(null!, archetype, entityRef, new EntityPos(0, 0));
-        pool.CommitReservedEntity(in entity);
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
-        pool.MarkRemoveEntity(entityRef);
         pool.CommitRemoveEntity(entityRef);
         pool.ReclaimId();
 
@@ -210,13 +285,9 @@ public class EntityPoolTests
         var e2 = pool.ReserveEntity();
         var e3 = pool.ReserveEntity();
 
-        pool.CommitReservedEntity(new Entity(null!, archetype, e1, new EntityPos(0, 0)));
-        pool.CommitReservedEntity(new Entity(null!, archetype, e2, new EntityPos(0, 1)));
-        pool.CommitReservedEntity(new Entity(null!, archetype, e3, new EntityPos(0, 2)));
-
-        pool.MarkRemoveEntity(e1);
-        pool.MarkRemoveEntity(e2);
-        pool.MarkRemoveEntity(e3);
+        pool.SetEntityInfo(e1, archetype, new EntityPos(0, 0));
+        pool.SetEntityInfo(e2, archetype, new EntityPos(0, 1));
+        pool.SetEntityInfo(e3, archetype, new EntityPos(0, 2));
 
         pool.CommitRemoveEntity(e1);
         pool.CommitRemoveEntity(e2);
@@ -256,14 +327,13 @@ public class EntityPoolTests
 #region GetEntityInfo
 
     [Fact]
-    public void GetEntityInfo_AfterCommit_ReturnsCorrectInfo()
+    public void GetEntityInfo_AfterSetEntityInfo_ReturnsCorrectInfo()
     {
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
 
         var entityRef = pool.ReserveEntity();
-        var entity = new Entity(null!, archetype, entityRef, new EntityPos(0, 5));
-        pool.CommitReservedEntity(in entity);
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 5));
 
         var info = pool.GetEntityInfo(entityRef);
 
@@ -286,8 +356,7 @@ public class EntityPoolTests
         {
             var entityRef = pool.ReserveEntity();
             refs.Add(entityRef);
-            var entity = new Entity(null!, archetype, entityRef, new EntityPos(0, i));
-            pool.CommitReservedEntity(in entity);
+            pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, i));
         }
 
         Assert.Equal(1000, refs.Count);
@@ -295,7 +364,6 @@ public class EntityPoolTests
         // Remove half
         for (var i = 0; i < 500; i++)
         {
-            pool.MarkRemoveEntity(refs[i]);
             pool.CommitRemoveEntity(refs[i]);
         }
 
@@ -314,11 +382,11 @@ public class EntityPoolTests
             Assert.False(pool.CheckEntityValid(refs[i]));
         }
 
-        // After reusing the IDs and committing, the entities list is updated
+        // After reusing the IDs and registering them, the entities list is updated
         for (var i = 0; i < 500; i++)
         {
             var reusedRef = pool.ReserveEntity(); // reuse the removed IDs
-            pool.CommitReservedEntity(new Entity(null!, archetype, reusedRef, new EntityPos(0, i)));
+            pool.SetEntityInfo(reusedRef, archetype, new EntityPos(0, i));
         }
 
         // Now the entities list has been updated with the reused entities.
@@ -346,29 +414,26 @@ public class EntityPoolTests
     }
 
     [Fact]
-    public void MarkRemoveEntity_AlreadyRemoved_DoesNotThrow()
+    public void CommitRemoveEntity_WithoutSetEntityInfo_DoesNotThrow()
     {
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, entityRef, new EntityPos(0, 0)));
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
-        pool.MarkRemoveEntity(entityRef);
+        // Removing again should not throw (though it's a logic error in real usage)
         pool.CommitRemoveEntity(entityRef);
-
-        // Marking again should not throw (though it's a logic error in real usage)
-        // This tests robustness
     }
 
     [Fact]
-    public void CommitRemoveEntity_WithoutMarkRemove_StillIncrementsGeneration()
+    public void CommitRemoveEntity_WithoutSetEntityInfo_StillIncrementsGeneration()
     {
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, entityRef, new EntityPos(0, 0)));
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
-        // CommitRemoveEntity without MarkRemove — tests the internal behavior
+        // CommitRemoveEntity without a prior MarkRemove — tests the internal behavior
         pool.CommitRemoveEntity(entityRef);
 
         // Entity should still be accessible with incremented generation
@@ -377,19 +442,19 @@ public class EntityPoolTests
     }
 
     [Fact]
-    public void GetEntityInfo_AfterRemove_StillReturnsInfo()
+    public void GetEntityInfo_AfterRemove_IsUnregistered()
     {
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, entityRef, new EntityPos(0, 3)));
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 3));
 
-        pool.MarkRemoveEntity(entityRef);
         pool.CommitRemoveEntity(entityRef);
 
-        // Info should still be accessible before reclaim
-        var info = pool.GetEntityInfo(entityRef);
-        Assert.Same(archetype, info.Archetype);
+        // The dead entity's slot is cleared, so a recycled id cannot resolve to its stale location before
+        // being spawned again.
+        Assert.False(pool.TryGetEntityInfo(entityRef, out _));
+        Assert.Null(pool.GetEntityInfo(entityRef).Archetype);
     }
 
     [Fact]
@@ -403,26 +468,25 @@ public class EntityPoolTests
         for (var i = 0; i < 5; i++)
         {
             refs[i] = pool.ReserveEntity();
-            pool.CommitReservedEntity(new Entity(null!, archetype, refs[i], new EntityPos(0, i)));
+            pool.SetEntityInfo(refs[i], archetype, new EntityPos(0, i));
         }
 
         for (var i = 0; i < 5; i++)
         {
-            pool.MarkRemoveEntity(refs[i]);
             pool.CommitRemoveEntity(refs[i]);
         }
 
         pool.ReclaimId();
 
-        // Reuse all 5 IDs and commit
+        // Reuse all 5 IDs and register them
         var newRefs = new EntityRef[5];
         for (var i = 0; i < 5; i++)
         {
             newRefs[i] = pool.ReserveEntity();
-            pool.CommitReservedEntity(new Entity(null!, archetype, newRefs[i], new EntityPos(0, i)));
+            pool.SetEntityInfo(newRefs[i], archetype, new EntityPos(0, i));
         }
 
-        // All should be valid after commit (entities updated to gen=0)
+        // All should be valid after registration
         for (var i = 0; i < 5; i++)
         {
             Assert.True(pool.CheckEntityValid(newRefs[i]));
@@ -439,15 +503,14 @@ public class EntityPoolTests
         var pool = new EntityPool();
         var archetype = ArchetypeManager.EmptyArchetype;
         var entityRef = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, entityRef, new EntityPos(0, 0)));
+        pool.SetEntityInfo(entityRef, archetype, new EntityPos(0, 0));
 
-        pool.MarkRemoveEntity(entityRef);
         pool.CommitRemoveEntity(entityRef);
         pool.ReclaimId();
 
         // Reuse the ID
         var newRef = pool.ReserveEntity();
-        pool.CommitReservedEntity(new Entity(null!, archetype, newRef, new EntityPos(0, 0)));
+        pool.SetEntityInfo(newRef, archetype, new EntityPos(0, 0));
 
         // Old ref with gen=0: entity is in entities with gen=1 (reused), so gen matches → true
         var staleRef = new EntityRef(entityRef.ID, 1);

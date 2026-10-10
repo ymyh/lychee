@@ -30,9 +30,15 @@ public sealed class ArchetypeManager : IDisposable
 
     private readonly TypeRegistrar typeRegistrar;
 
-    private readonly Lock archetypeLock = new();
-
     private readonly int chunkSizeHint;
+
+    // Migration edges, keyed by source archetype and the operation. They are computed and used only on the
+    // single apply thread, so no lock is needed. Single-type edges pack (source id, type id) into one long;
+    // bundle and tuple edges are keyed by the operation's type. Add and remove are kept apart.
+    private readonly Dictionary<long, Archetype> addEdges = [];
+    private readonly Dictionary<long, Archetype> removeEdges = [];
+    private readonly Dictionary<(int SourceId, Type Operation), Archetype> bundleAddEdges = [];
+    private readonly Dictionary<(int SourceId, Type Operation), Archetype> bundleRemoveEdges = [];
 
     private bool disposed;
 
@@ -84,32 +90,30 @@ public sealed class ArchetypeManager : IDisposable
     /// <param name="typeIdList">A collection of component type IDs that define the archetype.</param>
     /// <returns>The archetype matching the specified component types.</returns>
     /// <remarks>
-    /// The type IDs are sorted internally to ensure consistent archetype identification.
-    /// This method is thread-safe.
+    /// The type IDs are sorted internally to ensure consistent archetype identification. Archetypes are
+    /// created only on the apply thread, so this method is not safe to call from a parallel system; use the
+    /// migration edges (<see cref="GetAddEdge"/> and friends) on the hot path.
     /// </remarks>
     public Archetype GetOrCreateArchetype(IEnumerable<int> typeIdList)
     {
         var array = typeIdList.ToArray();
         Array.Sort(array);
 
-        lock (archetypeLock)
+        foreach (var archetype in Archetypes)
         {
-            foreach (var archetype in Archetypes)
+            if (archetype.TypeIdList.SequenceEqual(array))
             {
-                if (archetype.TypeIdList.SequenceEqual(array))
-                {
-                    return archetype;
-                }
+                return archetype;
             }
-
-            var id = Archetypes.Count;
-            var typeInfoList = array.Select(id => typeRegistrar.GetTypeInfo(id)).ToArray();
-            Archetypes.Add(new(id, array, typeInfoList, typeRegistrar, chunkSizeHint));
-
-            ArchetypeCreated?.Invoke();
-
-            return Archetypes[id];
         }
+
+        var id = Archetypes.Count;
+        var typeInfoList = array.Select(id => typeRegistrar.GetTypeInfo(id)).ToArray();
+        Archetypes.Add(new(id, array, typeInfoList, typeRegistrar, chunkSizeHint));
+
+        ArchetypeCreated?.Invoke();
+
+        return Archetypes[id];
     }
 
     /// <summary>
@@ -119,6 +123,8 @@ public sealed class ArchetypeManager : IDisposable
     /// <returns>The archetype matching the specified component types.</returns>
     /// <remarks>
     /// This is a convenience method that extracts types from a tuple and registers them as components.
+    /// It creates archetypes, so it must not be called from a parallel system; use it from a single-threaded
+    /// point (recording/setup) only, matching <see cref="GetOrCreateArchetype"/>.
     /// </remarks>
     public Archetype GetOrCreateArchetypeWithTuple<T>()
     {
@@ -134,7 +140,9 @@ public sealed class ArchetypeManager : IDisposable
     /// <typeparam name="T">A struct implementing IComponentBundle that defines the component types as fields.</typeparam>
     /// <returns>The archetype matching the component types defined in the bundle.</returns>
     /// <remarks>
-    /// This method extracts field types from the bundle struct and uses them as component types.
+    /// This method extracts field types from the bundle struct and uses them as component types. It creates
+    /// archetypes, so it must not be called from a parallel system; use it from a single-threaded point
+    /// (recording/setup) only, matching <see cref="GetOrCreateArchetype"/>.
     /// </remarks>
     public Archetype GetOrCreateArchetypeWithBundle<T>() where T : IComponentBundle
     {
@@ -147,16 +155,13 @@ public sealed class ArchetypeManager : IDisposable
     }
 
     /// <summary>
-    /// Get archetype by id, this method is multi-thread safe.
+    /// Get archetype by id.
     /// </summary>
     /// <param name="id">Target archetype id.</param>
     /// <returns></returns>
     public Archetype GetArchetype(int id)
     {
-        lock (archetypeLock)
-        {
-            return Archetypes[id];
-        }
+        return Archetypes[id];
     }
 
     /// <summary>
@@ -182,44 +187,200 @@ public sealed class ArchetypeManager : IDisposable
 
         var idx = startIndex;
 
-        lock (archetypeLock)
+        startIndex = Archetypes.Count;
+
+        return Archetypes.Skip(idx).Where(a =>
         {
-            startIndex = Archetypes.Count;
+            var ret = typeRequires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+            return allFilter.Select(type => typeRegistrar.RegisterComponent(type))
+                .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
+        }).Where(a =>
+        {
+            var ret = anyFilter.Length == 0;
 
-            return Archetypes.Skip(idx).Where(a =>
+            foreach (var type in anyFilter)
             {
-                var ret = typeRequires.Aggregate(true, (current, typeId) => current & a.TypeIdList.Contains(typeId));
-                return allFilter.Select(type => typeRegistrar.RegisterComponent(type))
-                    .Aggregate(ret, (current, typeId) => current & a.TypeIdList.Contains(typeId));
-            }).Where(a =>
+                var typeId = typeRegistrar.RegisterComponent(type);
+                ret |= a.TypeIdList.Contains(typeId);
+            }
+
+            return ret;
+        }).Where(a =>
+        {
+            var ret = true;
+
+            foreach (var type in noneFilter)
             {
-                var ret = anyFilter.Length == 0;
+                var typeId = typeRegistrar.RegisterComponent(type);
+                ret &= !a.TypeIdList.Contains(typeId);
+            }
 
-                foreach (var type in anyFilter)
-                {
-                    var typeId = typeRegistrar.RegisterComponent(type);
-                    ret |= a.TypeIdList.Contains(typeId);
-                }
-
-                return ret;
-            }).Where(a =>
-            {
-                var ret = true;
-
-                foreach (var type in noneFilter)
-                {
-                    var typeId = typeRegistrar.RegisterComponent(type);
-                    ret &= !a.TypeIdList.Contains(typeId);
-                }
-
-                return ret;
-            }).ToArray();
-        }
+            return ret;
+        }).ToArray();
     }
 
 #endregion
 
 #region Internal Methods
+
+    /// <summary>
+    /// Gets the archetype reached by adding <paramref name="typeId"/> to <paramref name="src"/>, caching the
+    /// edge. Returns <paramref name="src"/> when it already has the type. Apply-thread only.
+    /// </summary>
+    internal Archetype GetAddEdge(Archetype src, int typeId)
+    {
+        if (Array.BinarySearch(src.TypeIdList, typeId) >= 0)
+        {
+            return src;
+        }
+
+        var key = EdgeKey(src, typeId);
+
+        if (addEdges.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var srcIds = src.TypeIdList;
+        var ids = new int[srcIds.Length + 1];
+        var i = 0;
+        var inserted = false;
+
+        foreach (var id in srcIds)
+        {
+            if (!inserted && typeId < id)
+            {
+                ids[i++] = typeId;
+                inserted = true;
+            }
+
+            ids[i++] = id;
+        }
+
+        if (!inserted)
+        {
+            ids[i] = typeId;
+        }
+
+        var dst = GetOrCreateArchetype(ids);
+        addEdges[key] = dst;
+
+        return dst;
+    }
+
+    /// <summary>
+    /// Gets the archetype reached by removing <paramref name="typeId"/> from <paramref name="src"/>, caching
+    /// the edge. Returns <paramref name="src"/> when it does not have the type. Apply-thread only.
+    /// </summary>
+    internal Archetype GetRemoveEdge(Archetype src, int typeId)
+    {
+        var index = Array.BinarySearch(src.TypeIdList, typeId);
+
+        if (index < 0)
+        {
+            return src;
+        }
+
+        var key = EdgeKey(src, typeId);
+
+        if (removeEdges.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var srcIds = src.TypeIdList;
+        var ids = new int[srcIds.Length - 1];
+        Array.Copy(srcIds, 0, ids, 0, index);
+        Array.Copy(srcIds, index + 1, ids, index, ids.Length - index);
+
+        var dst = GetOrCreateArchetype(ids);
+        removeEdges[key] = dst;
+
+        return dst;
+    }
+
+    /// <summary>
+    /// Gets the archetype reached by adding every component of bundle <typeparamref name="T"/> to
+    /// <paramref name="src"/>, caching the edge. Apply-thread only.
+    /// </summary>
+    internal Archetype GetBundleAddEdge<T>(Archetype src) where T : unmanaged, IComponentBundle
+    {
+        var key = (src.ID, typeof(T));
+
+        if (bundleAddEdges.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var set = new SortedSet<int>(src.TypeIdList);
+
+        foreach (var (_, typeId) in typeRegistrar.GetBundleInfo<T>())
+        {
+            set.Add(typeId);
+        }
+
+        var dst = GetOrCreateArchetype(set);
+        bundleAddEdges[key] = dst;
+
+        return dst;
+    }
+
+    /// <summary>
+    /// Gets the archetype reached by removing every component of bundle <typeparamref name="T"/> from
+    /// <paramref name="src"/>, caching the edge. Apply-thread only.
+    /// </summary>
+    internal Archetype GetBundleRemoveEdge<T>(Archetype src) where T : unmanaged, IComponentBundle
+    {
+        var key = (src.ID, typeof(T));
+
+        if (bundleRemoveEdges.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var set = new SortedSet<int>(src.TypeIdList);
+
+        foreach (var (_, typeId) in typeRegistrar.GetBundleInfo<T>())
+        {
+            set.Remove(typeId);
+        }
+
+        var dst = GetOrCreateArchetype(set);
+        bundleRemoveEdges[key] = dst;
+
+        return dst;
+    }
+
+    /// <summary>
+    /// Gets the archetype reached by removing every type of tuple <typeparamref name="T"/> from
+    /// <paramref name="src"/>, caching the edge. Apply-thread only.
+    /// </summary>
+    internal Archetype GetTupleRemoveEdge<T>(Archetype src) where T : unmanaged
+    {
+        var key = (src.ID, typeof(T));
+
+        if (bundleRemoveEdges.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var set = new SortedSet<int>(src.TypeIdList);
+
+        foreach (var typeId in typeRegistrar.RegisterTypesOfTuple<T>())
+        {
+            set.Remove(typeId);
+        }
+
+        var dst = GetOrCreateArchetype(set);
+        bundleRemoveEdges[key] = dst;
+
+        return dst;
+    }
+
+    private static long EdgeKey(Archetype src, int typeId)
+    {
+        return ((long)src.ID << 32) | (uint)typeId;
+    }
 
     internal void Commit(EntityPool entityPool)
     {
@@ -479,6 +640,13 @@ public sealed class Archetype(int id, int[] typeIdList, TypeInfo[] typeInfoList,
 
     internal void CommitAddEntity(EntityRef entityRef)
     {
+        // The empty archetype has no table and no component types, so its entity map is never read: skipping
+        // the write keeps a process-wide shared instance out of the picture during concurrent worlds.
+        if (Table.Layout.MaxAlignment == 0)
+        {
+            return;
+        }
+
         entities[entityRef.ID] = entityRef;
     }
 

@@ -998,7 +998,7 @@ public abstract class BasicSchedule : ISchedule
 
     private void Commit()
     {
-        entityCommanders.ForEach(x => x.Commit());
+        app.World.CommandApplier.Apply(entityCommanders);
         entityCommanders.Clear();
 
         if (needConfigure)

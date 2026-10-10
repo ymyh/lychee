@@ -23,6 +23,21 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
 
 #endregion
 
+#region Internal Fields
+
+    /// <summary>
+    /// The single command applier that turns recorded commands into world changes at every commit point.
+    /// Assigned by <see cref="App"/> right after the world is created.
+    /// </summary>
+    internal CommandApplier CommandApplier = null!;
+
+    /// <summary>
+    /// The registered relationships, indexed by their source and target component type ids.
+    /// </summary>
+    internal readonly RelationshipRegistry Relationships = new();
+
+#endregion
+
 #region Private Fields
 
     private readonly List<IEvent> commitPointEvents = [];
@@ -60,6 +75,27 @@ public sealed class World(TypeRegistrar typeRegistrar, int chunkSizeHint) : IDis
     {
         EntityPool.Clear();
         ArchetypeManager.ClearData();
+    }
+
+    /// <summary>
+    /// Checks whether a component type id is the reverse collection side of a registered relationship.
+    /// </summary>
+    /// <param name="typeId">The component type id to check.</param>
+    /// <returns>True if the type is a relationship target; otherwise, false.</returns>
+    internal bool IsTargetType(int typeId)
+    {
+        return Relationships.IsTargetType(typeId);
+    }
+
+    /// <summary>
+    /// Resolves a relationship from its reverse collection side, for cloning.
+    /// </summary>
+    /// <param name="typeId">The target component type id to look up.</param>
+    /// <param name="info">When this method returns, the relationship description if found; otherwise, null.</param>
+    /// <returns>True if the type is a relationship target with a registered description; otherwise, false.</returns>
+    internal bool TryGetTarget(int typeId, out RelationshipInfo info)
+    {
+        return Relationships.TryGetTarget(typeId, out info);
     }
 
     internal void SwapEvents(EventPublishTiming timing)

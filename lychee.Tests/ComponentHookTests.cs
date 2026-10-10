@@ -181,10 +181,9 @@ public class ComponentHookTests : IDisposable
         entity.AddComponent(new TestPosition { X = 1.0f, Y = 2.0f });
         commands.Commit();
 
-        var replaced = commands.ReplaceComponent(ref entity, new TestHealth { Value = 1.0f });
+        commands.ReplaceComponent(entity, new TestHealth { Value = 1.0f });
         commands.Commit();
 
-        Assert.False(replaced);
         Assert.False(ran);
     }
 
@@ -321,8 +320,10 @@ public class ComponentHookTests : IDisposable
 
         var entity = commands.CreateEntity();
         entity.AddComponent(new TestHealth { Value = 1.0f });
+        commands.Commit();
 
-        // The nested add must have run synchronously, before the outer AddComponent returned.
+        // The nested add must have run during the commit, which applies the hook's command right after the
+        // command that triggered it.
         Assert.True(nestedRan);
         Assert.True(commands.GetEntityByRef(entity.Ref, out var updated));
         Assert.True(updated.WithComponent<TestVelocity>());
@@ -347,8 +348,10 @@ public class ComponentHookTests : IDisposable
 
         var entity = commands.CreateEntity();
         entity.AddComponent(new TestHealth { Value = 1.0f });
+        commands.Commit();
 
-        // 50 levels is above the old 32 cap; reaching this assert proves the cap is gone and the run did not throw.
+        // 50 levels is above the old 32 cap; reaching this assert proves the cap is gone and the drain
+        // terminated rather than recursing on the stack.
         Assert.Equal(50, seen.Count);
         Assert.Equal(50.0f, seen[^1]);
     }

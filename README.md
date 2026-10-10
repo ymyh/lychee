@@ -11,9 +11,13 @@ A simple archetype-based ECS (Entity-Component-System) framework for .NET 10.0 /
 - **Automatic parallelism** - DAG-based System dependency analysis provides basic automatic identification of Systems that can
   execute in parallel
 - **Source generation** - Use the `[AutoImplSystem]` Attribute to automatically generate System code
-- **Deferred commands** - Entity modifications are batch-committed at synchronization points for concurrent safety
+- **Deferred commands** - Structural changes are recorded during Systems and applied serially at commit points, so
+  an `Entity` is a handle and nothing it changes is visible until the next commit
 - **Flexible scheduling system** - Supports single-thread/multi-thread execution with configurable commit timing
-- **Component hooks** - Observe `OnAdd` / `OnReplace` / `OnRemove` per component type and react synchronously
+- **Component hooks** - Observe `OnAdd` / `OnReplace` / `OnRemove` per component type and react synchronously while
+  recorded commands are applied
+- **Parent-child relationships** - The built-in `ChildOf` relationship keeps a read-only `Children` collection in sync
+  and despawns subtrees cascadingly, with shallow and linked cloning
 
 ## Project Structure
 
@@ -123,8 +127,10 @@ schedule.AddSystem<MovementSystem>(new SystemDescriptor
   System execution scheduling (only applies in multi-threaded execution mode)
 - Resource types - Use the `[Resource]` Attribute on parameters to access globally unique resources. When passed by
   reference, the same effects apply as above
-- `Commands` - Records deferred entity operations (creation, deletion, adding components, etc.)
-- `Entity` - Typically passed by `ref` (i.e., `ref Entity entity`), provides access to the current entity being processed
+- `Commands` - Records deferred entity operations (creation, deletion, adding components, etc.). Nothing is applied
+  until the next commit point
+- `Entity` - A handle to the entity currently being processed, accepted as `in Entity entity` or `ref Entity entity`.
+  It resolves its location from the world on demand
 
 In addition to `Execute`, you can also define two methods named `BeforeExecute` and `AfterExecute`, which will execute
 before or after `Execute` respectively. They cannot accept any parameters, so they can only be used for simple
@@ -225,11 +231,17 @@ partial class DespawnSystem
 
 **Commands operations**:
 
-- `CreateEntity()` - Create a new entity
-- `RemoveEntity(Entity)` - Remove an entity
-- `AddComponent<T>(ref Entity, in T)` or `entity.AddComponent<T>(in T)` - Add a component
-- `RemoveComponent<T>(ref Entity)` or `entity.RemoveComponent<T>()` - Remove a component
-- `AddComponents<T>(ref Entity, in T)` or `entity.AddComponents<T>(in T)` - Add a component bundle
+- `CreateEntity()` / `CreateEntityWithComponent<T>(in T)` / `CreateEntityWithComponents<T>(in T)` - Create an entity
+- `RemoveEntity(Entity)` or `entity.Despawn()` - Remove an entity and, with it, its whole `Children` subtree
+- `AddComponent<T>(in T)` / `AddComponents<T>(in T)` - Add a component or a component bundle to an entity
+- `RemoveComponent<T>()` / `RemoveComponents<T>()` / `RemoveComponentsTuple<T>()` - Remove one or more components
+- `ReplaceComponent<T>(in T)` - Overwrite an existing value and fire `OnReplace`
+- `AlterComponents(configure)` - Add and remove components in a single archetype migration
+- `CopyEntity(in Entity, CloneMode)` or `entity.Copy(CloneMode)` - Copy an entity, optionally with its linked subtree
+
+> **Deferred semantics**: each of these only *records* an operation. The world changes when the buffer is applied at
+> the next commit point, and the hooks fire there. An entity created in the current System therefore has no components
+> until then, and `Entity` is a lightweight handle: it carries an ID and resolves its location from the world on demand.
 
 ### 6. Entity Runtime Operations
 
@@ -251,21 +263,31 @@ entity.AlterComponents(alter =>
     alter.Remove<Velocity>();
     alter.Add(new Immobile());
 });
+
+// Copy the entity; Shallow is the default, Linked also copies its linked subtree
+var copy = entity.Copy();
+var subtree = entity.Copy(CloneMode.Linked);
 ```
 
 > **Note**: `AlterComponents` performs all additions and removals in a single archetype migration, which is more
 > efficient than calling `AddComponent` / `RemoveComponent` separately (each triggers its own migration).
 
+> **Note**: `GetComponent`, `WithComponent` and `WithoutComponent` read the world as it is committed. A component that
+> was added in the current System is not visible through them until the next commit point.
+
 ## Component Hooks
 
 Hooks let you observe per-component-type lifecycle events and react without polling. Register a hook on the `App`,
-then the framework invokes it synchronously inside the `Commands` call that changed the component.
+then the framework invokes it synchronously while the recorded commands are applied at a commit point.
 
 | Hook | Fires when | Triggered by |
 |---|---|---|
 | `OnAdd` | A component becomes present on an entity | `AddComponent` / `AddComponents` / `CreateEntityWithComponent` / `CreateEntityWithComponents` / `CopyEntity`, and the added part of `AlterComponents` |
 | `OnReplace` | An existing component value is overwritten in place | `ReplaceComponent`; a System `out` component parameter after `Execute` |
 | `OnRemove` | A component leaves an entity | `RemoveComponent` / `RemoveComponents` / `RemoveComponentsTuple` / `RemoveEntity` (`Despawn`), and the removed part of `AlterComponents` |
+
+`OnRemove` fires **before** the component is detached, so the entity and all of its other components are still
+readable inside the hook.
 
 ### Registering a Hook
 
@@ -284,19 +306,21 @@ public delegate void ComponentHook<T>(ref HookContext context, in T component)
     where T : unmanaged, IComponent;
 ```
 
-Registering again for the same type and kind overwrites the previous hook. Components with no registered hook stay on
-the fast path: the framework does not even read the previous value for them.
+Registering again for the same type and kind throws `InvalidOperationException`. Components with no registered hook
+stay on the fast path: the framework does not even read the previous value for them.
 
 ### Reading the Entity Inside a Hook
 
 `HookContext` exposes the entity, the `Commands` that triggered the hook, and the `App`:
 
 - `context.Entity` — the entity the event belongs to.
-- `context.Commands` — the triggering `Commands`. Structural changes made through it take effect immediately and fire
-  their own hooks synchronously.
+- `context.Commands` — the hook queue. Structural changes enqueued here are applied right after the command that
+  triggered the hook, before the next recorded command, so the commands that follow observe them.
 - `context.App` — for reading resources.
-- `context.Has<T>()`, `context.TryGet<T>(out var component)`, `context.GetComponent<T>()` — read the entity's current
-  components. `GetComponent` returns a bare `ref`; writing through it does **not** trigger a hook.
+- `context.Has<T>()`, `context.TryGet<T>(out var component)`, `context.GetComponent<T>()` — read the entity the event
+  belongs to. There are `EntityRef` overloads (`Has<T>(EntityRef)`, `TryGet<T>(EntityRef, out var component)`,
+  `Get<T>(EntityRef)`) for any other entity. `GetComponent`/`Get` returns a bare `ref`; writing through it does
+  **not** trigger a hook.
 - `context.TryGetPrevious<T>(out var previous)` — the value a component had before it was overwritten. Only meaningful
   for `OnReplace`; it returns `false` for every other kind.
 
@@ -314,10 +338,10 @@ app.SetComponentHook(ComponentHookKind.OnReplace, (ref HookContext context, in H
 
 `AddComponent` refuses a component the entity already has, because the archetype rejects a duplicate type id. To
 overwrite an existing value and notify `OnReplace`, use `ReplaceComponent`. It never upserts: an invalid, removed, or
-component-less entity returns `false` and fires nothing.
+component-less entity does nothing and fires nothing.
 
 ```csharp
-commands.ReplaceComponent(ref entity, new Health { Value = 10.0f });
+commands.ReplaceComponent(entity, new Health { Value = 10.0f });
 
 // Or through the entity
 entity.ReplaceComponent(new Health { Value = 10.0f });
@@ -327,13 +351,112 @@ A System that writes a component through an `out` parameter gets the same treatm
 value before `Execute` and calls the `OnReplace` hook after it returns. Ordinary `ref` and `Span<T>` parameters mutate
 in place and do **not** fire a hook.
 
-> **Threading**: a hook runs on the thread that issued the command, which in a multi-threaded System is a worker
-> thread. The framework does not serialize hooks, and the scheduler's conflict analysis does not see hook side
-> effects, so a hook must only touch data the System already declares or the System should be single-threaded.
+> **Threading**: hooks fire while recorded commands are applied, which is always single-threaded. A hook runs on the
+> committing thread and sees the real world, so its order is deterministic. The scheduler's conflict analysis still
+> does not see hook side effects, so a hook should only touch data the System it belongs to already declares.
+>
+> Archetypes are created while commands are applied, too, so archetype creation and the migration-edge cache are
+> single-threaded as well. `GetOrCreateArchetypeWithTuple<T>` / `GetOrCreateArchetypeWithBundle<T>` create
+> archetypes, so they must not be called from a parallel System; a running System only reads archetypes for its
+> query.
 
-> **Recursion**: hooks fire synchronously, so a hook that changes structure through `context.Commands` nests inside the
-> original call and fires its own hooks immediately. There is no artificial depth cap; an endlessly self-triggering
-> hook ends in a `StackOverflowException`, so hooks must terminate.
+> **Termination**: a hook's structural changes are drained in FIFO order right after the current command and never
+> recurse on the stack, so there is no depth cap. Two hooks that keep triggering each other will hang the commit
+> instead of overflowing the stack — hooks must terminate.
+
+## Relationships
+
+`ChildOf` is the built-in parent-child relationship. It lives on the child and holds the parent reference, and it is
+the only authoritative copy of the hierarchy:
+
+```csharp
+using lychee.components;
+
+var parent = commands.CreateEntity();
+var child = commands.CreateEntity();
+
+// The child points at the parent.
+child.AddComponent(new ChildOf(parent.Ref));
+commands.Commit();
+```
+
+For every entity that has children, the framework maintains a read-only reverse collection,
+`RelationshipTarget<ChildOf>`, on the parent. User code never creates or edits it:
+
+```csharp
+// After the commit above the parent has the collection; read it in insertion order.
+if (parent.WithComponent<RelationshipTarget<ChildOf>>())
+{
+    ReadOnlySpan<EntityRef> children = parent.GetComponent<RelationshipTarget<ChildOf>>().Entities;
+}
+```
+
+The collection is created when the first child attaches and removed automatically when the last one detaches, so
+"having `RelationshipTarget<ChildOf>`" means "having at least one child". Like every other structural change, it
+becomes visible only at the next commit point.
+
+### Changing the Parent
+
+`ChildOf.Parent` is read-only. Change a child's parent by overwriting the component through `ReplaceComponent`, or by
+writing it through an `out ChildOf` system parameter:
+
+```csharp
+// Reparent through ReplaceComponent.
+child.ReplaceComponent(new ChildOf(newParent.Ref));
+
+// Or from a System; the generated loop reports the replacement after Execute returns.
+[AutoImplSystem]
+partial class ReparentSystem
+{
+    private static void Execute(out ChildOf child, [Resource] ReparentTarget target)
+    {
+        child = new ChildOf(target.Parent);
+    }
+}
+```
+
+Both paths fire `OnReplace`, which detaches the child from its old parent and attaches it to the new one. Writing the
+field through a plain `ref ChildOf` does **not** trigger the hooks and leaves the collections stale, so don't do it.
+
+A `ChildOf` that points at a dead entity, at the child itself, or that would create a cycle is rejected when it is
+applied: the `ChildOf` is removed and a warning is logged.
+
+### Cascading Despawn
+
+Removing an entity also removes its whole `Children` subtree, iteratively and without recursion on the stack:
+
+```csharp
+parent.Despawn();
+commands.Commit();
+
+// parent, its children, and their children are all gone.
+```
+
+Do not want that? Detach the child first; a child with no `ChildOf` survives its parent:
+
+```csharp
+child.RemoveComponent<ChildOf>();
+parent.Despawn();
+commands.Commit();
+```
+
+### Copying and Cloning
+
+`Copy` reads the source's state when the command is applied. `CloneMode.Shallow` copies the entity alone — a copied
+`ChildOf` still points at the original parent, so the copy becomes a sibling of the source, and the copy's own
+`Children` starts empty. `CloneMode.Linked` recursively copies the whole subtree of every relationship whose target is
+marked linked, repointing each copied `ChildOf` at the copied parent:
+
+```csharp
+var sibling = entity.Copy();                 // Shallow, the default
+var subtree = entity.Copy(CloneMode.Linked); // The entity and its descendants
+```
+
+> **Native memory is not deep-copied.** A component that owns unmanaged memory (such as the framework's own
+> `RelationshipTarget<TRelationship>`, which holds a `NativeList<EntityRef>`) cannot be safely `memcpy`'d. The
+> framework writes relationship targets as `default` and lets the relationship hooks rebuild them, but it does not
+> detect the pattern in user-defined components: a custom component that holds a `NativeList` and gets copied will
+> alias the source's buffer.
 
 ## Resource System
 

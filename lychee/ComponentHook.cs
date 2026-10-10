@@ -35,7 +35,7 @@ internal unsafe delegate void ComponentHookInvoker(ref HookContext context, void
 
 /// <summary>
 /// Describes a component event and gives the hook read access to the entity it happened on.
-/// Hooks are invoked synchronously inside the operation that caused them.
+/// Hooks are invoked synchronously while recorded commands are applied at a commit point.
 /// </summary>
 public struct HookContext
 {
@@ -47,8 +47,8 @@ public struct HookContext
     public EntityRef Entity { get; }
 
     /// <summary>
-    /// Gets the commands that triggered the hook. Structural changes made through it take effect immediately
-    /// and synchronously trigger their own hooks.
+    /// Gets the hook queue. Structural changes enqueued here are applied right after the command that
+    /// triggered the hook, in issue order, before the next recorded command runs.
     /// </summary>
     public Commands Commands { get; }
 
@@ -79,7 +79,52 @@ public struct HookContext
 #region Public Methods
 
     /// <summary>
-    /// Checks whether the entity currently has a component of the specified type.
+    /// Checks whether an entity currently exists in the world.
+    /// </summary>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns>True if the entity is alive; otherwise, false.</returns>
+    public readonly bool IsAlive(EntityRef entity)
+    {
+        return Commands.IsAlive(entity);
+    }
+
+    /// <summary>
+    /// Checks whether the given entity currently has a component of the specified type.
+    /// </summary>
+    /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to check.</param>
+    /// <returns>True if the entity has the component; otherwise, false.</returns>
+    public readonly bool Has<T>(EntityRef entity) where T : unmanaged, IComponent
+    {
+        return Commands.HasLiveComponent<T>(entity);
+    }
+
+    /// <summary>
+    /// Tries to read a component of the specified type from the given entity.
+    /// </summary>
+    /// <typeparam name="T">The component type to read, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to read from.</param>
+    /// <param name="component">When this method returns, contains the component if found; otherwise, the default value.</param>
+    /// <returns>True if the component was found; otherwise, false.</returns>
+    public readonly bool TryGet<T>(EntityRef entity, out T component) where T : unmanaged, IComponent
+    {
+        return Commands.TryGetLiveComponent(entity, out component);
+    }
+
+    /// <summary>
+    /// Gets a reference to a component of the specified type on the given entity.
+    /// Writing through the returned reference does not trigger hooks.
+    /// </summary>
+    /// <typeparam name="T">The component type to read, must be unmanaged and implement IComponent.</typeparam>
+    /// <param name="entity">The entity to read from.</param>
+    /// <returns>A reference to the component.</returns>
+    public readonly ref T Get<T>(EntityRef entity) where T : unmanaged, IComponent
+    {
+        return ref Commands.GetLiveComponent<T>(entity);
+    }
+
+    /// <summary>
+    /// Checks whether the entity the event belongs to currently has a component of the specified type.
     /// </summary>
     /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
     /// <returns>True if the entity has the component; otherwise, false.</returns>
@@ -89,7 +134,7 @@ public struct HookContext
     }
 
     /// <summary>
-    /// Tries to read a component of the specified type from the entity's current position.
+    /// Tries to read a component of the specified type from the entity the event belongs to.
     /// </summary>
     /// <typeparam name="T">The component type to read, must be unmanaged and implement IComponent.</typeparam>
     /// <param name="component">When this method returns, contains the component if found; otherwise, the default value.</param>
@@ -100,7 +145,7 @@ public struct HookContext
     }
 
     /// <summary>
-    /// Gets a reference to a component of the specified type at the entity's current position.
+    /// Gets a reference to a component of the specified type on the entity the event belongs to.
     /// Writing through the returned reference does not trigger hooks.
     /// </summary>
     /// <typeparam name="T">The component type to read, must be unmanaged and implement IComponent.</typeparam>

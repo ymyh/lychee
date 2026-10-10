@@ -3,17 +3,18 @@
 namespace lychee;
 
 /// <summary>
-/// Represents an entity in the ECS framework.
-/// An entity is essentially an ID that can have components attached to it.
+/// A lightweight handle to an entity in the ECS framework.
+/// It carries only the entity reference and the <see cref="Commands"/> it was issued from; its location is
+/// resolved from the world on demand, so structural changes made through it only take effect at a commit point.
 /// </summary>
-public struct Entity(Commands commands, Archetype archetype)
+public readonly struct Entity
 {
 #region Public Properties
 
     /// <summary>
-    /// Gets or sets the entity reference containing the entity ID and generation.
+    /// Gets the entity reference containing the entity ID and generation.
     /// </summary>
-    public EntityRef Ref { get; set; }
+    public EntityRef Ref { get; }
 
     /// <summary>
     /// Gets the unique identifier of this entity.
@@ -22,25 +23,23 @@ public struct Entity(Commands commands, Archetype archetype)
 
 #endregion
 
-    internal EntityPos Pos;
+#region Internal Properties
 
-    internal Archetype Archetype = archetype;
+    internal Commands Commands { get; }
 
-    internal Commands Commands => commands;
+#endregion
 
 #region Constructors
 
     /// <summary>
-    /// Initializes a new instance of the Entity struct with full state information.
+    /// Initializes a new handle for an entity owned by the given commands.
     /// </summary>
     /// <param name="commands">The commands instance for deferred operations.</param>
-    /// <param name="archetype">The archetype this entity belongs to.</param>
     /// <param name="entityRef">The entity reference containing ID and generation.</param>
-    /// <param name="pos">The position of this entity within its archetype.</param>
-    public Entity(Commands commands, Archetype archetype, EntityRef entityRef, EntityPos pos) : this(commands, archetype)
+    internal Entity(Commands commands, EntityRef entityRef)
     {
+        Commands = commands;
         Ref = entityRef;
-        Pos = pos;
     }
 
 #endregion
@@ -48,26 +47,26 @@ public struct Entity(Commands commands, Archetype archetype)
 #region Public Methods
 
     /// <summary>
-    /// Creates a copy of this entity with identical component data.
+    /// Records a copy of this entity with identical component data.
+    /// The copy is applied at the next commit point.
     /// </summary>
-    /// <returns>The newly created copy entity.</returns>
-    public Entity Copy()
+    /// <param name="mode">Whether to copy the entity alone or its whole linked subtree.</param>
+    /// <returns>The newly created copy entity handle.</returns>
+    public Entity Copy(CloneMode mode = CloneMode.Shallow)
     {
-        return commands.CopyEntity(in this);
+        return Commands.CopyEntity(in this, mode);
     }
 
     /// <summary>
-    /// Despawns this entity, marking it for removal.
-    /// The entity will be fully removed when the commands are committed.
+    /// Records removal of this entity. The entity is fully removed at the next commit point.
     /// </summary>
     public void Despawn()
     {
-        commands.RemoveEntity(in this);
+        Commands.RemoveEntity(in this);
     }
 
     /// <summary>
-    /// Adds a component to this entity.
-    /// The entity will be moved to a new archetype matching its updated component composition.
+    /// Records adding a component to this entity. The entity moves to a new archetype at the next commit point.
     /// Adding a component type the entity already has is rejected by the archetype; use
     /// <see cref="ReplaceComponent{T}(in T)"/> to overwrite an existing component value instead.
     /// </summary>
@@ -75,23 +74,22 @@ public struct Entity(Commands commands, Archetype archetype)
     /// <param name="component">The component value to add.</param>
     public void AddComponent<T>(in T component) where T : unmanaged, IComponent
     {
-        commands.AddComponent(ref this, in component);
+        Commands.AddComponent(this, in component);
     }
 
     /// <summary>
-    /// Adds multiple components as a bundle to this entity.
-    /// All components in the bundle will be added in a single operation.
+    /// Records adding multiple components as a bundle to this entity.
     /// Adding a component type the entity already has is rejected by the archetype; this does not overwrite it.
     /// </summary>
     /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
     /// <param name="components">The component bundle containing the components to add.</param>
     public void AddComponents<T>(in T components) where T : unmanaged, IComponentBundle
     {
-        commands.AddComponents(ref this, in components);
+        Commands.AddComponents(this, in components);
     }
 
     /// <summary>
-    /// Replaces the value of a component this entity already has, without moving archetypes.
+    /// Records replacing the value of a component this entity already has, without moving archetypes.
     /// Does nothing when the entity is invalid, removed, or does not have the component.
     /// OnReplace hooks observe the previous and the new value.
     /// </summary>
@@ -99,75 +97,75 @@ public struct Entity(Commands commands, Archetype archetype)
     /// <param name="component">The new component value.</param>
     public void ReplaceComponent<T>(in T component) where T : unmanaged, IComponent
     {
-        commands.ReplaceComponent(ref this, in component);
+        Commands.ReplaceComponent(this, in component);
     }
 
     /// <summary>
-    /// Removes a component from this entity.
-    /// The entity will be moved to a new archetype matching its updated component composition.
+    /// Records removing a component from this entity. The entity moves to a new archetype at the next commit point.
     /// </summary>
     /// <typeparam name="T">The component type to remove, must be unmanaged and implement IComponent.</typeparam>
     public void RemoveComponent<T>() where T : unmanaged, IComponent
     {
-        commands.RemoveComponent<T>(ref this);
+        Commands.RemoveComponent<T>(this);
     }
 
     /// <summary>
-    /// Removes all components defined in a component bundle from this entity.
+    /// Records removing all components defined in a component bundle from this entity.
     /// </summary>
     /// <typeparam name="T">The component bundle type, must be unmanaged and implement IComponentBundle.</typeparam>
     public void RemoveComponents<T>() where T : unmanaged, IComponentBundle
     {
-        commands.RemoveComponents<T>(ref this);
+        Commands.RemoveComponents<T>(this);
     }
 
     /// <summary>
-    /// Removes all components defined in a tuple from this entity.
+    /// Records removing all components defined in a tuple from this entity.
     /// </summary>
     /// <typeparam name="T">The tuple type containing the component types to remove, must be unmanaged.</typeparam>
     public void RemoveComponentsTuple<T>() where T : unmanaged
     {
-        commands.RemoveComponentsTuple<T>(ref this);
+        Commands.RemoveComponentsTuple<T>(this);
     }
 
     /// <summary>
-    /// Performs multiple component additions and removals on this entity in a single archetype migration.
+    /// Records multiple component additions and removals on this entity as a single archetype migration.
     /// Remove operations must be called before Add operations within the configuration callback.
     /// </summary>
     /// <param name="configure">A callback that configures the alterations using the EntityAlter builder.</param>
     public void AlterComponents(Commands.EntityAlterContextDelegate configure)
     {
-        commands.AlterComponents(ref this, configure);
+        Commands.AlterComponents(this, configure);
     }
 
     /// <summary>
-    /// Gets a reference to a component of this entity.
+    /// Gets a reference to a component of this entity as it exists in the world.
+    /// Changes made through the returned reference do not trigger hooks.
     /// </summary>
     /// <typeparam name="T">The component type, must be unmanaged and implement IComponent.</typeparam>
     /// <returns>A reference to the component.</returns>
     public ref T GetComponent<T>() where T : unmanaged, IComponent
     {
-        return ref commands.GetEntityComponent<T>(Archetype, Pos);
+        return ref Commands.GetEntityComponent<T>(this);
     }
 
     /// <summary>
-    /// Checks whether this entity has a specific component.
+    /// Checks whether this entity has a specific component as it exists in the world.
     /// </summary>
     /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
     /// <returns>True if this entity has the component; otherwise, false.</returns>
     public bool WithComponent<T>() where T : unmanaged, IComponent
     {
-        return commands.WithComponent<T>(ref this);
+        return Commands.WithComponent<T>(this);
     }
 
     /// <summary>
-    /// Checks whether this entity does not have a specific component.
+    /// Checks whether this entity does not have a specific component as it exists in the world.
     /// </summary>
     /// <typeparam name="T">The component type to check, must be unmanaged and implement IComponent.</typeparam>
     /// <returns>True if this entity does not have the component; otherwise, false.</returns>
     public bool WithoutComponent<T>() where T : unmanaged, IComponent
     {
-        return commands.WithoutComponent<T>(ref this);
+        return Commands.WithoutComponent<T>(this);
     }
 
 #endregion
